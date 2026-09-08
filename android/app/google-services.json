@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "847953901005",
+    "project_id": "tadarabapp-2e060",
+    "storage_bucket": "tadarabapp-2e060.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:847953901005:android:ea2638611f2173f92a4084",
+        "android_client_info": {
+          "package_name": "com.example.tadarab_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAQ46qLKxkabd84Vj9d_uEqhHY8x2uiaC4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

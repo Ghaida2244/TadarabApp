@@ -1,0 +1,11 @@
+name = "tadarab-ai-worker"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# FIREBASE_PROJECT_ID is not a secret, so it's plain config here.
+[vars]
+FIREBASE_PROJECT_ID = "tadarabapp-2e060"
+
+# ANTHROPIC_API_KEY is set separately with:
+#   wrangler secret put ANTHROPIC_API_KEY
+# Never put it in this file or commit it.
