@@ -274,6 +274,21 @@ once during Phase A; every generation call in the app goes through it.
 - Commit with a clear message naming the phase/feature (e.g. "Phase A:
   Firebase backend + security rules", "Feature: Calendar & reminders").
 
+## Testing requirements
+
+- Any logic that isn't purely UI (validators, points calculations, the
+  cooldown timer, checking the validity of AI-generated content) needs a
+  unit test covering the normal case, an edge case, and at least one failure
+  case.
+- Any screen with distinct states (loading/empty/error/success, form
+  validation) needs at least one widget test per state shown in the design,
+  not just the primary state.
+- Security rules keep using the existing two-real-account verification
+  method — that's not a substitute for unit/widget tests.
+- Run `flutter test` before considering any feature or phase done, and
+  report the actual pass/fail counts in detail, not just "tests pass."
+- Tests live in `test/`, mirroring the `lib/` folder structure.
+
 ## Git workflow (Phase C onward)
 
 - `main` is protected: no direct pushes, PR + 1 teammate approval required.
@@ -330,5 +345,33 @@ mark it done, note decisions made, note what starts next.)*
   compiles cleanly. Not yet deployed — needs the Anthropic API key (not
   obtained yet) and an interactive `wrangler login` from a team member; see
   `worker/README.md`.
-- **Phase B — Shared UI:** not started
+- **Phase B — Shared UI:** in progress. Auth screens done (Welcome, Log In,
+  Create Account, Forgot Password, Check Your Email), built from the
+  `docs/mockups/android-study-app-redesign` Phase 0 design handoff. Built a
+  new `AppTheme` design system from scratch (`lib/theme/`: colors,
+  typography on Nunito via `google_fonts`, spacing/radius tokens) — the
+  foundation every later screen should build on, not just auth. Password
+  rule matches the mockup's own copy exactly: 8+ characters plus a digit;
+  uppercase/lowercase/symbols allowed but never required (confirmed with the
+  team over the initial CLAUDE.md draft's stricter phrasing). Forgot
+  Password never reveals whether an email is registered — Firebase's
+  `user-not-found` is caught in `AuthService.sendPasswordReset` and treated
+  as success. Full unit/widget test coverage added per the new Testing
+  requirements below: 46 tests (12 validator unit tests, 34 widget tests
+  covering every state shown in the design), 0 failures — see
+  `test/screens/` and `test/validators/`. Writing these tests caught three
+  real bugs before they shipped: Login's error banner always showed the
+  hardcoded "wrong credentials" text regardless of the actual failure (now
+  varies by error type); Create Account's empty-password submit never
+  rendered "Password is required" (the empty/non-empty branch only ever
+  showed the hint or the strength bar); Check Your Email's cooldown showed
+  the invalid "0:60" at the very first frame (now formats minutes properly).
+  Remaining for Phase B: the Home & Courses screens (a separate design
+  handoff, not yet started).
 - **Phase C — Feature split:** not started
+
+## Design handoffs
+
+- `docs/mockups/android-study-app-redesign/` — Phase 0 (Auth: Welcome, Log
+  In, Create Account, Forgot Password) is implemented. Phase 1 (Home &
+  Courses) is in the same bundle but not yet built.

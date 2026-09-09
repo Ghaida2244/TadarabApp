@@ -1,7 +1,11 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'firebase_options.dart';
+import 'screens/auth/welcome_screen.dart';
+import 'services/auth_service.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   runApp(const TadarabApp());
@@ -16,9 +20,7 @@ class TadarabApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Tadarab',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-      ),
+      theme: AppTheme.themeData,
       home: const _FirebaseBootstrap(),
     );
   }
@@ -82,10 +84,62 @@ class _FirebaseBootstrapState extends State<_FirebaseBootstrap> {
             ),
           );
         }
-        return const Scaffold(
-          body: Center(child: Text('Tadarab — Phase A backend ready')),
+        return const _AuthGate();
+      },
+    );
+  }
+}
+
+/// Routes between signed-out (the auth flow) and signed-in. There's no Home
+/// screen yet — Home & Courses is a separate design handoff not built in
+/// this pass — so a signed-in student sees a temporary placeholder rather
+/// than nothing reachable after a successful login/create-account.
+class _AuthGate extends StatelessWidget {
+  const _AuthGate();
+
+  @override
+  Widget build(BuildContext context) {
+    final authService = AuthService();
+    return StreamBuilder<User?>(
+      stream: authService.authStateChanges,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final user = snapshot.data;
+        if (user == null) return const WelcomeScreen();
+        return _SignedInPlaceholder(
+          email: user.email ?? '',
+          onSignOut: () => authService.signOut(),
         );
       },
+    );
+  }
+}
+
+class _SignedInPlaceholder extends StatelessWidget {
+  const _SignedInPlaceholder({required this.email, required this.onSignOut});
+
+  final String email;
+  final VoidCallback onSignOut;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Signed in as $email'),
+            const SizedBox(height: 12),
+            const Text('Home screen coming in the next design handoff.'),
+            const SizedBox(height: 20),
+            ElevatedButton(onPressed: onSignOut, child: const Text('Log out')),
+          ],
+        ),
+      ),
     );
   }
 }
