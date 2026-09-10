@@ -13,6 +13,7 @@ void main() {
   // greeting text are all deterministic.
   final now = DateTime(2026, 3, 11, 14, 30);
   final weekStart = DateTime(2026, 3, 8);
+  final aCourse = Course(courseId: 'c1', courseName: 'IS230', email: 'e@x.com');
 
   Future<void> pumpHome(
     WidgetTester tester, {
@@ -32,25 +33,35 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  group('fresh / empty state', () {
+  group('zero courses (Frame 1 — new student)', () {
     testWidgets(
-      'shows zeroed progress, "Start a new session", and the empty Upcoming message',
+      'shows only the greeting and onboarding card — no Today\'s Progress, streak, or Upcoming',
+      (tester) async {
+        // FakeHomeDataService defaults to zero courses — this is the true
+        // fresh-account state: no courses, no sessions, nothing to resume.
+        await pumpHome(tester);
+
+        expect(find.text('Turn your lectures into quizzes.'), findsOneWidget);
+        expect(find.text('Create my first course'), findsOneWidget);
+        expect(find.text("Today's progress"), findsNothing);
+        expect(find.text('Nothing in progress'), findsNothing);
+        expect(find.text('Start a new session'), findsNothing);
+        expect(find.text('Upcoming'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'tapping Create my first course opens its own placeholder, distinct from the Courses tab',
       (tester) async {
         await pumpHome(tester);
 
-        expect(find.text("Today's progress"), findsOneWidget);
-        expect(
-          find.text('0'),
-          findsWidgets,
-        ); // today's question + flashcard counts
-        expect(find.text('Nothing in progress'), findsOneWidget);
-        expect(find.text('Start a new session'), findsOneWidget);
-        expect(
-          find.text(
-            'No upcoming events yet. Once you add events, they\'ll show up here.',
-          ),
-          findsOneWidget,
-        );
+        final button = find.text('Create my first course');
+        await tester.ensureVisible(button);
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Add Course screen'), findsOneWidget);
+        expect(find.text('Courses screen'), findsNothing);
       },
     );
 
@@ -68,6 +79,64 @@ void main() {
         expect(find.text('Good afternoon'), findsOneWidget); // now is 14:30
       },
     );
+
+    testWidgets('the points badge is hidden in the greeting (no courses yet)', (
+      tester,
+    ) async {
+      await pumpHome(
+        tester,
+        dataService: FakeHomeDataService(
+          student: Student(
+            uid: 'u',
+            email: 'e@x.com',
+            name: 'Ghaida',
+            totalPoints: 108,
+          ),
+        ),
+      );
+
+      expect(find.text('108'), findsNothing);
+    });
+  });
+
+  group('has courses, nothing in progress', () {
+    testWidgets('shows the Continue/Start card, not the onboarding card', (
+      tester,
+    ) async {
+      await pumpHome(
+        tester,
+        dataService: FakeHomeDataService(courses: [aCourse]),
+      );
+
+      expect(find.text('Nothing in progress'), findsOneWidget);
+      expect(find.text('Start a new session'), findsOneWidget);
+      expect(find.text('Turn your lectures into quizzes.'), findsNothing);
+      expect(
+        find.text(
+          'No upcoming events yet. Once you add events, they\'ll show up here.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the points badge shows once the student has a course', (
+      tester,
+    ) async {
+      await pumpHome(
+        tester,
+        dataService: FakeHomeDataService(
+          courses: [aCourse],
+          student: Student(
+            uid: 'u',
+            email: 'e@x.com',
+            name: 'Ghaida',
+            totalPoints: 108,
+          ),
+        ),
+      );
+
+      expect(find.text('108'), findsOneWidget);
+    });
   });
 
   group('weekly progress row', () {
@@ -91,7 +160,13 @@ void main() {
         );
         await pumpHome(
           tester,
-          dataService: FakeHomeDataService(weeklyProgress: progress),
+          // courses: [aCourse] so the Continue/Start card renders instead of
+          // the onboarding card — the latter has its own step "2" circle,
+          // which would collide with the weekly row's "2" cell below.
+          dataService: FakeHomeDataService(
+            courses: [aCourse],
+            weeklyProgress: progress,
+          ),
         );
 
         expect(find.text('5'), findsOneWidget); // Monday's filled red cell
@@ -117,7 +192,10 @@ void main() {
       );
       await pumpHome(
         tester,
-        dataService: FakeHomeDataService(inProgress: inProgress),
+        dataService: FakeHomeDataService(
+          courses: [aCourse],
+          inProgress: inProgress,
+        ),
       );
 
       expect(find.text('Pick up where you left off'), findsOneWidget);
@@ -140,7 +218,10 @@ void main() {
         );
         await pumpHome(
           tester,
-          dataService: FakeHomeDataService(inProgress: inProgress),
+          dataService: FakeHomeDataService(
+            courses: [aCourse],
+            inProgress: inProgress,
+          ),
         );
 
         await tester.tap(find.text('Resume'));
@@ -177,7 +258,13 @@ void main() {
         ];
         await pumpHome(
           tester,
-          dataService: FakeHomeDataService(upcomingEvents: events),
+          // courses: [aCourse] — Upcoming only renders once the student has
+          // at least one course (Frame 1's onboarding-only layout has no
+          // Upcoming section at all).
+          dataService: FakeHomeDataService(
+            courses: [aCourse],
+            upcomingEvents: events,
+          ),
         );
 
         expect(find.text('Midterm'), findsOneWidget);
@@ -188,68 +275,57 @@ void main() {
     );
   });
 
-  group('course picker', () {
-    testWidgets(
-      'New quiz with no courses shows the explanatory empty state, not an error',
-      (tester) async {
-        await pumpHome(tester);
+  group(
+    'course picker (reachable only once the student has at least one course)',
+    () {
+      testWidgets(
+        'picking a real course closes the sheet and opens the quiz setup placeholder',
+        (tester) async {
+          await pumpHome(
+            tester,
+            dataService: FakeHomeDataService(courses: [aCourse]),
+          );
 
-        await tester.tap(find.text('New quiz'));
+          await tester.tap(find.text('New quiz'));
+          await tester.pumpAndSettle();
+          expect(find.text('IS230'), findsOneWidget);
+
+          await tester.tap(find.text('IS230'));
+          await tester.pumpAndSettle();
+
+          expect(find.text('Quiz setup screen'), findsOneWidget);
+        },
+      );
+
+      testWidgets('Flashcards button opens the picker labeled for flashcards', (
+        tester,
+      ) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(courses: [aCourse]),
+        );
+
+        await tester.tap(find.text('Flashcards'));
         await tester.pumpAndSettle();
 
         expect(
-          find.text(
-            'No courses yet. Once courses are added, they\'ll show up here.',
-          ),
+          find.text('Flashcards · pick the subject to study'),
           findsOneWidget,
         );
-      },
-    );
-
-    testWidgets(
-      'picking a real course closes the sheet and opens the quiz setup placeholder',
-      (tester) async {
-        final course = Course(
-          courseId: 'c1',
-          courseName: 'IS230',
-          email: 'e@x.com',
-        );
-        await pumpHome(
-          tester,
-          dataService: FakeHomeDataService(courses: [course]),
-        );
-
-        await tester.tap(find.text('New quiz'));
-        await tester.pumpAndSettle();
-        expect(find.text('IS230'), findsOneWidget);
-
-        await tester.tap(find.text('IS230'));
-        await tester.pumpAndSettle();
-
-        expect(find.text('Quiz setup screen'), findsOneWidget);
-      },
-    );
-
-    testWidgets('Flashcards button opens the picker labeled for flashcards', (
-      tester,
-    ) async {
-      await pumpHome(tester);
-
-      await tester.tap(find.text('Flashcards'));
-      await tester.pumpAndSettle();
-
-      expect(
-        find.text('Flashcards · pick the subject to study'),
-        findsOneWidget,
-      );
-    });
-  });
+      });
+    },
+  );
 
   group('bottom navigation', () {
     testWidgets(
       'switches between Home, Courses, Calendar and Profile placeholders',
       (tester) async {
-        await pumpHome(tester);
+        // courses: [aCourse] so returning to Home shows Today's Progress
+        // (this test is about tab-switching, not which Home state renders).
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(courses: [aCourse]),
+        );
 
         await tester.tap(find.text('Courses'));
         await tester.pumpAndSettle();

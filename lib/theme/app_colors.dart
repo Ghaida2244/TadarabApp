@@ -21,11 +21,18 @@ class AppColors {
   static const Color redShadow = Color(0xFFA8141B);
 
   // Neutrals (navy tinted, per the design system).
-  /// Page background.
-  static const Color background = Color(0xFFF0F1F7);
+  /// Default screen background — pure white, matching every auth-screen
+  /// frame in the Phase 0 design (`background:#FFFFFF`). Home overrides this
+  /// with its own [homeBackground]. (The Phase 0 file's `#F0F1F7` is the
+  /// design canvas *around* the phone frames, not a screen background.)
+  static const Color background = Color(0xFFFFFFFF);
 
   /// Default (unfocused, empty, non-error) field border.
   static const Color borderDefault = Color(0xFFE2E6F5);
+
+  /// The lighter grey outline used on Home's secondary buttons (e.g. the
+  /// "Flashcards" button) — close to but distinct from [borderDefault].
+  static const Color borderLight = Color(0xFFDDE1F0);
 
   /// Placeholder text / inactive icon color inside fields.
   static const Color placeholder = Color(0xFF9AA0C4);
@@ -41,6 +48,10 @@ class AppColors {
 
   /// Background for disabled fields and skeleton-like surfaces.
   static const Color surfaceMuted = Color(0xFFF7F8FD);
+
+  /// A very faint off-white used for list rows on top of a white sheet
+  /// (e.g. the course picker's rows) — distinct from [surfaceMuted].
+  static const Color surfaceFaint = Color(0xFFFAFBFF);
 
   /// Background for the neutral circular back-button chip.
   static const Color chipBackground = Color(0xFFF1F3FA);
@@ -75,7 +86,8 @@ class AppColors {
   static const Color strengthTrackEmpty = Color(0xFFEEF0FF);
 
   // Home & Courses (Phase 1 handoff).
-  /// Home's page background — slightly lighter than the auth screens' [background].
+  /// Home's page background (`#F7F8FD` in the Phase 1 design) — a hair off
+  /// white, unlike the auth screens' pure-white [background].
   static const Color homeBackground = Color(0xFFF7F8FD);
 
   /// The dot inside the points badge in the Home greeting.

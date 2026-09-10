@@ -74,20 +74,24 @@ class _CoursePickerSheetState extends State<_CoursePickerSheet> {
                 width: 44,
                 height: 5,
                 decoration: BoxDecoration(
-                  color: AppColors.borderDefault,
+                  color: AppColors.borderLight,
                   borderRadius: BorderRadius.circular(999),
                 ),
               ),
             ),
             const SizedBox(height: 14),
-            Text(
+            const Text(
               'Choose a course',
-              style: AppTypography.screenTitleCompact.copyWith(fontSize: 22),
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+                color: AppColors.navy,
+              ),
             ),
             const SizedBox(height: 3),
             Text(
               '$kindLabel · pick the subject to study',
-              style: AppTypography.subtitle,
+              style: AppTypography.subtitle.copyWith(fontSize: 13),
             ),
             const SizedBox(height: 14),
             FutureBuilder<List<Course>>(
@@ -119,6 +123,11 @@ class _CoursePickerSheetState extends State<_CoursePickerSheet> {
                       ),
                       const SizedBox(height: 10),
                     ],
+                    Text(
+                      'Next step: pick chapters, difficulty and question count.',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.subtitle.copyWith(fontSize: 12),
+                    ),
                   ],
                 );
               },
@@ -148,7 +157,7 @@ class _CourseRow extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: AppColors.surfaceMuted,
+          color: AppColors.surfaceFaint,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: AppColors.cardTint, width: 2),
         ),
@@ -178,7 +187,11 @@ class _CourseRow extends StatelessWidget {
                 style: AppTypography.fieldLabel.copyWith(fontSize: 16),
               ),
             ),
-            const Icon(Icons.chevron_right, color: AppColors.textOnDisabled),
+            const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: AppColors.textOnDisabled,
+            ),
           ],
         ),
       ),

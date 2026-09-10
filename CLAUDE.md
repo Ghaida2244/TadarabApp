@@ -419,6 +419,69 @@ mark it done, note decisions made, note what starts next.)*
   Firestore's error message always includes a direct link to create the
   missing index if one is only discovered at runtime.
 
+  **Post-review correction:** a real gap was found in the first pass — a
+  student with zero courses (Frame 1, "new student") is a third, distinct
+  Home state, not just a variant of the Continue/Start card. It was in the
+  original mockup read but never surfaced as a state needing its own
+  scoping decision, unlike the Courses-tab frames, which were flagged as
+  deferred on purpose. Fixed: zero courses now shows *only* the greeting +
+  onboarding card (`NewStudentOnboardingCard`) — no Today's Progress, no
+  streak row, no Upcoming section, no points badge — matching the mockup's
+  Frame 1 exactly; all of that only renders once the student has at least
+  one course. Frame 1's other two sub-states ("course created, now upload
+  material" / "AI reading material") stay deferred — they depend on the
+  Courses/upload flow itself.
+
+  Also did a full precision pass against the raw `.dc.html` (hex colors,
+  font sizes/weights, letter-spacing, shadows, radii, button heights) after
+  it was flagged that some values had drifted from the source: fixed several
+  font sizes that were defaulting to a shared text style's size instead of
+  the mockup's actual value (e.g. 12px where the mockup wants 13px/14px),
+  a `letterSpacing` meant for a 26px headline bleeding into smaller reused
+  text, button heights that don't actually match one fixed value per variant
+  across the app (56px on auth screens vs. 52px/58px on Home — `AppButton`
+  now takes `height`/`borderRadius`/`borderColor`/`shadowColor` overrides),
+  a hardcoded-navy button that should have been red, a missing footer
+  caption in the course picker, and an `outlinedBrand` shadow that was fully
+  opaque instead of the mockup's ~50% alpha. Also built a real dashed-border
+  painter (`lib/widgets/dashed_border.dart`) for the streak row's
+  empty/locked day cells — Flutter has no built-in dashed border, and a
+  solid one would have been a visible approximation, not a match.
+  Confirmed with the team: the streak row's TODAY cell only fills solid
+  white once it has activity (a dashed bright-white outline before that,
+  not filled), and a past day with zero activity uses the same dim
+  dashed style as a locked future day (no mockup example either way,
+  reasoned from the closest analogous state).
+
+  **Font — now bundled, not fetched.** The running app was rendering in the
+  system font (Roboto), not Nunito. Cause: `google_fonts` fetches font
+  files over the network on first launch and *silently falls back to the
+  system font* when offline — and nothing was bundled. Fix: dropped the
+  `google_fonts` package entirely and bundled `assets/fonts/
+  Nunito-VariableFont_wght.ttf` (one variable-weight file, full charset,
+  SIL OFL — `OFL.txt` alongside it) via pubspec `fonts:`. `app_theme.dart`
+  and `app_typography.dart` now use plain `TextStyle(fontFamily: 'Nunito')`
+  / `ThemeData(fontFamily: 'Nunito')`; every screen's text (including the
+  auth screens' `RichText` footer spans, whose root span carries an
+  `AppTypography` style) resolves to Nunito with no network dependency.
+  Design-file provenance, verified for the audit: the auth screens
+  (Welcome/Login/Create Account/Forgot Password/Check Your Email) are built
+  from `Tadarab Phase 0 - Auth.dc.html` only — 56px buttons, white frame
+  backgrounds, no Phase-1 strings leaked in; the Home screen is built from
+  `design_handoff_phase1/Tadarab Phase 1 - Home & Courses.dc.html` only —
+  52/58px buttons, `#F7F8FD` background. No mixing between the two files.
+
+  **Auth screen background — now pure white.** All five auth screens were
+  inheriting the theme's `scaffoldBackgroundColor` (`AppColors.background`,
+  then `#F0F1F7` — which is actually the Phase 0 file's *design canvas*
+  colour, not a screen background). Every auth frame in that file is
+  `background:#FFFFFF`. `AppColors.background` is now `#FFFFFF` (its only
+  consumer is the theme default); Home keeps its own `homeBackground`
+  (`#F7F8FD`). Covered by `test/theme/app_theme_test.dart` (font asset
+  loads, theme + every `AppTypography` style is Nunito, bare `TextStyle`
+  inherits it, default scaffold bg is white) and a WelcomeScreen bg test.
+  89 tests, 0 failures.
+
   Remaining for Phase B: the Courses tab itself (add/list/delete courses),
   deferred along with the rest of the Phase 1 design handoff.
 - **Phase C — Feature split:** not started

@@ -53,13 +53,17 @@ class ContinueOrStartCard extends StatelessWidget {
               children: [
                 Text(
                   'Pick up where you left off',
-                  style: AppTypography.fieldLabel.copyWith(
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
                     color: AppColors.errorBannerBody,
                   ),
                 ),
                 Text(
                   '${session.currentIndex}/${session.total}',
-                  style: AppTypography.fieldLabel.copyWith(
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
                     color: AppColors.errorBannerBody,
                   ),
                 ),
@@ -68,7 +72,12 @@ class ContinueOrStartCard extends StatelessWidget {
             const SizedBox(height: 14),
             Text(
               '${session.courseName} — $kindLabel',
-              style: AppTypography.screenTitleCompact.copyWith(fontSize: 20),
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                height: 1.2,
+                color: AppColors.navy,
+              ),
             ),
             const SizedBox(height: 14),
             ClipRRect(
@@ -86,6 +95,7 @@ class ContinueOrStartCard extends StatelessWidget {
             AppButton(
               label: 'Resume',
               variant: AppButtonVariant.accent,
+              height: 52,
               onPressed: onResume,
             ),
           ],
@@ -108,16 +118,23 @@ class ContinueOrStartCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             'Nothing in progress',
-            style: AppTypography.fieldLabel.copyWith(
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
               color: AppColors.textSecondary,
             ),
           ),
           const SizedBox(height: 8),
-          Text(
+          const Text(
             'Start a new session',
-            style: AppTypography.screenTitleCompact.copyWith(fontSize: 20),
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              height: 1.25,
+              color: AppColors.navy,
+            ),
           ),
           const SizedBox(height: 14),
           Row(
@@ -126,6 +143,7 @@ class ContinueOrStartCard extends StatelessWidget {
                 child: AppButton(
                   label: 'New quiz',
                   variant: AppButtonVariant.accent,
+                  height: 52,
                   onPressed: onNewQuiz,
                 ),
               ),
@@ -134,6 +152,9 @@ class ContinueOrStartCard extends StatelessWidget {
                 child: AppButton(
                   label: 'Flashcards',
                   variant: AppButtonVariant.outlinedBrand,
+                  height: 52,
+                  borderColor: AppColors.borderLight,
+                  shadowColor: AppColors.navy.withValues(alpha: 0.1),
                   onPressed: onFlashcards,
                 ),
               ),

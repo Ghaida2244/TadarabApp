@@ -7,6 +7,7 @@ import '../../theme/app_theme.dart';
 import '../placeholder_screen.dart';
 import 'widgets/continue_or_start_card.dart';
 import 'widgets/course_picker_sheet.dart';
+import 'widgets/new_student_onboarding_card.dart';
 import 'widgets/today_progress_card.dart';
 import 'widgets/upcoming_section.dart';
 
@@ -91,12 +92,23 @@ class _HomeTab extends StatefulWidget {
 }
 
 class _HomeTabState extends State<_HomeTab> {
+  late final Future<List<Course>> _courses = widget.dataService.fetchCourses(
+    widget.uid,
+  );
   late final Future<WeeklyProgress> _weeklyProgress = widget.dataService
       .fetchWeeklyProgress(widget.uid, now: widget.now);
   late final Future<InProgressSession?> _inProgress = widget.dataService
       .fetchInProgressSession(widget.uid);
   late final Future<List<UpcomingEventView>> _upcoming = widget.dataService
       .fetchUpcomingEvents(widget.uid, now: widget.now);
+
+  void _openAddCoursePlaceholder() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const PlaceholderScreen(label: 'Add Course screen'),
+      ),
+    );
+  }
 
   void _openSetupPlaceholder(SessionKind kind) {
     final label = kind == SessionKind.quiz
@@ -143,75 +155,91 @@ class _HomeTabState extends State<_HomeTab> {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: Column(
-        children: [
-          StreamBuilder<Student?>(
-            stream: widget.dataService.watchStudent(widget.uid),
-            builder: (context, snapshot) =>
-                _Greeting(student: snapshot.data, now: widget.now),
-          ),
-          Expanded(
-            child: FutureBuilder(
-              future: Future.wait([_weeklyProgress, _inProgress, _upcoming]),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        'Could not load your progress. Pull down to try again.',
-                        style: AppTypography.subtitle,
-                      ),
-                    ),
-                  );
-                }
-                final results = snapshot.data!;
-                final weeklyProgress = results[0] as WeeklyProgress;
-                final inProgress = results[1] as InProgressSession?;
-                final upcoming = results[2] as List<UpcomingEventView>;
+      child: FutureBuilder(
+        future: Future.wait([
+          _courses,
+          _weeklyProgress,
+          _inProgress,
+          _upcoming,
+        ]),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Could not load your progress. Pull down to try again.',
+                  style: AppTypography.subtitle,
+                ),
+              ),
+            );
+          }
+          final results = snapshot.data!;
+          final courses = results[0] as List<Course>;
+          final weeklyProgress = results[1] as WeeklyProgress;
+          final inProgress = results[2] as InProgressSession?;
+          final upcoming = results[3] as List<UpcomingEventView>;
 
-                return StreamBuilder<Student?>(
-                  stream: widget.dataService.watchStudent(widget.uid),
-                  builder: (context, studentSnapshot) {
-                    final streak = studentSnapshot.data?.currentStreak ?? 0;
-                    return SingleChildScrollView(
+          return StreamBuilder<Student?>(
+            stream: widget.dataService.watchStudent(widget.uid),
+            builder: (context, studentSnapshot) {
+              final student = studentSnapshot.data;
+              // Frame 1 vs Frames 2/2b: a student with zero courses gets the
+              // onboarding-only layout — no Today's Progress, no streak, no
+              // Upcoming, and no points badge in the greeting. All of that
+              // only makes sense once there's at least one course.
+              final hasCourses = courses.isNotEmpty;
+
+              return Column(
+                children: [
+                  _Greeting(
+                    student: student,
+                    now: widget.now,
+                    showPointsBadge: hasCourses,
+                  ),
+                  Expanded(
+                    child: SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                      child: Column(
-                        children: [
-                          TodayProgressCard(
-                            weeklyProgress: weeklyProgress,
-                            currentStreak: streak,
-                            now: widget.now,
-                          ),
-                          const SizedBox(height: 16),
-                          ContinueOrStartCard(
-                            inProgress: inProgress,
-                            onResume: inProgress == null
-                                ? () {}
-                                : () => _resumeSession(inProgress),
-                            onNewQuiz: () =>
-                                _openCoursePicker(SessionKind.quiz),
-                            onFlashcards: () =>
-                                _openCoursePicker(SessionKind.flashcard),
-                          ),
-                          const SizedBox(height: 16),
-                          UpcomingSection(
-                            events: upcoming,
-                            now: widget.now,
-                            onSeeAll: _openCalendarTab,
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
+                      child: hasCourses
+                          ? Column(
+                              children: [
+                                TodayProgressCard(
+                                  weeklyProgress: weeklyProgress,
+                                  currentStreak: student?.currentStreak ?? 0,
+                                  now: widget.now,
+                                ),
+                                const SizedBox(height: 16),
+                                ContinueOrStartCard(
+                                  inProgress: inProgress,
+                                  onResume: inProgress == null
+                                      ? () {}
+                                      : () => _resumeSession(inProgress),
+                                  onNewQuiz: () =>
+                                      _openCoursePicker(SessionKind.quiz),
+                                  onFlashcards: () =>
+                                      _openCoursePicker(SessionKind.flashcard),
+                                ),
+                                const SizedBox(height: 16),
+                                UpcomingSection(
+                                  events: upcoming,
+                                  now: widget.now,
+                                  onSeeAll: _openCalendarTab,
+                                ),
+                              ],
+                            )
+                          : NewStudentOnboardingCard(
+                              onCreateFirstCourse: _openAddCoursePlaceholder,
+                            ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -224,10 +252,15 @@ String _greetingFor(DateTime now) {
 }
 
 class _Greeting extends StatelessWidget {
-  const _Greeting({required this.student, required this.now});
+  const _Greeting({
+    required this.student,
+    required this.now,
+    required this.showPointsBadge,
+  });
 
   final Student? student;
   final DateTime now;
+  final bool showPointsBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -250,13 +283,19 @@ class _Greeting extends StatelessWidget {
               ),
               Text(
                 name,
-                style: AppTypography.screenTitleCompact.copyWith(fontSize: 26),
+                style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.02 * 26,
+                  height: 1.1,
+                  color: AppColors.navy,
+                ),
               ),
             ],
           ),
           Row(
             children: [
-              if (student != null) ...[
+              if (showPointsBadge && student != null) ...[
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
@@ -279,8 +318,9 @@ class _Greeting extends StatelessWidget {
                       const SizedBox(width: 6),
                       Text(
                         '${student!.totalPoints}',
-                        style: AppTypography.fieldLabel.copyWith(
+                        style: const TextStyle(
                           fontSize: 13,
+                          fontWeight: FontWeight.w900,
                           color: AppColors.warningText,
                         ),
                       ),
@@ -299,7 +339,11 @@ class _Greeting extends StatelessWidget {
                 ),
                 child: Text(
                   initial,
-                  style: AppTypography.fieldLabel.copyWith(fontSize: 17),
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.navy,
+                  ),
                 ),
               ),
             ],

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../services/home_data_service.dart';
 import '../../../services/streak_service.dart' show dateOnly;
 import '../../../theme/app_theme.dart';
+import '../../../widgets/dashed_border.dart';
 
 const _dayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -41,7 +42,9 @@ class TodayProgressCard extends StatelessWidget {
           Text(
             "Today's progress",
             textAlign: TextAlign.center,
-            style: AppTypography.helper.copyWith(
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
               color: Colors.white.withValues(alpha: 0.7),
             ),
           ),
@@ -76,7 +79,9 @@ class TodayProgressCard extends StatelessWidget {
                   children: [
                     Text(
                       '$currentStreak-day streak',
-                      style: AppTypography.fieldLabel.copyWith(
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
                         color: Colors.white,
                       ),
                     ),
@@ -99,7 +104,6 @@ class TodayProgressCard extends StatelessWidget {
                           label: _dayLabels[i],
                           day: weeklyProgress.days[i],
                           isToday: weeklyProgress.days[i].date == today,
-                          isFuture: weeklyProgress.days[i].date.isAfter(today),
                         ),
                       ),
                     ],
@@ -147,56 +151,67 @@ class _TodayStat extends StatelessWidget {
   }
 }
 
+/// One day's cell in the streak row. Three visual states, matching the two
+/// example frames precisely (confirmed with the team rather than assumed):
+/// - Has data (today or a past day): filled — white+navy for today, red+white otherwise.
+/// - Today with no data yet: not filled — a *bright* solid-white dashed
+///   outline and full-white label, distinct from a locked day.
+/// - No data and not today (a past miss, or a future/locked day): a *dim*
+///   dashed outline (30% white) and dimmed label (40% white).
 class _DayCell extends StatelessWidget {
   const _DayCell({
     required this.label,
     required this.day,
     required this.isToday,
-    required this.isFuture,
   });
 
   final String label;
   final DailyStudyCount day;
   final bool isToday;
-  final bool isFuture;
 
   bool get _hasData => day.combined > 0;
 
   @override
   Widget build(BuildContext context) {
-    final bool filled = isToday || _hasData;
+    final filled = _hasData;
+
+    Widget cell = Container(
+      height: 34,
+      width: double.infinity,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: filled
+            ? (isToday ? Colors.white : AppColors.red)
+            : Colors.white.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: filled
+          ? Text(
+              '${day.combined}',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: isToday ? AppColors.navy : Colors.white,
+              ),
+            )
+          : null,
+    );
+
+    if (!filled) {
+      cell = DashedRoundedBorder(
+        color: Colors.white.withValues(alpha: isToday ? 1 : 0.3),
+        borderRadius: 12,
+        child: cell,
+      );
+    }
+
+    final Color labelColor = filled
+        ? (isToday ? Colors.white : Colors.white.withValues(alpha: 0.6))
+        : Colors.white.withValues(alpha: isToday ? 1 : 0.4);
 
     return Column(
       children: [
-        Container(
-          height: 34,
-          width: double.infinity,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: isToday
-                ? Colors.white
-                : _hasData
-                ? AppColors.red
-                : Colors.white.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(12),
-            border: filled
-                ? null
-                : Border.all(
-                    color: Colors.white.withValues(alpha: isFuture ? 0.3 : 0.5),
-                    width: 2,
-                  ),
-          ),
-          child: filled
-              ? Text(
-                  '${day.combined}',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                    color: isToday ? AppColors.navy : Colors.white,
-                  ),
-                )
-              : null,
-        ),
+        cell,
         const SizedBox(height: 6),
         Text(
           label,
@@ -204,9 +219,7 @@ class _DayCell extends StatelessWidget {
             fontSize: 10,
             fontWeight: FontWeight.w900,
             letterSpacing: 0.04 * 10,
-            color: Colors.white.withValues(
-              alpha: isToday ? 1 : (isFuture ? 0.4 : 0.6),
-            ),
+            color: labelColor,
           ),
         ),
       ],
