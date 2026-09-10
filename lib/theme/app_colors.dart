@@ -73,4 +73,25 @@ class AppColors {
   static const Color strengthMedium = Color(0xFFE8A33D);
   static const Color strengthMediumText = Color(0xFFB5720A);
   static const Color strengthTrackEmpty = Color(0xFFEEF0FF);
+
+  // Home & Courses (Phase 1 handoff).
+  /// Home's page background — slightly lighter than the auth screens' [background].
+  static const Color homeBackground = Color(0xFFF7F8FD);
+
+  /// The dot inside the points badge in the Home greeting.
+  static const Color pointsBadgeDot = Color(0xFFF5A524);
+
+  /// Card corner radius used throughout Home (course cards, progress card, etc).
+  static const Color cardTint = Color(0xFFEEF0FF);
+}
+
+/// Parses a "#RRGGBB" or "#AARRGGBB" hex string (as stored on Course/
+/// CalendarEvent) into a [Color]. Falls back to [AppColors.navy] for a
+/// malformed value rather than throwing, since this only ever feeds decor.
+Color parseHexColor(String hex) {
+  var value = hex.trim();
+  if (value.startsWith('#')) value = value.substring(1);
+  if (value.length == 6) value = 'FF$value';
+  final parsed = int.tryParse(value, radix: 16);
+  return parsed == null ? AppColors.navy : Color(parsed);
 }

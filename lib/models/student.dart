@@ -14,6 +14,8 @@ class Student {
     this.currentRank = 'Beginner Learner',
     this.reminderTime,
     this.reminderEnabled = false,
+    this.currentStreak = 0,
+    this.lastStudyDate,
   });
 
   /// Firebase Auth UID; also the Firestore document ID.
@@ -37,6 +39,19 @@ class Student {
   /// Whether the daily study reminder notification is turned on.
   final bool reminderEnabled;
 
+  /// Consecutive calendar days (local time) with at least one committed
+  /// study session, up to and including [lastStudyDate]. Not in the
+  /// Attributes Dictionary Table — an approved deviation (see
+  /// lib/services/streak_service.dart for how it's computed), same pattern
+  /// as the earlier StudyMaterial.document deviation. Independent of the
+  /// points system: never affects, and is never affected by, totalPoints.
+  final int currentStreak;
+
+  /// Calendar date (local time, time-of-day discarded) of the most recent
+  /// committed study session; null if the student has never completed one.
+  /// Paired with [currentStreak] — see lib/services/streak_service.dart.
+  final DateTime? lastStudyDate;
+
   factory Student.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data()!;
     return Student(
@@ -47,6 +62,8 @@ class Student {
       currentRank: data['currentRank'] as String? ?? 'Beginner Learner',
       reminderTime: data['reminderTime'] as String?,
       reminderEnabled: data['reminderEnabled'] as bool? ?? false,
+      currentStreak: (data['currentStreak'] as num?)?.toInt() ?? 0,
+      lastStudyDate: (data['lastStudyDate'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -58,6 +75,24 @@ class Student {
       'currentRank': currentRank,
       'reminderTime': reminderTime,
       'reminderEnabled': reminderEnabled,
+      'currentStreak': currentStreak,
+      'lastStudyDate': lastStudyDate == null
+          ? null
+          : Timestamp.fromDate(lastStudyDate!),
     };
+  }
+
+  Student copyWith({int? currentStreak, DateTime? lastStudyDate}) {
+    return Student(
+      uid: uid,
+      email: email,
+      name: name,
+      totalPoints: totalPoints,
+      currentRank: currentRank,
+      reminderTime: reminderTime,
+      reminderEnabled: reminderEnabled,
+      currentStreak: currentStreak ?? this.currentStreak,
+      lastStudyDate: lastStudyDate ?? this.lastStudyDate,
+    );
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'firebase_options.dart';
 import 'screens/auth/welcome_screen.dart';
+import 'screens/home/home_screen.dart';
 import 'services/auth_service.dart';
 import 'theme/app_theme.dart';
 
@@ -90,10 +91,7 @@ class _FirebaseBootstrapState extends State<_FirebaseBootstrap> {
   }
 }
 
-/// Routes between signed-out (the auth flow) and signed-in. There's no Home
-/// screen yet — Home & Courses is a separate design handoff not built in
-/// this pass — so a signed-in student sees a temporary placeholder rather
-/// than nothing reachable after a successful login/create-account.
+/// Routes between signed-out (the auth flow) and signed-in.
 class _AuthGate extends StatelessWidget {
   const _AuthGate();
 
@@ -110,36 +108,11 @@ class _AuthGate extends StatelessWidget {
         }
         final user = snapshot.data;
         if (user == null) return const WelcomeScreen();
-        return _SignedInPlaceholder(
-          email: user.email ?? '',
+        return HomeScreen(
+          uid: user.uid,
           onSignOut: () => authService.signOut(),
         );
       },
-    );
-  }
-}
-
-class _SignedInPlaceholder extends StatelessWidget {
-  const _SignedInPlaceholder({required this.email, required this.onSignOut});
-
-  final String email;
-  final VoidCallback onSignOut;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Signed in as $email'),
-            const SizedBox(height: 12),
-            const Text('Home screen coming in the next design handoff.'),
-            const SizedBox(height: 20),
-            ElevatedButton(onPressed: onSignOut, child: const Text('Log out')),
-          ],
-        ),
-      ),
     );
   }
 }

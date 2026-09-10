@@ -366,12 +366,66 @@ mark it done, note decisions made, note what starts next.)*
   rendered "Password is required" (the empty/non-empty branch only ever
   showed the hint or the strength bar); Check Your Email's cooldown showed
   the invalid "0:60" at the very first frame (now formats minutes properly).
-  Remaining for Phase B: the Home & Courses screens (a separate design
-  handoff, not yet started).
+
+  Home screen done next (Phase 1 design handoff, frames 1/2/2b — the Courses
+  tab frames are deferred): greeting with real name, Today's Progress card
+  with the study streak weekly row, Continue-or-Start card, Upcoming
+  section, and the Home/Courses/Calendar/Profile bottom nav (the latter
+  three are placeholder screens — Phase C). Two new `Student` fields, an
+  approved deviation from the Attributes Dictionary Table (same pattern as
+  `StudyMaterial.document`): `currentStreak` and `lastStudyDate`. Streak
+  rules, confirmed with the team: entirely independent of week boundaries
+  and of the points system; breaks only when a full local-calendar day
+  passes with zero committed study activity; no minimum activity count to
+  keep it alive; a session's activity is attributed to its `completedAt`
+  date only (no new per-question/per-flashcard timestamps) and, once
+  committed, is permanent — deleting the session afterward doesn't undo it.
+  The write side (`StreakService.recordStudyActivity`) has no caller yet —
+  nothing creates or completes a session until Phase C's Quiz/Flashcard
+  generation exists — so it's built and fully unit-tested but unreachable in
+  the running app today, same as the Resume-session flow and the course
+  picker's course-selected action (both wired to placeholder screens ready
+  for Phase C to swap in). `HomeDataService` follows the same injectable
+  pattern as `AuthService`, so every Home state is covered by widget tests
+  with fake data. 77 tests total now (0 failures) — see `test/services/` and
+  `test/screens/home_screen_test.dart`. Writing the bottom-nav widget test
+  caught a real layout bug that would have broken the running app, not just
+  the test: the nav item's `Column` had no `mainAxisSize: MainAxisSize.min`,
+  so it defaulted to `.max` and silently claimed nearly the entire screen
+  height, squeezing the actual Home content down to zero height (invisible
+  and untappable, though still "rendering" via overflow).
+
+  **Post-merge fix:** on-device testing with a real fresh account
+  ("student1") showed Home stuck on "Could not load your progress." Root
+  cause confirmed by reproducing `HomeDataService`'s exact queries against
+  the live project via the Firestore REST API (same method as Phase A's
+  rules verification): `fetchWeeklyProgress` and `fetchInProgressSession`
+  both filter `quizSessions`/`flashcardSessions` on `isSessionCompleted`
+  while also range-filtering or ordering by a *different* field
+  (`completedAt` / `createdAt`) — Firestore requires a composite index for
+  that combination, and none existed, so both queries failed with
+  `FAILED_PRECONDITION` even on an empty collection (a fresh account with
+  zero sessions still hits this — it's a query-shape problem, not a data
+  problem). The student doc read and the `events` query (a same-field
+  range+orderBy, which Firestore auto-indexes) were both unaffected, which
+  is why the name/points/nav rendered fine while progress didn't. Added
+  `firestore.indexes.json` (4 composite indexes: `quizSessions` and
+  `flashcardSessions`, each on `(isSessionCompleted, completedAt)` and
+  `(isSessionCompleted, createdAt)`), wired it into `firebase.json`, and
+  deployed with `firebase deploy --only firestore:indexes`. Re-verified the
+  same three queries against the live project after the index finished
+  building — all return 200 now. Any future query that filters on one field
+  while ordering/range-filtering on another will need the same treatment —
+  Firestore's error message always includes a direct link to create the
+  missing index if one is only discovered at runtime.
+
+  Remaining for Phase B: the Courses tab itself (add/list/delete courses),
+  deferred along with the rest of the Phase 1 design handoff.
 - **Phase C — Feature split:** not started
 
 ## Design handoffs
 
 - `docs/mockups/android-study-app-redesign/` — Phase 0 (Auth: Welcome, Log
   In, Create Account, Forgot Password) is implemented. Phase 1 (Home &
-  Courses) is in the same bundle but not yet built.
+  Courses) is in the same bundle: the Home frames (1, 2, 2b) are
+  implemented; the Courses-tab frames (3+) are not yet built.
