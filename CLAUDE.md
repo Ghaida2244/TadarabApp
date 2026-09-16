@@ -484,7 +484,88 @@ mark it done, note decisions made, note what starts next.)*
 
   Remaining for Phase B: the Courses tab itself (add/list/delete courses),
   deferred along with the rest of the Phase 1 design handoff.
-- **Phase C — Feature split:** not started
+- **Phase C — Feature split:** in progress.
+  - **Calendar (`feature/calendar-points`):** done. `CalendarEvent` already
+    existed from Phase A and the required model accuracy audit found
+    **10/10 fields matching** `docs/Attributes Dictionary Table.png` with
+    nothing missing or added, so no model change was needed — the only
+    deviations are the two already-approved project-wide patterns (string
+    document IDs rather than INT, and `#`-prefixed hex colours).
+    No `firestore.rules` change either: the existing owner-scoped rule
+    already covers `users/{uid}/events/{eventId}`.
+
+    Built `lib/utils/event_time.dart` (month-grid construction, `"HH:mm"`
+    ↔ `TimeOfDay` ↔ `"12:00 PM"`, reminder lead-time arithmetic) and
+    `lib/services/calendar_service.dart`, injectable like `AuthService`/
+    `HomeDataService`. `CalendarService.addEvent` returns the new document
+    ID rather than a filled-in `CalendarEvent`, specifically so it needs no
+    `copyWith` on the model — model classes are shared files frozen after
+    Phase B, and the ID is all any caller needs. The month query is a
+    single-field range plus order-by on that same field, which Firestore
+    auto-indexes; this deliberately avoids the two-field shape that forced
+    the composite indexes added for Home in Phase B.
+
+    Screens: the Calendar tab (month grid, red today marker, a colour dot
+    per event, day-details bottom sheet, centred delete confirmation) and
+    Add Event (name, optional course, four-preset colour picker replaced by
+    the course-colour chip once a course is chosen, date/time pickers,
+    reminder toggle with amount + singular/plural unit). Add Event's fields
+    are built locally rather than with `AppTextField`, whose leading-icon
+    layout doesn't match these boxes.
+
+    Design decisions confirmed with the team: the Calendar tab is grid-only
+    — the Upcoming Events list belongs on Home, and an earlier mockup
+    showing it on Calendar was a bad reference, since corrected; dots render
+    on **every** day with events including today and past days (the mockups'
+    "Midterm — Today" vs. Midterm-on-May-5 disagreement was an inconsistency
+    between figures, not a rule); and the reminder unit is pluralised by
+    amount, with the amount in its own field so the dropdown shows the unit
+    word alone.
+
+    Reminders use `flutter_local_notifications` + `timezone`, with
+    `POST_NOTIFICATIONS`/`RECEIVE_BOOT_COMPLETED` and the plugin's receivers
+    added to `AndroidManifest.xml` so a scheduled reminder survives a
+    reboot. Scheduling is best-effort and never throws — an event must still
+    save even when its reminder can't be set — and reports success via its
+    return value instead. `AndroidScheduleMode.inexactAllowWhileIdle` is
+    used so the app doesn't need the `SCHEDULE_EXACT_ALARM` special-access
+    grant; a reminder may therefore fire a little late if the device is
+    dozing. **Not yet verified on a physical device** — the notification
+    plugin has no implementation under `flutter test`, so the scheduling
+    path is covered only by a fake.
+
+    Home wiring turned out to be much smaller than scoped:
+    `HomeDataService.fetchUpcomingEvents` and `UpcomingSection` were already
+    reading real events (they were simply always empty, because nothing
+    created events), so neither was rebuilt. What was needed: point the
+    Calendar tab and "See all" at the real screen, and re-read Home's
+    Upcoming after an event is added or deleted — `_HomeTab`'s futures were
+    `late final`, so they could never refresh. Tabs in the shell are now
+    built lazily: `IndexedStack` builds every child eagerly, which
+    subscribed the Calendar to Firestore the moment Home mounted, for a tab
+    the student may never open.
+
+    26 unit tests + 29 widget tests added; **144 tests total, 0 failures**,
+    `flutter analyze` clean. Two harness notes for whoever writes the next
+    screen: the Add Event tests set a 600x1600 surface because the form is
+    taller than the 800x600 default *and* the Material time picker's OK
+    button overflows a phone-width surface and becomes untappable; and
+    `tester.ensureVisible` does not reliably scroll this
+    `Column > Expanded > SingleChildScrollView` layout.
+
+    **Build break fixed on the way in.** `main` did not compile: commit
+    `7084fe4` renamed `ContinueOrStartCard.onFlashcards` to `onNewFlashcards`
+    and retitled two of its buttons, but missed the call site in
+    `home_screen.dart` and the tests tapping those buttons. Anything that
+    renames a widget parameter should be checked with `flutter analyze`
+    before the PR — the tests can't catch it, because a compile error stops
+    them from running at all.
+
+    Still to do on this branch: Points/Ranks and Profile (`05_ranks.png`,
+    `06_profile.png` were removed from the mockups folder as out of scope
+    for Calendar and need to be re-added when that work starts).
+  - **Courses & Material upload, Quiz generation & Sessions, Flashcards &
+    Sessions:** not started.
 
 ## Design handoffs
 
