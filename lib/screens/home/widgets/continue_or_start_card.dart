@@ -18,13 +18,13 @@ class ContinueOrStartCard extends StatelessWidget {
     required this.inProgress,
     required this.onResume,
     required this.onNewQuiz,
-    required this.onFlashcards,
+    required this.onNewFlashcards,
   });
 
   final InProgressSession? inProgress;
   final VoidCallback onResume;
   final VoidCallback onNewQuiz;
-  final VoidCallback onFlashcards;
+  final VoidCallback onNewFlashcards;
 
   @override
   Widget build(BuildContext context) {
@@ -141,7 +141,7 @@ class ContinueOrStartCard extends StatelessWidget {
             children: [
               Expanded(
                 child: AppButton(
-                  label: 'New quiz',
+                  label: 'New Quiz',
                   variant: AppButtonVariant.accent,
                   height: 52,
                   onPressed: onNewQuiz,
@@ -150,12 +150,12 @@ class ContinueOrStartCard extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: AppButton(
-                  label: 'Flashcards',
+                  label: 'New Flashcards',
                   variant: AppButtonVariant.outlinedBrand,
                   height: 52,
                   borderColor: AppColors.borderLight,
                   shadowColor: AppColors.navy.withValues(alpha: 0.1),
-                  onPressed: onFlashcards,
+                  onPressed: onNewFlashcards,
                 ),
               ),
             ],

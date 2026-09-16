@@ -191,7 +191,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 22),
               AppButton(
                 label: 'Log In',
-                loadingLabel: 'Signing in…',
+                loadingLabel: 'logging in…',
                 loading: _loading,
                 onPressed: _submit,
               ),
