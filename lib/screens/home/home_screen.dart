@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../models/course.dart';
 import '../../models/student.dart';
+import '../../services/calendar_service.dart';
 import '../../services/home_data_service.dart';
 import '../../theme/app_theme.dart';
+import '../calendar/calendar_screen.dart';
 import '../placeholder_screen.dart';
 import 'widgets/continue_or_start_card.dart';
 import 'widgets/course_picker_sheet.dart';
@@ -19,6 +21,7 @@ class HomeScreen extends StatefulWidget {
     super.key,
     required this.uid,
     this.homeDataService,
+    this.calendarService,
     this.now,
     this.onSignOut,
   });
@@ -27,6 +30,9 @@ class HomeScreen extends StatefulWidget {
 
   /// Overridable for tests; defaults to the real Firebase-backed service.
   final HomeDataService? homeDataService;
+
+  /// Overridable for tests; passed straight to the Calendar tab.
+  final CalendarService? calendarService;
 
   /// Overridable for tests, so "today"/greeting/streak-row highlighting is deterministic.
   final DateTime? now;
@@ -43,7 +49,29 @@ class _HomeScreenState extends State<HomeScreen> {
   late final _dataService = widget.homeDataService ?? HomeDataService();
   int _tabIndex = 0;
 
+  /// Bumped whenever the Calendar adds or deletes an event, so the Home tab
+  /// re-reads its Upcoming section instead of showing a stale list when the
+  /// student switches back to it.
+  int _homeRefreshToken = 0;
+
+  /// Tabs the student has actually opened. [IndexedStack] builds every child
+  /// eagerly, which would subscribe the Calendar to Firestore the moment
+  /// Home mounted — so unvisited tabs render as an empty placeholder until
+  /// they're first selected.
+  final Set<int> _visitedTabs = {0};
+
   DateTime get _now => widget.now ?? DateTime.now();
+
+  void _selectTab(int index) {
+    setState(() {
+      _tabIndex = index;
+      _visitedTabs.add(index);
+    });
+  }
+
+  /// [child] once its tab has been opened, an empty box before that.
+  Widget _lazyTab(int index, Widget Function() child) =>
+      _visitedTabs.contains(index) ? child() : const SizedBox.shrink();
 
   @override
   Widget build(BuildContext context) {
@@ -52,9 +80,24 @@ class _HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(
         index: _tabIndex,
         children: [
-          _HomeTab(uid: widget.uid, dataService: _dataService, now: _now),
+          _HomeTab(
+            uid: widget.uid,
+            dataService: _dataService,
+            now: _now,
+            refreshToken: _homeRefreshToken,
+            onOpenCalendarTab: () => _selectTab(2),
+          ),
           const PlaceholderScreen(label: 'Courses screen'),
-          const PlaceholderScreen(label: 'Calendar screen'),
+          _lazyTab(
+            2,
+            () => CalendarScreen(
+              uid: widget.uid,
+              calendarService: widget.calendarService,
+              homeDataService: _dataService,
+              now: _now,
+              onEventsChanged: () => setState(() => _homeRefreshToken++),
+            ),
+          ),
           PlaceholderScreen(
             label: 'Profile screen',
             actions: widget.onSignOut == null
@@ -70,7 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       bottomNavigationBar: _BottomNav(
         currentIndex: _tabIndex,
-        onTap: (index) => setState(() => _tabIndex = index),
+        onTap: _selectTab,
       ),
     );
   }
@@ -81,26 +124,58 @@ class _HomeTab extends StatefulWidget {
     required this.uid,
     required this.dataService,
     required this.now,
+    required this.refreshToken,
+    required this.onOpenCalendarTab,
   });
 
   final String uid;
   final HomeDataService dataService;
   final DateTime now;
 
+  /// Changes whenever something outside this tab (today, only the Calendar)
+  /// has altered data Home shows, prompting a re-read.
+  final int refreshToken;
+
+  final VoidCallback onOpenCalendarTab;
+
   @override
   State<_HomeTab> createState() => _HomeTabState();
 }
 
 class _HomeTabState extends State<_HomeTab> {
-  late final Future<List<Course>> _courses = widget.dataService.fetchCourses(
-    widget.uid,
-  );
-  late final Future<WeeklyProgress> _weeklyProgress = widget.dataService
-      .fetchWeeklyProgress(widget.uid, now: widget.now);
-  late final Future<InProgressSession?> _inProgress = widget.dataService
-      .fetchInProgressSession(widget.uid);
-  late final Future<List<UpcomingEventView>> _upcoming = widget.dataService
-      .fetchUpcomingEvents(widget.uid, now: widget.now);
+  // Not `late final`: these are re-issued on refresh, so Home can't keep
+  // showing an Upcoming list from before an event was added or deleted.
+  late Future<List<Course>> _courses;
+  late Future<WeeklyProgress> _weeklyProgress;
+  late Future<InProgressSession?> _inProgress;
+  late Future<List<UpcomingEventView>> _upcoming;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_HomeTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshToken != widget.refreshToken) {
+      setState(_load);
+    }
+  }
+
+  void _load() {
+    _courses = widget.dataService.fetchCourses(widget.uid);
+    _weeklyProgress = widget.dataService.fetchWeeklyProgress(
+      widget.uid,
+      now: widget.now,
+    );
+    _inProgress = widget.dataService.fetchInProgressSession(widget.uid);
+    _upcoming = widget.dataService.fetchUpcomingEvents(
+      widget.uid,
+      now: widget.now,
+    );
+  }
 
   void _openAddCoursePlaceholder() {
     Navigator.of(context).push(
@@ -142,14 +217,9 @@ class _HomeTabState extends State<_HomeTab> {
   }
 
   void _openCalendarTab() {
-    // The bottom-nav Calendar tab isn't reachable from here without lifting
-    // tab state up; "See all" is a reasonable no-op-with-navigation stand-in
-    // until Calendar (Phase C) exists to actually navigate to.
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const PlaceholderScreen(label: 'Calendar screen'),
-      ),
-    );
+    // Switches the bottom nav to the real Calendar tab (tab state lives in
+    // the shell above), rather than pushing a second Calendar over Home.
+    widget.onOpenCalendarTab();
   }
 
   @override

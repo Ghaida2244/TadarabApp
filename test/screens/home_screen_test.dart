@@ -6,6 +6,7 @@ import 'package:tadarab_app/models/student.dart';
 import 'package:tadarab_app/screens/home/home_screen.dart';
 import 'package:tadarab_app/services/home_data_service.dart';
 
+import '../helpers/fake_calendar_service.dart';
 import '../helpers/fake_home_data_service.dart';
 
 void main() {
@@ -18,6 +19,7 @@ void main() {
   Future<void> pumpHome(
     WidgetTester tester, {
     FakeHomeDataService? dataService,
+    FakeCalendarService? calendarService,
     VoidCallback? onSignOut,
   }) async {
     await tester.pumpWidget(
@@ -25,6 +27,9 @@ void main() {
         home: HomeScreen(
           uid: 'uid-1',
           homeDataService: dataService ?? FakeHomeDataService(),
+          // The Calendar tab is a real screen now, so it needs a fake
+          // service for the moment a test actually opens that tab.
+          calendarService: calendarService ?? FakeCalendarService(),
           now: now,
           onSignOut: onSignOut,
         ),
@@ -318,7 +323,7 @@ void main() {
 
   group('bottom navigation', () {
     testWidgets(
-      'switches between Home, Courses, Calendar and Profile placeholders',
+      'switches between Home, Courses, the real Calendar, and Profile',
       (tester) async {
         // courses: [aCourse] so returning to Home shows Today's Progress
         // (this test is about tab-switching, not which Home state renders).
@@ -333,7 +338,10 @@ void main() {
 
         await tester.tap(find.text('Calendar'));
         await tester.pumpAndSettle();
-        expect(find.text('Calendar screen'), findsOneWidget);
+        // The real Calendar tab, not a placeholder: its month title and
+        // Add Event action are what prove the right screen is mounted.
+        expect(find.text('+ Add Event'), findsOneWidget);
+        expect(find.text('March 2026'), findsOneWidget);
 
         await tester.tap(find.text('Profile'));
         await tester.pumpAndSettle();
