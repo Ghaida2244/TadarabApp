@@ -13,11 +13,11 @@ explaining every Flutter/Dart concept from scratch unless asked. Do keep
 comments in the code (see "Code style" below), since this is also feeding
 into a course SRS/documentation deliverable.
 
-**Team members** *(fill in before Phase C — see "Feature split" below):*
-- Member A: ____________
-- Member B: ____________
-- Member C: ____________
-- Member D: ____________
+**Team members** *(see "Feature split" below for who owns which vertical):*
+- Manar
+- Ghaida
+- Deemah
+- Leen
 
 **Work is done in three phases, in this order:**
 1. **Phase A — Shared backend.** Firebase (Auth + Firestore + Storage +
@@ -302,14 +302,14 @@ once during Phase A; every generation call in the app goes through it.
 - Pull, don't assume: rebase/merge `main` into your feature branch regularly
   so your PR doesn't arrive with a huge, stale diff.
 
-## Feature split (fill in once the team decides)
+## Feature split
 
 | Member | Feature | Branch |
 |---|---|---|
-| ______ | Courses & Material upload | `feature/courses` |
-| ______ | Quiz generation & Sessions | `feature/quiz-sessions` |
-| ______ | Flashcards & Sessions | `feature/flashcards` |
-| ______ | Calendar & Points/Ranks & Profile | `feature/calendar-points` |
+| Manar | Courses & Material upload | `feature/courses` |
+| Ghaida | Quiz generation & Sessions | `feature/quiz-sessions` |
+| Deemah | Flashcards & Sessions | `feature/flashcards` |
+| Leen | Calendar & Points/Ranks & Profile | `feature/calendar-points` |
 
 ---
 
@@ -342,9 +342,55 @@ mark it done, note decisions made, note what starts next.)*
   into separate `allow read` / `allow write` rules). Scaffolded the
   Cloudflare Worker in `worker/` (Firebase ID token verification via Google's
   JWKS + Claude proxy at `POST /generate`); `wrangler deploy --dry-run`
-  compiles cleanly. Not yet deployed — needs the Anthropic API key (not
-  obtained yet) and an interactive `wrangler login` from a team member; see
-  `worker/README.md`.
+  compiles cleanly. See `worker/README.md`.
+
+  **Deployed.** `ANTHROPIC_API_KEY` set via `wrangler secret put`; live at
+  `https://tadarab-ai-worker.tadarab.workers.dev`. Verified against the live
+  deployment with a real test account (created and deleted via the Identity
+  Toolkit REST API, same method as the Firestore/Storage rules
+  verification): no `Authorization` header → 401; unknown route → 404; a
+  valid token with a body missing `"type"` → 400 with the *new* validation
+  message (`"type" must be one of quiz, flashcard`), not the old Phase-A
+  stub's "missing prompt" — confirming the deployed code is the real
+  `quiz_flashcard_generation_spec.md` implementation, not a stale build.
+  Did not send an actual generation request through to Claude (would spend
+  real API credits without being asked) — that's still unverified against
+  the live model and has no real caller yet (Phase C).
+
+  **`POST /generate` implemented for real**, per `quiz_flashcard_generation_spec.md`
+  at the project root (that file is the source of truth — this is a summary,
+  not a replacement). `worker/src/generation.js` holds the pure logic
+  (`worker/src/index.js` is just the HTTP handler around it): builds the
+  exact prompt template from the spec (content/wording/difficulty/
+  distribution/options-or-backtext/explanation/multi-material/student-
+  instruction rules, substituted per request); forces structured output via
+  Tool Use with a strict schema (quiz: `questionText`/`options`(exactly 4)/
+  `correctAnswer`/`explanation`/`sourceLocation`/`difficulty`; flashcard:
+  `frontText`/`backText`/`sourceLocation`/`difficulty` — no options/
+  correctAnswer at all) — never a plain-text "return JSON" instruction;
+  model is pinned to `claude-haiku-4-5-20251001`, not the default/latest;
+  `max_tokens` is dynamic (`500 + count×350` quiz / `500 + count×200`
+  flashcard) capped at that model's actual max output (64,000 — confirmed
+  against Anthropic's docs at implementation time, not assumed); quiz
+  option order is shuffled (Fisher-Yates) in Worker code after Claude
+  responds, never left to Claude to randomize itself; `customPrompt` is
+  capped at 300 characters server-side as a backup to the (separate)
+  Flutter-side `maxLength`, since a client-only check is bypassable.
+  `difficulty` accepts a single level or a list. The upload-time
+  empty/corrupted-file rejection the spec calls out (`extractedText` coming
+  back empty) is the Courses/upload feature's responsibility, not the
+  Worker's — noted for whoever builds that.
+
+  31 unit tests on the pure logic (`worker/test/generation.test.js`, run via
+  `npm test` — `vitest` added as a worker devDependency), 0 failures:
+  prompt building for both types (verified section-by-section, including
+  that quiz never gets the flashcard-only sections and vice versa),
+  multi-difficulty and multi-material substitution, the `max_tokens`
+  cap actually clamping, `customPrompt` at exactly 300 vs. 301 characters,
+  and shuffle preserving the same 4 options (just reordered) with
+  `correctAnswer` untouched. The HTTP handler itself isn't covered by these
+  (no real caller exists yet — Phase C's Quiz/Flashcard generation UI isn't
+  built); `wrangler deploy --dry-run` still compiles cleanly.
 - **Phase B — Shared UI:** in progress. Auth screens done (Welcome, Log In,
   Create Account, Forgot Password, Check Your Email), built from the
   `docs/mockups/android-study-app-redesign` Phase 0 design handoff. Built a
@@ -482,13 +528,15 @@ mark it done, note decisions made, note what starts next.)*
   inherits it, default scaffold bg is white) and a WelcomeScreen bg test.
   89 tests, 0 failures.
 
-  Remaining for Phase B: the Courses tab itself (add/list/delete courses),
-  deferred along with the rest of the Phase 1 design handoff.
+  Remaining for Phase B: none. The Courses tab is out of scope for Phase B —
+  it's Manar's Courses & Material upload feature (`feature/courses`, see
+  Feature split) in Phase C, for her to define once she starts it.
 - **Phase C — Feature split:** not started
 
 ## Design handoffs
 
 - `docs/mockups/android-study-app-redesign/` — Phase 0 (Auth: Welcome, Log
   In, Create Account, Forgot Password) is implemented. Phase 1 (Home &
-  Courses) is in the same bundle: the Home frames (1, 2, 2b) are
-  implemented; the Courses-tab frames (3+) are not yet built.
+  Courses) is in the same bundle: the Home frames are implemented. The
+  Courses-tab frames are Manar's Courses & Material upload feature
+  (`feature/courses`, see Feature split) — not yet built, and hers to scope.
