@@ -104,7 +104,7 @@ void main() {
       await tester.tap(find.text('Log In'));
       await tester.pump();
 
-      expect(find.text('Signing in…'), findsOneWidget);
+      expect(find.text('logging in…'), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
       expect(fake.signInCalls, 1);
 

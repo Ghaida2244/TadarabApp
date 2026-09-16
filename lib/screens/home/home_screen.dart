@@ -219,7 +219,7 @@ class _HomeTabState extends State<_HomeTab> {
                                       : () => _resumeSession(inProgress),
                                   onNewQuiz: () =>
                                       _openCoursePicker(SessionKind.quiz),
-                                  onFlashcards: () =>
+                                  onNewFlashcards: () =>
                                       _openCoursePicker(SessionKind.flashcard),
                                 ),
                                 const SizedBox(height: 16),
