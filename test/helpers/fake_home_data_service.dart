@@ -29,6 +29,7 @@ class FakeHomeDataService extends HomeDataService {
   final List<UpcomingEventView> upcomingEvents;
 
   int fetchCoursesCalls = 0;
+  int fetchUpcomingEventsCalls = 0;
 
   @override
   String? get currentUid => student?.uid;
@@ -57,5 +58,8 @@ class FakeHomeDataService extends HomeDataService {
     String uid, {
     DateTime? now,
     int limit = 5,
-  }) async => upcomingEvents;
+  }) async {
+    fetchUpcomingEventsCalls++;
+    return upcomingEvents;
+  }
 }

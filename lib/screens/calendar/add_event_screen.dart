@@ -245,6 +245,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
                   _FieldBox(
                     errorText: _nameError,
                     child: TextField(
+                      key: const ValueKey('event-name'),
                       controller: _nameController,
                       enabled: !_saving,
                       style: AppTypography.fieldInput.copyWith(fontSize: 16),
@@ -739,6 +740,7 @@ class _ReminderAmountRow extends StatelessWidget {
         children: [
           Expanded(
             child: TextField(
+              key: const ValueKey('reminder-amount'),
               controller: controller,
               keyboardType: TextInputType.number,
               style: AppTypography.fieldInput.copyWith(fontSize: 16),
@@ -753,6 +755,7 @@ class _ReminderAmountRow extends StatelessWidget {
             button: true,
             label: 'Reminder unit',
             child: GestureDetector(
+              key: const ValueKey('reminder-unit'),
               onTap: onUnitTap,
               behavior: HitTestBehavior.opaque,
               child: Row(

@@ -354,6 +354,44 @@ void main() {
     );
 
     testWidgets(
+      'deleting an event on the Calendar tab refreshes Home\'s Upcoming list',
+      (tester) async {
+        // Home's Upcoming section reads real events, so it must re-read
+        // after the Calendar changes them rather than showing a stale list.
+        final dataService = FakeHomeDataService(courses: [aCourse]);
+        final calendarService = FakeCalendarService(
+          events: [
+            CalendarEvent(
+              eventId: 'e9',
+              eventName: 'Midterm',
+              eventDate: DateTime(2026, 3, 14),
+              eventTime: '12:00',
+              email: 'e@x.com',
+            ),
+          ],
+        );
+        await pumpHome(
+          tester,
+          dataService: dataService,
+          calendarService: calendarService,
+        );
+        final before = dataService.fetchUpcomingEventsCalls;
+
+        await tester.tap(find.text('Calendar'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('14'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byIcon(Icons.delete_outline));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Delete'));
+        await tester.pumpAndSettle();
+
+        expect(calendarService.deletedEventIds, ['e9']);
+        expect(dataService.fetchUpcomingEventsCalls, greaterThan(before));
+      },
+    );
+
+    testWidgets(
       'Profile placeholder shows a working Log out button when onSignOut is provided',
       (tester) async {
         var signedOut = false;

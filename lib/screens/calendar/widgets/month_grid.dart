@@ -155,6 +155,7 @@ class _DayCell extends StatelessWidget {
                   // the cell and break the column alignment.
                   for (final event in events.take(3))
                     Padding(
+                      key: ValueKey('day-dot-${event.eventId}'),
                       padding: const EdgeInsets.symmetric(horizontal: 2),
                       child: Container(
                         width: 6,
