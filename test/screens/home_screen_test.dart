@@ -286,7 +286,7 @@ void main() {
             dataService: FakeHomeDataService(courses: [aCourse]),
           );
 
-          await tester.tap(find.text('New quiz'));
+          await tester.tap(find.text('New Quiz'));
           await tester.pumpAndSettle();
           expect(find.text('IS230'), findsOneWidget);
 
@@ -305,7 +305,7 @@ void main() {
           dataService: FakeHomeDataService(courses: [aCourse]),
         );
 
-        await tester.tap(find.text('Flashcards'));
+        await tester.tap(find.text('New Flashcards'));
         await tester.pumpAndSettle();
 
         expect(
