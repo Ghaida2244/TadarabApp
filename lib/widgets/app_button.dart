@@ -20,6 +20,10 @@ class AppButton extends StatefulWidget {
     this.variant = AppButtonVariant.primary,
     this.loading = false,
     this.loadingLabel,
+    this.height,
+    this.borderRadius,
+    this.borderColor,
+    this.shadowColor,
   });
 
   final String label;
@@ -32,6 +36,22 @@ class AppButton extends StatefulWidget {
 
   /// Label shown while [loading] is true, e.g. "Signing in…". Defaults to [label].
   final String? loadingLabel;
+
+  /// Overrides the variant's default height. Button height isn't fixed per
+  /// variant across the app — the same [AppButtonVariant.accent] is 56px on
+  /// auth screens but 52px (Resume, New quiz) or 58px (Create my first
+  /// course) on Home — so callers set the exact mockup value explicitly.
+  final double? height;
+
+  /// Overrides the default 16px corner radius (e.g. Home's "Create my
+  /// first course" is 18px).
+  final double? borderRadius;
+
+  /// Overrides the variant's default border color (outlined variants only).
+  final Color? borderColor;
+
+  /// Overrides the variant's default shadow color.
+  final Color? shadowColor;
 
   @override
   State<AppButton> createState() => _AppButtonState();
@@ -48,14 +68,18 @@ class _AppButtonState extends State<AppButton> {
         widget.variant == AppButtonVariant.outlinedBrand ||
         widget.variant == AppButtonVariant.outlinedNeutral;
     final double height =
-        outlined && widget.variant == AppButtonVariant.outlinedNeutral
-        ? AppDimens.secondaryButtonHeight
-        : AppDimens.buttonHeight;
+        widget.height ??
+        (outlined && widget.variant == AppButtonVariant.outlinedNeutral
+            ? AppDimens.secondaryButtonHeight
+            : AppDimens.buttonHeight);
 
-    final _ButtonColors colors = _colorsFor(
-      widget.variant,
-      loading: widget.loading,
-    );
+    var colors = _colorsFor(widget.variant, loading: widget.loading);
+    if (widget.borderColor != null) {
+      colors = colors.copyWithBorder(widget.borderColor);
+    }
+    if (widget.shadowColor != null) {
+      colors = colors.copyWithShadow(widget.shadowColor);
+    }
     final double shadowOffset = colors.hasShadow ? (_pressed ? 1 : 3) : 0;
 
     return GestureDetector(
@@ -75,7 +99,9 @@ class _AppButtonState extends State<AppButton> {
         height: height,
         decoration: BoxDecoration(
           color: colors.background,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderRadius: BorderRadius.circular(
+            widget.borderRadius ?? AppRadius.lg,
+          ),
           border: colors.border != null
               ? Border.all(color: colors.border!, width: 2)
               : null,
@@ -145,10 +171,11 @@ class _AppButtonState extends State<AppButton> {
           text: Colors.white,
         );
       case AppButtonVariant.outlinedBrand:
+        // #0B0F5B80 in the mockup — navy at ~50% alpha (hex 0x80/0xFF), not opaque.
         return _ButtonColors(
           background: Colors.white,
           border: AppColors.navy,
-          shadow: AppColors.navy,
+          shadow: AppColors.navy.withValues(alpha: 0x80 / 0xFF),
           text: AppColors.navy,
         );
       case AppButtonVariant.outlinedNeutral:
@@ -175,4 +202,18 @@ class _ButtonColors {
   final Color text;
 
   bool get hasShadow => shadow != null;
+
+  _ButtonColors copyWithBorder(Color? border) => _ButtonColors(
+    background: background,
+    border: border,
+    shadow: shadow,
+    text: text,
+  );
+
+  _ButtonColors copyWithShadow(Color? shadow) => _ButtonColors(
+    background: background,
+    border: border,
+    shadow: shadow,
+    text: text,
+  );
 }

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'app_colors.dart';
 
 /// Text styles built on Nunito (the design handoff's font), at the weights
 /// and sizes actually used across the mockup frames. Named by role rather
 /// than size, so screens describe intent ("fieldLabel") not pixels.
+///
+/// Nunito is bundled as a font asset (see pubspec `fonts:`), so it renders
+/// offline and on first launch — it is *not* fetched at runtime.
 class AppTypography {
   AppTypography._();
 
@@ -16,7 +18,8 @@ class AppTypography {
     double? letterSpacing,
     double? height,
   }) {
-    return GoogleFonts.nunito(
+    return TextStyle(
+      fontFamily: 'Nunito',
       fontSize: size,
       fontWeight: weight,
       color: color ?? AppColors.navy,

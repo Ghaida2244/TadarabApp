@@ -50,4 +50,28 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('the screen background is pure white (Phase 0 design)', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(theme: AppTheme.themeData, home: const WelcomeScreen()),
+    );
+
+    // No per-screen override — it takes the (now white) theme default.
+    expect(
+      tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
+      isNull,
+    );
+
+    final bodyMaterial = tester.widget<Material>(
+      find
+          .descendant(
+            of: find.byType(Scaffold),
+            matching: find.byType(Material),
+          )
+          .first,
+    );
+    expect(bodyMaterial.color, const Color(0xFFFFFFFF));
+  });
 }

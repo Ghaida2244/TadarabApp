@@ -21,11 +21,18 @@ class AppColors {
   static const Color redShadow = Color(0xFFA8141B);
 
   // Neutrals (navy tinted, per the design system).
-  /// Page background.
-  static const Color background = Color(0xFFF0F1F7);
+  /// Default screen background — pure white, matching every auth-screen
+  /// frame in the Phase 0 design (`background:#FFFFFF`). Home overrides this
+  /// with its own [homeBackground]. (The Phase 0 file's `#F0F1F7` is the
+  /// design canvas *around* the phone frames, not a screen background.)
+  static const Color background = Color(0xFFFFFFFF);
 
   /// Default (unfocused, empty, non-error) field border.
   static const Color borderDefault = Color(0xFFE2E6F5);
+
+  /// The lighter grey outline used on Home's secondary buttons (e.g. the
+  /// "Flashcards" button) — close to but distinct from [borderDefault].
+  static const Color borderLight = Color(0xFFDDE1F0);
 
   /// Placeholder text / inactive icon color inside fields.
   static const Color placeholder = Color(0xFF9AA0C4);
@@ -41,6 +48,10 @@ class AppColors {
 
   /// Background for disabled fields and skeleton-like surfaces.
   static const Color surfaceMuted = Color(0xFFF7F8FD);
+
+  /// A very faint off-white used for list rows on top of a white sheet
+  /// (e.g. the course picker's rows) — distinct from [surfaceMuted].
+  static const Color surfaceFaint = Color(0xFFFAFBFF);
 
   /// Background for the neutral circular back-button chip.
   static const Color chipBackground = Color(0xFFF1F3FA);
@@ -73,4 +84,26 @@ class AppColors {
   static const Color strengthMedium = Color(0xFFE8A33D);
   static const Color strengthMediumText = Color(0xFFB5720A);
   static const Color strengthTrackEmpty = Color(0xFFEEF0FF);
+
+  // Home & Courses (Phase 1 handoff).
+  /// Home's page background (`#F7F8FD` in the Phase 1 design) — a hair off
+  /// white, unlike the auth screens' pure-white [background].
+  static const Color homeBackground = Color(0xFFF7F8FD);
+
+  /// The dot inside the points badge in the Home greeting.
+  static const Color pointsBadgeDot = Color(0xFFF5A524);
+
+  /// Card corner radius used throughout Home (course cards, progress card, etc).
+  static const Color cardTint = Color(0xFFEEF0FF);
+}
+
+/// Parses a "#RRGGBB" or "#AARRGGBB" hex string (as stored on Course/
+/// CalendarEvent) into a [Color]. Falls back to [AppColors.navy] for a
+/// malformed value rather than throwing, since this only ever feeds decor.
+Color parseHexColor(String hex) {
+  var value = hex.trim();
+  if (value.startsWith('#')) value = value.substring(1);
+  if (value.length == 6) value = 'FF$value';
+  final parsed = int.tryParse(value, radix: 16);
+  return parsed == null ? AppColors.navy : Color(parsed);
 }

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'app_colors.dart';
 
@@ -15,6 +14,9 @@ export 'app_typography.dart';
 class AppTheme {
   AppTheme._();
 
+  /// The one font family name, bundled via pubspec (see `fonts:` there).
+  static const String fontFamily = 'Nunito';
+
   static ThemeData get themeData {
     final base = ThemeData(
       colorScheme: ColorScheme.fromSeed(
@@ -23,11 +25,11 @@ class AppTheme {
         error: AppColors.error,
       ),
       scaffoldBackgroundColor: AppColors.background,
-      fontFamily: GoogleFonts.nunito().fontFamily,
+      fontFamily: fontFamily,
       useMaterial3: true,
     );
     return base.copyWith(
-      textTheme: GoogleFonts.nunitoTextTheme(base.textTheme),
+      textTheme: base.textTheme.apply(fontFamily: fontFamily),
       splashFactory: NoSplash.splashFactory,
     );
   }

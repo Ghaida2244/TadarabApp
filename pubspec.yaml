@@ -38,7 +38,6 @@ dependencies:
   firebase_auth: ^6.6.1
   cloud_firestore: ^6.9.0
   firebase_storage: ^13.5.0
-  google_fonts: ^8.2.1
 
 dev_dependencies:
   flutter_test:
@@ -69,6 +68,15 @@ flutter:
 
   assets:
     - assets/images/tadarab_logo.png
+
+  # Nunito is bundled (not fetched at runtime via google_fonts) so the app
+  # renders in the design's font offline and on first launch — google_fonts
+  # silently falls back to the system font when it can't reach the network.
+  # One variable-weight file; Flutter maps FontWeight onto its `wght` axis.
+  fonts:
+    - family: Nunito
+      fonts:
+        - asset: assets/fonts/Nunito-VariableFont_wght.ttf
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
