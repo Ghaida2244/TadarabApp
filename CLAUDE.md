@@ -147,12 +147,16 @@ fields added that aren't in the table (with reason). Report this comparison
 *before* fixing mismatches — don't silently correct them.
 
 **Grounding requirement for generated content** — every question/flashcard
-must cite the exact excerpt/location it came from; after generation, verify
-the cited excerpt actually appears in the material's extracted text before
-showing it, discard/regenerate if not; include a "Report this question"
-option in the UI as a fallback; if the material can't support the requested
-count, generate as many good ones as it supports and tell the student —
-never pad with low-quality or off-topic items.
+must cite the location it came from (`sourceLocation`). Free phrasing of the
+question/answer text itself is allowed (superseding this rule's earlier,
+stricter wording) — the check is that `sourceLocation` points to a real
+location tag that actually exists in the source text (e.g. "Slide 5"), not a
+literal text match of the generated content against the source. Verify this
+after generation, discard/regenerate if the tag isn't real; include a
+"Report this question" option in the UI as a fallback (flag + store is
+enough — no admin review flow required); if the material can't support the
+requested count, generate as many good ones as it supports and tell the
+student — never pad with low-quality or off-topic items.
 
 ### Non-functional requirements
 

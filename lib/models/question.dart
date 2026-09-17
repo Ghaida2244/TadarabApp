@@ -18,6 +18,7 @@ class Question {
     this.studentAnswer,
     required this.options,
     required this.sessionId,
+    this.isReported = false,
   });
 
   /// Firestore document ID.
@@ -44,6 +45,12 @@ class Question {
   /// Owning quiz session's ID (foreign key to QuizSession).
   final String sessionId;
 
+  /// Whether the student flagged this question via "Report this question".
+  /// Not in the Attributes Dictionary Table — an approved deviation: a
+  /// minimal flag-and-store fallback per CLAUDE.md's grounding requirement,
+  /// with no admin review flow built (out of scope for now).
+  final bool isReported;
+
   /// Whether the student's answer was correct. Computed, not stored — see
   /// class doc comment. Null if the student hasn't answered yet.
   bool? get isCorrect =>
@@ -60,6 +67,7 @@ class Question {
       studentAnswer: data['studentAnswer'] as String?,
       options: List<String>.from(data['options'] as List? ?? const []),
       sessionId: data['sessionId'] as String,
+      isReported: data['isReported'] as bool? ?? false,
     );
   }
 
@@ -72,6 +80,24 @@ class Question {
       'studentAnswer': studentAnswer,
       'options': options,
       'sessionId': sessionId,
+      'isReported': isReported,
     };
+  }
+
+  /// Returns a copy with [studentAnswer] set/replaced — used when the
+  /// student answers this question, or when the setup's answers are
+  /// restored from a resumed session.
+  Question copyWith({String? studentAnswer, bool? isReported}) {
+    return Question(
+      questionId: questionId,
+      questionText: questionText,
+      correctAnswer: correctAnswer,
+      explanation: explanation,
+      sourceLocation: sourceLocation,
+      studentAnswer: studentAnswer ?? this.studentAnswer,
+      options: options,
+      sessionId: sessionId,
+      isReported: isReported ?? this.isReported,
+    );
   }
 }
