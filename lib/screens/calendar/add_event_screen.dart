@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/calendar_event.dart';
 import '../../models/course.dart';
@@ -11,6 +12,26 @@ import '../../utils/event_time.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_error_banner.dart';
 import '../../widgets/dashed_border.dart';
+import 'widgets/event_date_picker_sheet.dart';
+import 'widgets/event_time_picker_sheet.dart';
+
+/// Maximum length of an event name — `eventName` is VARCHAR(100) in the SRS
+/// Attributes Dictionary Table.
+const int kEventNameMaxLength = 100;
+
+/// Shown under the reminder row when the chosen lead time has already
+/// passed, so the reminder could never fire.
+const kReminderPassedMessage =
+    'This reminder time has already passed. Choose a shorter reminder or turn it off.';
+
+/// Shown after saving when the student declined notification permission.
+const kReminderPermissionDeniedMessage =
+    "Event saved, but its reminder couldn't be set because notifications are "
+    'turned off for Tadarab.';
+
+/// Shown after saving when the platform refused to schedule the reminder.
+const kReminderNotScheduledMessage =
+    "Event saved, but its reminder couldn't be set.";
 
 /// The four preset event colors offered when no course is selected
 /// (05_add_event_no_course.png). Green is first and pre-selected, and is
@@ -77,6 +98,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
   String? _nameError;
   String? _dateError;
   String? _timeError;
+  String? _reminderError;
 
   DateTime get _now => widget.now ?? DateTime.now();
 
@@ -93,31 +115,32 @@ class _AddEventScreenState extends State<AddEventScreen> {
   }
 
   Future<void> _pickDate() async {
-    final seed = _selectedDate ?? widget.initialDate ?? _now;
-    final picked = await showDatePicker(
+    // Past dates stay selectable (the picker applies no lower bound): a
+    // calendar is as much a record of what happened as a plan.
+    final picked = await showEventDatePicker(
       context: context,
-      initialDate: seed,
-      // A calendar is as much a record of what happened as a plan, so past
-      // dates stay selectable rather than being clamped to today.
-      firstDate: DateTime(_now.year - 5),
-      lastDate: DateTime(_now.year + 5, 12, 31),
+      initialDate: _selectedDate ?? widget.initialDate ?? _now,
+      today: _now,
+      selectedDate: _selectedDate,
     );
     if (picked == null) return;
     setState(() {
       _selectedDate = picked;
       _dateError = null;
+      _reminderError = null;
     });
   }
 
   Future<void> _pickTime() async {
-    final picked = await showTimePicker(
+    final picked = await showEventTimePicker(
       context: context,
-      initialTime: _selectedTime ?? const TimeOfDay(hour: 12, minute: 0),
+      initialTime: _selectedTime,
     );
     if (picked == null) return;
     setState(() {
       _selectedTime = picked;
       _timeError = null;
+      _reminderError = null;
     });
   }
 
@@ -145,7 +168,10 @@ class _AddEventScreenState extends State<AddEventScreen> {
         amount: _reminderAmount,
         onSelected: (unit) {
           Navigator.of(sheetContext).pop();
-          setState(() => _reminderUnit = unit);
+          setState(() {
+            _reminderUnit = unit;
+            _reminderError = null;
+          });
         },
       ),
     );
@@ -166,10 +192,9 @@ class _AddEventScreenState extends State<AddEventScreen> {
       _nameError = name.isEmpty ? 'Event name is required' : null;
       _dateError = _selectedDate == null ? 'Pick a date for this event' : null;
       _timeError = _selectedTime == null ? 'Pick a time for this event' : null;
+      _reminderError = null;
     });
     if (_nameError != null || _dateError != null || _timeError != null) return;
-
-    setState(() => _saving = true);
 
     final event = CalendarEvent(
       // Replaced by the Firestore-assigned ID on the way back out; the
@@ -186,32 +211,73 @@ class _AddEventScreenState extends State<AddEventScreen> {
       reminderBefore: _reminderEnabled ? _reminderAmount : null,
       reminderUnit: _reminderEnabled ? _reminderUnit : null,
       color: _effectiveColor,
+      // Filled in from the signed-in student by CalendarService.addEvent;
+      // this screen has no access to the student's email.
       email: '',
       courseId: _selectedCourse?.courseId,
     );
 
+    // A reminder whose fire time has already passed can never be delivered.
+    // Say so on the form rather than saving it and silently skipping it, so
+    // the student can shorten the lead time or turn the reminder off.
+    if (reminderAlreadyPassed(event, _now)) {
+      setState(() => _reminderError = kReminderPassedMessage);
+      return;
+    }
+
+    setState(() => _saving = true);
+
+    // Asked before writing, so Android's permission dialog appears over the
+    // form the student is looking at rather than after the screen closes.
+    // On Android 13+ a reminder can't be shown at all without it.
+    final notificationsAllowed = _reminderEnabled
+        ? await _scheduler.requestPermission()
+        : true;
+
     try {
       final eventId = await widget.calendarService.addEvent(widget.uid, event);
+
+      // The event is saved at this point, so a reminder problem must not
+      // fail the save — but it must be reported, never skipped silently.
+      String? reminderNotice;
       if (_reminderEnabled) {
-        // Scheduling is best-effort: the event is already saved, so a
-        // refused or unschedulable reminder must not fail the save.
-        await _scheduler.scheduleReminder(
-          CalendarEvent(
-            eventId: eventId,
-            eventName: event.eventName,
-            eventDate: event.eventDate,
-            eventTime: event.eventTime,
-            reminderEnabled: event.reminderEnabled,
-            reminderBefore: event.reminderBefore,
-            reminderUnit: event.reminderUnit,
-            color: event.color,
-            email: event.email,
-            courseId: event.courseId,
+        if (!notificationsAllowed) {
+          reminderNotice = kReminderPermissionDeniedMessage;
+        } else {
+          final scheduled = await _scheduler.scheduleReminder(
+            CalendarEvent(
+              eventId: eventId,
+              eventName: event.eventName,
+              eventDate: event.eventDate,
+              eventTime: event.eventTime,
+              reminderEnabled: event.reminderEnabled,
+              reminderBefore: event.reminderBefore,
+              reminderUnit: event.reminderUnit,
+              color: event.color,
+              email: event.email,
+              courseId: event.courseId,
+            ),
+          );
+          if (!scheduled) reminderNotice = kReminderNotScheduledMessage;
+        }
+      }
+
+      if (!mounted) return;
+      // Captured before popping: the message is shown on the Calendar screen
+      // underneath, which is where the student lands.
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.of(context).pop(true);
+      if (reminderNotice != null) {
+        messenger.showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.navy,
+            content: Text(
+              reminderNotice,
+              style: AppTypography.button.copyWith(fontSize: 14),
+            ),
           ),
         );
       }
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
     } on CalendarFailure catch (failure) {
       if (!mounted) return;
       setState(() {
@@ -248,6 +314,9 @@ class _AddEventScreenState extends State<AddEventScreen> {
                       key: const ValueKey('event-name'),
                       controller: _nameController,
                       enabled: !_saving,
+                      inputFormatters: [
+                        LengthLimitingTextInputFormatter(kEventNameMaxLength),
+                      ],
                       style: AppTypography.fieldInput.copyWith(fontSize: 16),
                       decoration: InputDecoration(
                         border: InputBorder.none,
@@ -338,7 +407,9 @@ class _AddEventScreenState extends State<AddEventScreen> {
                         _reminderUnit,
                       ),
                       onUnitTap: _pickReminderUnit,
-                      onAmountChanged: () => setState(() {}),
+                      onAmountChanged: () =>
+                          setState(() => _reminderError = null),
+                      errorText: _reminderError,
                     ),
                   ],
                   const SizedBox(height: 26),
@@ -358,7 +429,10 @@ class _AddEventScreenState extends State<AddEventScreen> {
   }
 
   void _onReminderToggled(bool value) {
-    setState(() => _reminderEnabled = value);
+    setState(() {
+      _reminderEnabled = value;
+      _reminderError = null;
+    });
   }
 
   Future<void> _pickCustomColor() async {
@@ -726,6 +800,7 @@ class _ReminderAmountRow extends StatelessWidget {
     required this.unitLabel,
     required this.onUnitTap,
     required this.onAmountChanged,
+    this.errorText,
   });
 
   final TextEditingController controller;
@@ -733,9 +808,13 @@ class _ReminderAmountRow extends StatelessWidget {
   final VoidCallback onUnitTap;
   final VoidCallback onAmountChanged;
 
+  /// Shown under the row, e.g. when the reminder's lead time has passed.
+  final String? errorText;
+
   @override
   Widget build(BuildContext context) {
     return _FieldBox(
+      errorText: errorText,
       child: Row(
         children: [
           Expanded(

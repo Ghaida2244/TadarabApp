@@ -6,6 +6,15 @@ import 'package:timezone/timezone.dart' as tz;
 import '../models/calendar_event.dart';
 import '../utils/event_time.dart';
 
+/// Notification title for every event reminder, exactly as SRS Figure 107
+/// shows it. Deliberately generic rather than the event's name: the same
+/// text is used for all events, per the SRS.
+const kEventReminderTitle = 'Event Reminder';
+
+/// Notification body for every event reminder, exactly as SRS Figure 107
+/// shows it.
+const kEventReminderBody = "Don't forget your upcoming event.";
+
 /// Schedules and cancels the local notification for a calendar event's
 /// reminder.
 ///
@@ -66,6 +75,8 @@ class ReminderScheduler {
   /// Asks for the Android 13+ POST_NOTIFICATIONS permission. Returns false
   /// if the student declines or the platform call fails.
   Future<bool> requestPermission() async {
+    await init();
+    if (!_initialized) return false;
     try {
       final android = _plugin
           .resolvePlatformSpecificImplementation<
@@ -97,8 +108,8 @@ class ReminderScheduler {
     try {
       await _plugin.zonedSchedule(
         id: notificationIdFor(event.eventId),
-        title: event.eventName,
-        body: 'Starts at ${formatStoredTimeForDisplay(event.eventTime)}.',
+        title: kEventReminderTitle,
+        body: kEventReminderBody,
         scheduledDate: scheduled,
         notificationDetails: const NotificationDetails(
           android: _androidDetails,

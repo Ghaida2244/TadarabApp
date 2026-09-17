@@ -5,20 +5,31 @@ import 'package:tadarab_app/services/reminder_scheduler.dart';
 /// schedule instead of touching the notifications plugin (which has no
 /// implementation under `flutter test`).
 class FakeReminderScheduler extends ReminderScheduler {
-  FakeReminderScheduler({this.scheduleResult = true});
+  FakeReminderScheduler({
+    this.scheduleResult = true,
+    this.permissionGranted = true,
+  });
 
   /// What [scheduleReminder] reports back — false simulates a reminder the
   /// platform refused or that was already in the past.
   final bool scheduleResult;
 
+  /// What [requestPermission] reports back — false simulates the student
+  /// declining Android's notification permission dialog.
+  final bool permissionGranted;
+
   final List<CalendarEvent> scheduled = [];
   final List<String> cancelled = [];
+  int permissionRequests = 0;
 
   @override
   Future<void> init() async {}
 
   @override
-  Future<bool> requestPermission() async => true;
+  Future<bool> requestPermission() async {
+    permissionRequests++;
+    return permissionGranted;
+  }
 
   @override
   Future<bool> scheduleReminder(CalendarEvent event) async {

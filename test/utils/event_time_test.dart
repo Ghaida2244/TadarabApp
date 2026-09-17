@@ -303,4 +303,107 @@ void main() {
       expect(groupEventsByDay([]), isEmpty);
     });
   });
+
+  group('timeOfDayFrom12Hour', () {
+    test('converts ordinary AM and PM hours', () {
+      expect(
+        timeOfDayFrom12Hour(hour12: 9, minute: 30, isPm: false),
+        const TimeOfDay(hour: 9, minute: 30),
+      );
+      expect(
+        timeOfDayFrom12Hour(hour12: 3, minute: 45, isPm: true),
+        const TimeOfDay(hour: 15, minute: 45),
+      );
+    });
+
+    test('maps 12 AM to midnight and 12 PM to noon', () {
+      // The trap: adding 12 for PM would make noon hour 24, and leaving
+      // 12 AM alone would make midnight hour 12.
+      expect(
+        timeOfDayFrom12Hour(hour12: 12, minute: 0, isPm: false),
+        const TimeOfDay(hour: 0, minute: 0),
+      );
+      expect(
+        timeOfDayFrom12Hour(hour12: 12, minute: 0, isPm: true),
+        const TimeOfDay(hour: 12, minute: 0),
+      );
+    });
+
+    test('returns null for an hour or minute out of range', () {
+      expect(timeOfDayFrom12Hour(hour12: 0, minute: 0, isPm: false), isNull);
+      expect(timeOfDayFrom12Hour(hour12: 13, minute: 0, isPm: true), isNull);
+      expect(timeOfDayFrom12Hour(hour12: 5, minute: 60, isPm: false), isNull);
+      expect(timeOfDayFrom12Hour(hour12: 5, minute: -1, isPm: false), isNull);
+    });
+  });
+
+  group('reminderAlreadyPassed', () {
+    final now = DateTime(2026, 5, 3, 9, 0);
+
+    test('is false when the fire time is still ahead', () {
+      // Event May 5 12:00, reminder 1 day before -> fires May 4 12:00.
+      expect(
+        reminderAlreadyPassed(
+          event(
+            date: DateTime(2026, 5, 5),
+            reminderEnabled: true,
+            reminderBefore: 1,
+            reminderUnit: ReminderUnit.days,
+          ),
+          now,
+        ),
+        isFalse,
+      );
+    });
+
+    test('is true for a future event whose lead time has already passed', () {
+      // The event itself is still ahead (today 10:00), but a 1-day
+      // reminder would have had to fire yesterday.
+      expect(
+        reminderAlreadyPassed(
+          event(
+            date: DateTime(2026, 5, 3),
+            time: '10:00',
+            reminderEnabled: true,
+            reminderBefore: 1,
+            reminderUnit: ReminderUnit.days,
+          ),
+          now,
+        ),
+        isTrue,
+      );
+    });
+
+    test('treats a fire time of exactly now as passed', () {
+      // Event 09:30 with a 30-minute reminder fires at 09:00 == now; it
+      // can't be scheduled for a moment that is already here.
+      expect(
+        reminderAlreadyPassed(
+          event(
+            date: DateTime(2026, 5, 3),
+            time: '09:30',
+            reminderEnabled: true,
+            reminderBefore: 30,
+            reminderUnit: ReminderUnit.minutes,
+          ),
+          now,
+        ),
+        isTrue,
+      );
+    });
+
+    test('is false when there is no usable reminder at all', () {
+      expect(
+        reminderAlreadyPassed(event(date: DateTime(2020, 1, 1)), now),
+        isFalse,
+      );
+      expect(
+        reminderAlreadyPassed(
+          event(date: DateTime(2020, 1, 1), reminderEnabled: true),
+          now,
+        ),
+        isFalse,
+      );
+    });
+  });
 }

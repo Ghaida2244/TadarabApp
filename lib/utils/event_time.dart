@@ -20,6 +20,18 @@ const List<String> kWeekdayHeaders = [
   'Sat',
 ];
 
+/// Two-letter weekday headers for the Add Event date picker sheet, which
+/// uses a narrower grid than the Calendar tab (Figure 98).
+const List<String> kWeekdayHeadersShort = [
+  'Su',
+  'Mo',
+  'Tu',
+  'We',
+  'Th',
+  'Fr',
+  'Sa',
+];
+
 /// Full month names used by the month title ("May 2026") and the
 /// event-details sheet heading ("May 14, 2026").
 const List<String> kMonthNames = [
@@ -86,6 +98,22 @@ String formatEventTimeForStorage(TimeOfDay time) =>
     '${time.hour.toString().padLeft(2, '0')}:'
     '${time.minute.toString().padLeft(2, '0')}';
 
+/// Converts the time picker's 12-hour selection into a [TimeOfDay].
+///
+/// 12 is the edge case both ways: 12 AM is midnight (hour 0) and 12 PM is
+/// noon (hour 12) — naively adding 12 for PM would turn noon into 24.
+/// Returns null for an hour outside 1–12 or a minute outside 0–59 rather
+/// than building an invalid time.
+TimeOfDay? timeOfDayFrom12Hour({
+  required int hour12,
+  required int minute,
+  required bool isPm,
+}) {
+  if (hour12 < 1 || hour12 > 12 || minute < 0 || minute > 59) return null;
+  final base = hour12 % 12; // 12 -> 0, so AM/PM can be added uniformly.
+  return TimeOfDay(hour: isPm ? base + 12 : base, minute: minute);
+}
+
 /// Formats a [TimeOfDay] for display as `"12:00 PM"`. Deliberately not
 /// locale-aware: every mockup frame shows 12-hour time with an uppercase
 /// meridiem, and the app is English-only.
@@ -145,6 +173,16 @@ DateTime? reminderFireTime(CalendarEvent event) {
   final unit = event.reminderUnit;
   if (amount == null || unit == null) return null;
   return eventDateTime(event).subtract(reminderLeadTime(amount, unit));
+}
+
+/// True when [event] has a usable reminder whose fire time is already at or
+/// before [now] — so it can never be delivered and must not be saved as if
+/// it will be. An event with no reminder (or an incomplete one) is not
+/// "passed"; there is simply nothing to schedule.
+bool reminderAlreadyPassed(CalendarEvent event, DateTime now) {
+  final fireTime = reminderFireTime(event);
+  if (fireTime == null) return false;
+  return !fireTime.isAfter(now);
 }
 
 /// Singular/plural unit label for the reminder row: "1 Day", "2 Days".

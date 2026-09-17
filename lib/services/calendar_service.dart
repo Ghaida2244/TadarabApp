@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/calendar_event.dart';
 import '../utils/event_time.dart';
+import 'reminder_scheduler.dart';
 
 /// A user-facing calendar failure. Like [AuthFailure], [message] is always
 /// safe to render directly, so screens never switch over Firestore codes.
@@ -21,6 +22,11 @@ const _saveFailureMessage =
     "Couldn't save your event. Check your connection and try again.";
 const _deleteFailureMessage =
     "Couldn't delete this event. Check your connection and try again.";
+const _deleteCourseEventsFailureMessage =
+    "Couldn't delete this course's events. Check your connection and try again.";
+
+/// Firestore caps a single batched write at 500 operations.
+const _maxBatchSize = 500;
 
 /// Firestore-backed calendar data, scoped to users/{uid}/events/{eventId}.
 /// Injectable (like [HomeDataService] and [AuthService]) so widget tests can
@@ -29,13 +35,26 @@ const _deleteFailureMessage =
 /// Every method wraps its Firestore call and rethrows a [CalendarFailure]
 /// with a readable message, per the NFR that no network call may fail
 /// silently or leave a frozen screen.
+///
+/// Deleting an event also cancels its scheduled reminder. That lives here,
+/// not in each screen, so that every delete path — including a course
+/// cascade triggered from another feature — keeps the invariant that a
+/// deleted event never sends a notification.
 class CalendarService {
-  CalendarService({FirebaseFirestore? firestore, FirebaseAuth? auth})
-    : _firestoreOverride = firestore,
-      _authOverride = auth;
+  CalendarService({
+    FirebaseFirestore? firestore,
+    FirebaseAuth? auth,
+    ReminderScheduler? reminderScheduler,
+  }) : _firestoreOverride = firestore,
+       _authOverride = auth,
+       _reminderSchedulerOverride = reminderScheduler;
 
   final FirebaseFirestore? _firestoreOverride;
   final FirebaseAuth? _authOverride;
+  final ReminderScheduler? _reminderSchedulerOverride;
+
+  late final ReminderScheduler _reminders =
+      _reminderSchedulerOverride ?? ReminderScheduler();
 
   // Resolved lazily so constructing a Calendar screen never itself depends
   // on Firebase being initialized — only actually reading/writing does.
@@ -44,6 +63,11 @@ class CalendarService {
   FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
 
   String? get currentUid => _auth.currentUser?.uid;
+
+  /// The signed-in student's email, stamped onto every event written.
+  /// `email` is a non-null foreign key to Student in the SRS Attributes
+  /// Dictionary Table. Overridable so tests needn't sign a user in.
+  String? get currentEmail => _auth.currentUser?.email;
 
   CollectionReference<Map<String, dynamic>> _events(String uid) =>
       _firestore.collection('users').doc(uid).collection('events');
@@ -72,21 +96,69 @@ class CalendarService {
   /// Returns the ID rather than a filled-in [CalendarEvent] so this doesn't
   /// need a `copyWith` on the model — model classes are shared files frozen
   /// after Phase B, and the ID is all any caller actually needs.
+  ///
+  /// An empty [CalendarEvent.email] is filled in from [currentEmail], since
+  /// the Add Event form has no access to the student's email.
   Future<String> addEvent(String uid, CalendarEvent event) async {
     try {
-      final ref = await _events(uid).add(event.toFirestore());
+      final data = event.toFirestore();
+      if (event.email.isEmpty) data['email'] = currentEmail ?? '';
+      final ref = await _events(uid).add(data);
       return ref.id;
     } catch (_) {
       throw CalendarFailure(_saveFailureMessage);
     }
   }
 
+  /// Deletes one event and cancels its reminder. The reminder is only
+  /// cancelled once the delete has succeeded — if Firestore fails, the event
+  /// still exists, so its reminder should still fire.
   Future<void> deleteEvent(String uid, String eventId) async {
     try {
       await _events(uid).doc(eventId).delete();
     } catch (_) {
       throw CalendarFailure(_deleteFailureMessage);
     }
+    await _reminders.cancelReminder(eventId);
+  }
+
+  /// Deletes every event linked to [courseId] and cancels their reminders,
+  /// returning how many were deleted. Called by the Courses feature when a
+  /// course is deleted, so no event is left pointing at a course that no
+  /// longer exists.
+  ///
+  /// Matches on the stored `courseId` key (the model's camelCase field name
+  /// for the Attributes Dictionary Table's `courseID`). Deletes in batches of
+  /// at most 500, Firestore's per-batch limit, cancelling each batch's
+  /// reminders as soon as that batch commits — so a failure partway through
+  /// never leaves reminders pending for events that are already gone.
+  Future<int> deleteEventsForCourse(String uid, String courseId) async {
+    final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
+    try {
+      final snap = await _events(
+        uid,
+      ).where('courseId', isEqualTo: courseId).get();
+      docs = snap.docs;
+    } catch (_) {
+      throw CalendarFailure(_deleteCourseEventsFailureMessage);
+    }
+
+    for (var start = 0; start < docs.length; start += _maxBatchSize) {
+      final chunk = docs.skip(start).take(_maxBatchSize).toList();
+      try {
+        final batch = _firestore.batch();
+        for (final doc in chunk) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+      } catch (_) {
+        throw CalendarFailure(_deleteCourseEventsFailureMessage);
+      }
+      for (final doc in chunk) {
+        await _reminders.cancelReminder(doc.id);
+      }
+    }
+    return docs.length;
   }
 }
 

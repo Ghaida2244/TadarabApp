@@ -592,12 +592,13 @@ mark it done, note decisions made, note what starts next.)*
     the student may never open.
 
     26 unit tests + 29 widget tests added; **144 tests total, 0 failures**,
-    `flutter analyze` clean. Two harness notes for whoever writes the next
-    screen: the Add Event tests set a 600x1600 surface because the form is
-    taller than the 800x600 default *and* the Material time picker's OK
-    button overflows a phone-width surface and becomes untappable; and
-    `tester.ensureVisible` does not reliably scroll this
-    `Column > Expanded > SingleChildScrollView` layout.
+    `flutter analyze` clean. Harness note for whoever writes the next
+    screen: `tester.ensureVisible` does not reliably scroll this
+    `Column > Expanded > SingleChildScrollView` layout, so the Add Event
+    tests set a tall 420x1600 surface instead. (This originally had to be
+    600 wide, because the Material time picker's OK button overflowed a
+    phone-width surface — no longer the case since the SRS audit below
+    replaced that picker.)
 
     **Build break fixed on the way in.** `main` did not compile: commit
     `7084fe4` renamed `ContinueOrStartCard.onFlashcards` to `onNewFlashcards`
@@ -606,6 +607,65 @@ mark it done, note decisions made, note what starts next.)*
     renames a widget parameter should be checked with `flutter analyze`
     before the PR — the tests can't catch it, because a compile error stops
     them from running at all.
+
+    **SRS audit (Calendar).** Audited Add Event against the SRS before
+    changing anything; state found → action taken:
+    1. *Event name VARCHAR(100)* — not enforced, any length saved → added a
+       `LengthLimitingTextInputFormatter(100)` (`kEventNameMaxLength`).
+    2. *Date picker (Figure 98)* — was Material's `showDatePicker` → replaced
+       with `EventDatePickerSheet`: mini month grid, two-letter weekday
+       headers, red-outlined today, grey (`#C7CBD2`, sampled from the
+       figure) selected day, Cancel; tapping a day selects and closes.
+    3. *Time picker (Figure 99)* — was Material's `showTimePicker` dial →
+       replaced with `EventTimePickerSheet`: "Select Time", live preview,
+       Hour 1–12 grid, Minute grid in 5-minute steps, AM/PM toggle, red
+       Confirm. 12 AM/12 PM conversion lives in the unit-tested
+       `timeOfDayFrom12Hour`.
+    4. *Notification text (Figure 107)* — was the event's name / "Starts at
+       …" → now exactly "Event Reminder" / "Don't forget your upcoming
+       event." (`kEventReminderTitle`/`kEventReminderBody`).
+    5. *Cascade delete* — added `CalendarService.deleteEventsForCourse(uid,
+       courseId)`, returning the count deleted. **No caller yet — Manar's
+       Courses feature should call it when a course is deleted.** It matches
+       the stored `courseId` key (the model's camelCase name for the table's
+       `courseID`), deletes in batches of ≤500 (Firestore's limit), and
+       cancels each batch's reminders once that batch commits.
+    6. *Past dates* — already selectable, kept that way. **This deliberately
+       departs from Figure 98**, which greys out past days and the
+       previous-month arrow; the team chose to let the calendar record past
+       events. Matching the figure is a two-line change in
+       `event_date_picker_sheet.dart`.
+    7. *Reminder already passed* — was a silent skip (the save ignored
+       `scheduleReminder`'s false return) → now an inline error on the
+       reminder row that blocks saving until the lead time is shortened or
+       the reminder turned off (`reminderAlreadyPassed`, unit-tested
+       including the "fires exactly now" edge).
+
+    Three more defects surfaced during the audit and were fixed, all of
+    which made reminders or data silently wrong:
+    - **Notification permission was never requested.** `requestPermission()`
+      existed with no caller, so on Android 13+ every reminder was scheduled
+      and then silently dropped. It's now requested on save when a reminder
+      is on. If it's declined, or the platform refuses to schedule, the
+      event still saves and the student gets a message saying the reminder
+      couldn't be set.
+    - **Deleting an event left its reminder scheduled**, so a deleted event
+      still sent its notification. `CalendarService.deleteEvent` now cancels
+      the reminder itself (only after the delete succeeds), which keeps the
+      rule "a deleted event never notifies" true on every delete path,
+      including the course cascade.
+    - **Every event was saved with an empty `email`**, violating the
+      Attributes Dictionary Table's non-null FK to Student.
+      `CalendarService.addEvent` now stamps the signed-in student's email.
+      Events created before this fix still have `email: ''` in Firestore.
+
+    Added dev dependencies `fake_cloud_firestore` and `mock_exceptions` so
+    `CalendarService` is tested against an in-memory Firestore rather than
+    only through fakes. **190 tests, 0 failures; `flutter analyze` clean.**
+    The new name-limit and passed-reminder tests were checked by breaking
+    each fix and confirming the tests fail. Still not verified on a physical
+    device: whether the permission dialog and scheduled reminders actually
+    appear.
 
     Still to do on this branch: Points/Ranks and Profile (`05_ranks.png`,
     `06_profile.png` were removed from the mockups folder as out of scope
