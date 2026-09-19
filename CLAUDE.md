@@ -668,6 +668,29 @@ mark it done, note decisions made, note what starts next.)*
     locally, no network). If the write then fails, the reminder is cancelled.
     196 tests, 0 failures.
 
+    **Android build config — core library desugaring (build-config fix).**
+    The app did not build at all on an emulator once
+    `flutter_local_notifications` was added: `:app:checkDebugAarMetadata`
+    failed with "Dependency ':flutter_local_notifications' requires core
+    library desugaring to be enabled for :app". The plugin (v10+) relies on
+    desugaring for scheduled notifications on older Android versions, and
+    requires it even in apps that never schedule one. Fixed in
+    `android/app/build.gradle.kts`: `isCoreLibraryDesugaringEnabled = true`
+    in `compileOptions`, plus a `coreLibraryDesugaring("com.android.tools:
+    desugar_jdk_libs:2.1.4")` dependency (2.1.4 is the minimum the plugin's
+    22.x README specifies). `flutter build apk --debug` now succeeds.
+
+    **This should have been caught when the package was added**, not when
+    someone first tried to run the app. Nothing in `flutter test` or
+    `flutter analyze` compiles the Android project, so neither catches it —
+    both passed the whole time the app was unbuildable. Lesson for the rest
+    of Phase C: any new plugin with a native Android side needs one actual
+    `flutter build apk --debug` before the feature is called done; a green
+    test suite says nothing about whether the app builds. (The
+    Kotlin-Gradle-Plugin deprecation warning printed by that build comes
+    from the Firebase and `flutter_timezone` plugins, is pre-existing, and
+    is unrelated to this fix.)
+
     Added dev dependencies `fake_cloud_firestore` and `mock_exceptions` so
     `CalendarService` is tested against an in-memory Firestore rather than
     only through fakes. **190 tests, 0 failures; `flutter analyze` clean.**
