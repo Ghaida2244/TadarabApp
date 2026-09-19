@@ -13,7 +13,7 @@ class FakeCalendarService extends CalendarService {
     this.loadError,
     this.deleteError,
     this.addError,
-    this.newEventId = 'new-event-id',
+    this.nextEventId = 'new-event-id',
   });
 
   /// Emitted by [watchEventsForMonth] regardless of which month is asked
@@ -23,7 +23,8 @@ class FakeCalendarService extends CalendarService {
   final CalendarFailure? loadError;
   final CalendarFailure? deleteError;
   final CalendarFailure? addError;
-  final String newEventId;
+  /// The ID handed out by [newEventId] and [addEvent].
+  final String nextEventId;
 
   final List<String> deletedEventIds = [];
   final List<CalendarEvent> addedEvents = [];
@@ -37,10 +38,13 @@ class FakeCalendarService extends CalendarService {
   }
 
   @override
+  String newEventId(String uid) => nextEventId;
+
+  @override
   Future<String> addEvent(String uid, CalendarEvent event) async {
     addedEvents.add(event);
     if (addError != null) throw addError!;
-    return newEventId;
+    return event.eventId.isNotEmpty ? event.eventId : nextEventId;
   }
 
   @override

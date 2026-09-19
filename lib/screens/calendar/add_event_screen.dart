@@ -185,6 +185,30 @@ class _AddEventScreenState extends State<AddEventScreen> {
     return parsed;
   }
 
+  /// A copy of [event] with a new ID and/or the reminder switched off.
+  /// Built here rather than as a `copyWith` on [CalendarEvent] because model
+  /// classes are shared files, frozen after Phase B. Switching the reminder
+  /// off also clears its lead time, matching an event saved with it off.
+  CalendarEvent _copyEvent(
+    CalendarEvent event, {
+    String? eventId,
+    bool? reminderEnabled,
+  }) {
+    final enabled = reminderEnabled ?? event.reminderEnabled;
+    return CalendarEvent(
+      eventId: eventId ?? event.eventId,
+      eventName: event.eventName,
+      eventDate: event.eventDate,
+      eventTime: event.eventTime,
+      reminderEnabled: enabled,
+      reminderBefore: enabled ? event.reminderBefore : null,
+      reminderUnit: enabled ? event.reminderUnit : null,
+      color: event.color,
+      email: event.email,
+      courseId: event.courseId,
+    );
+  }
+
   Future<void> _save() async {
     final name = _nameController.text.trim();
     setState(() {
@@ -197,8 +221,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
     if (_nameError != null || _dateError != null || _timeError != null) return;
 
     final event = CalendarEvent(
-      // Replaced by the Firestore-assigned ID on the way back out; the
-      // model requires a non-null eventId, and this value is never stored.
+      // Replaced by the ID reserved just before saving; the model requires
+      // a non-null eventId, and this value is never stored.
       eventId: '',
       eventName: name,
       eventDate: DateTime(
@@ -227,40 +251,39 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
     setState(() => _saving = true);
 
-    // Asked before writing, so Android's permission dialog appears over the
-    // form the student is looking at rather than after the screen closes.
-    // On Android 13+ a reminder can't be shown at all without it.
-    final notificationsAllowed = _reminderEnabled
-        ? await _scheduler.requestPermission()
-        : true;
+    // The reminder is set up *before* the event is written, so the one
+    // write can store whether it actually exists: reminderEnabled must
+    // reflect what's true on the device, not what the student asked for.
+    // That needs the document ID up front (it's the notification's handle),
+    // hence reserving one first.
+    final eventId = widget.calendarService.newEventId(widget.uid);
+    final requested = _copyEvent(event, eventId: eventId);
+
+    String? reminderNotice;
+    var reminderSet = false;
+    if (_reminderEnabled) {
+      // Asked before writing, so Android's permission dialog appears over
+      // the form the student is looking at rather than after it closes. On
+      // Android 13+ a reminder can't be shown at all without it.
+      if (!await _scheduler.requestPermission()) {
+        reminderNotice = kReminderPermissionDeniedMessage;
+      } else if (await _scheduler.scheduleReminder(requested)) {
+        reminderSet = true;
+      } else {
+        reminderNotice = kReminderNotScheduledMessage;
+      }
+    }
+
+    // A reminder that couldn't be set is stored as off, with no lead time —
+    // the same shape as an event saved with the toggle off.
+    final toSave = _reminderEnabled && !reminderSet
+        ? _copyEvent(requested, reminderEnabled: false)
+        : requested;
 
     try {
-      final eventId = await widget.calendarService.addEvent(widget.uid, event);
-
-      // The event is saved at this point, so a reminder problem must not
-      // fail the save — but it must be reported, never skipped silently.
-      String? reminderNotice;
-      if (_reminderEnabled) {
-        if (!notificationsAllowed) {
-          reminderNotice = kReminderPermissionDeniedMessage;
-        } else {
-          final scheduled = await _scheduler.scheduleReminder(
-            CalendarEvent(
-              eventId: eventId,
-              eventName: event.eventName,
-              eventDate: event.eventDate,
-              eventTime: event.eventTime,
-              reminderEnabled: event.reminderEnabled,
-              reminderBefore: event.reminderBefore,
-              reminderUnit: event.reminderUnit,
-              color: event.color,
-              email: event.email,
-              courseId: event.courseId,
-            ),
-          );
-          if (!scheduled) reminderNotice = kReminderNotScheduledMessage;
-        }
-      }
+      // A reminder problem never fails the save — it's reported below, never
+      // skipped silently.
+      await widget.calendarService.addEvent(widget.uid, toSave);
 
       if (!mounted) return;
       // Captured before popping: the message is shown on the Calendar screen
@@ -279,6 +302,8 @@ class _AddEventScreenState extends State<AddEventScreen> {
         );
       }
     } on CalendarFailure catch (failure) {
+      // The event never got written, so its reminder must not fire either.
+      if (reminderSet) await _scheduler.cancelReminder(eventId);
       if (!mounted) return;
       setState(() {
         _saving = false;

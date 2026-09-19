@@ -201,6 +201,30 @@ void main() {
       expect(doc.data()!['email'], 'explicit@example.com');
     });
 
+    test('writes to a reserved ID when the event carries one', () async {
+      final reserved = service.newEventId('uid-1');
+      // Reserving writes nothing — the event only exists once it's added.
+      expect((await events('uid-1').doc(reserved).get()).exists, isFalse);
+
+      final id = await service.addEvent(
+        'uid-1',
+        CalendarEvent(
+          eventId: reserved,
+          eventName: 'Midterm',
+          eventDate: DateTime(2026, 5, 5),
+          eventTime: '12:00',
+          email: 'student@example.com',
+        ),
+      );
+
+      expect(id, reserved);
+      expect((await events('uid-1').get()).docs.single.id, reserved);
+    });
+
+    test('reserves a different ID each time', () {
+      expect(service.newEventId('uid-1'), isNot(service.newEventId('uid-1')));
+    });
+
     test('writes the event and returns its Firestore-assigned ID', () async {
       final id = await service.addEvent(
         'uid-1',

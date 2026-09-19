@@ -90,8 +90,18 @@ class CalendarService {
         .handleError((Object _) => throw CalendarFailure(_loadFailureMessage));
   }
 
-  /// Creates an event and returns the Firestore-assigned document ID, so
-  /// the caller can schedule the reminder against it without re-reading it.
+  /// Reserves a document ID for a new event without writing anything.
+  ///
+  /// Firestore generates this locally, so it needs no network call. The Add
+  /// Event screen uses it to schedule the reminder *before* the event is
+  /// written, so the single write can record whether the reminder was
+  /// actually set rather than what the student asked for.
+  String newEventId(String uid) => _events(uid).doc().id;
+
+  /// Creates an event and returns its document ID.
+  ///
+  /// Writes to [CalendarEvent.eventId] when it's set (an ID reserved with
+  /// [newEventId]); otherwise Firestore assigns one.
   ///
   /// Returns the ID rather than a filled-in [CalendarEvent] so this doesn't
   /// need a `copyWith` on the model — model classes are shared files frozen
@@ -103,6 +113,10 @@ class CalendarService {
     try {
       final data = event.toFirestore();
       if (event.email.isEmpty) data['email'] = currentEmail ?? '';
+      if (event.eventId.isNotEmpty) {
+        await _events(uid).doc(event.eventId).set(data);
+        return event.eventId;
+      }
       final ref = await _events(uid).add(data);
       return ref.id;
     } catch (_) {

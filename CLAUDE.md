@@ -659,6 +659,15 @@ mark it done, note decisions made, note what starts next.)*
       `CalendarService.addEvent` now stamps the signed-in student's email.
       Events created before this fix still have `email: ''` in Firestore.
 
+    **`reminderEnabled` now records what's actually true.** If permission
+    is declined or the platform refuses to schedule, the event is stored with
+    `reminderEnabled: false` (and `reminderBefore`/`reminderUnit` null, the
+    same shape as the toggle being off), not what the student asked for.
+    Add Event now schedules the reminder *before* the single Firestore write,
+    using an ID reserved with `CalendarService.newEventId` (generated
+    locally, no network). If the write then fails, the reminder is cancelled.
+    196 tests, 0 failures.
+
     Added dev dependencies `fake_cloud_firestore` and `mock_exceptions` so
     `CalendarService` is tested against an in-memory Firestore rather than
     only through fakes. **190 tests, 0 failures; `flutter analyze` clean.**

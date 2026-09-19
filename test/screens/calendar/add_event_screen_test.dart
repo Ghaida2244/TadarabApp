@@ -737,6 +737,22 @@ void main() {
       expect(find.text(kReminderPermissionDeniedMessage), findsOneWidget);
     });
 
+    testWidgets('declined permission stores the reminder as off', (
+      tester,
+    ) async {
+      await pumpAddEvent(
+        tester,
+        reminderScheduler: FakeReminderScheduler(permissionGranted: false),
+      );
+
+      await saveWithReminder(tester);
+
+      final saved = calendarService.addedEvents.single;
+      expect(saved.reminderEnabled, isFalse);
+      expect(saved.reminderBefore, isNull);
+      expect(saved.reminderUnit, isNull);
+    });
+
     testWidgets('a platform refusal still saves, and says so', (tester) async {
       await pumpAddEvent(
         tester,
@@ -748,6 +764,56 @@ void main() {
       expect(calendarService.addedEvents, hasLength(1));
       expect(poppedResult, isTrue);
       expect(find.text(kReminderNotScheduledMessage), findsOneWidget);
+    });
+
+    testWidgets('a platform refusal stores the reminder as off', (
+      tester,
+    ) async {
+      await pumpAddEvent(
+        tester,
+        reminderScheduler: FakeReminderScheduler(scheduleResult: false),
+      );
+
+      await saveWithReminder(tester);
+
+      final saved = calendarService.addedEvents.single;
+      expect(saved.reminderEnabled, isFalse);
+      expect(saved.reminderBefore, isNull);
+      expect(saved.reminderUnit, isNull);
+    });
+
+    testWidgets('a scheduled reminder is stored as on, under the same ID', (
+      tester,
+    ) async {
+      await pumpAddEvent(tester);
+
+      await saveWithReminder(tester);
+
+      final saved = calendarService.addedEvents.single;
+      expect(saved.reminderEnabled, isTrue);
+      expect(saved.reminderBefore, isNotNull);
+      // The notification's handle and the document ID must match, or
+      // deleting the event could never cancel its reminder.
+      expect(saved.eventId, 'new-event-id');
+      expect(scheduler.scheduled.single.eventId, saved.eventId);
+    });
+
+    testWidgets('a failed save cancels the reminder it just scheduled', (
+      tester,
+    ) async {
+      await pumpAddEvent(
+        tester,
+        service: FakeCalendarService(
+          addError: CalendarFailure("Couldn't save your event."),
+        ),
+      );
+
+      await saveWithReminder(tester);
+
+      expect(scheduler.scheduled, hasLength(1));
+      expect(scheduler.cancelled, ['new-event-id']);
+      expect(poppedResult, isNull);
+      expect(find.text("Couldn't save your event."), findsOneWidget);
     });
   });
 }
