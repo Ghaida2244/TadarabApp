@@ -24,6 +24,7 @@ class AppButton extends StatefulWidget {
     this.borderRadius,
     this.borderColor,
     this.shadowColor,
+    this.disabledBackgroundColor,
   });
 
   final String label;
@@ -53,6 +54,13 @@ class AppButton extends StatefulWidget {
   /// Overrides the variant's default shadow color.
   final Color? shadowColor;
 
+  /// Fill color used only when the button is disabled (`onPressed == null`)
+  /// and NOT [loading] — a state AppButton otherwise has no distinct look
+  /// for (only [loading] gets its own grey treatment; a plain disabled
+  /// button keeps its variant's normal fill). Leave null for the default
+  /// behavior; every existing caller omits this and is unaffected.
+  final Color? disabledBackgroundColor;
+
   @override
   State<AppButton> createState() => _AppButtonState();
 }
@@ -79,6 +87,10 @@ class _AppButtonState extends State<AppButton> {
     }
     if (widget.shadowColor != null) {
       colors = colors.copyWithShadow(widget.shadowColor);
+    }
+    final bool disabledNotLoading = widget.onPressed == null && !widget.loading;
+    if (disabledNotLoading && widget.disabledBackgroundColor != null) {
+      colors = colors.copyWithBackground(widget.disabledBackgroundColor!);
     }
     final double shadowOffset = colors.hasShadow ? (_pressed ? 1 : 3) : 0;
 
@@ -211,6 +223,13 @@ class _ButtonColors {
   );
 
   _ButtonColors copyWithShadow(Color? shadow) => _ButtonColors(
+    background: background,
+    border: border,
+    shadow: shadow,
+    text: text,
+  );
+
+  _ButtonColors copyWithBackground(Color background) => _ButtonColors(
     background: background,
     border: border,
     shadow: shadow,

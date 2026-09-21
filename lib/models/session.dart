@@ -16,12 +16,15 @@ abstract class Session {
     this.completedAt,
     this.earnedPoints = 0,
     this.isSessionCompleted = false,
-    required this.difficultyLevel,
+    required this.difficultyLevels,
     this.customPrompt,
     required this.email,
     required this.courseId,
     required this.materialIds,
-  });
+  }) : assert(
+         difficultyLevels.length > 0,
+         'A session must request at least one difficulty level',
+       );
 
   /// Firestore document ID.
   final String sessionId;
@@ -38,8 +41,8 @@ abstract class Session {
   /// Whether the session has been completed.
   final bool isSessionCompleted;
 
-  /// Difficulty requested for this session's generated content.
-  final DifficultyLevel difficultyLevel;
+  /// Difficulty level(s) requested for this session's generated content.
+  final List<DifficultyLevel> difficultyLevels;
 
   /// Optional custom prompt supplied by the student for generation.
   final String? customPrompt;
@@ -63,7 +66,7 @@ abstract class Session {
           : Timestamp.fromDate(completedAt!),
       'earnedPoints': earnedPoints,
       'isSessionCompleted': isSessionCompleted,
-      'difficultyLevel': difficultyLevel.toJson(),
+      'difficultyLevels': difficultyLevels.map((d) => d.toJson()).toList(),
       'customPrompt': customPrompt,
       'email': email,
       'courseId': courseId,
@@ -79,7 +82,7 @@ class SessionFields {
     required this.completedAt,
     required this.earnedPoints,
     required this.isSessionCompleted,
-    required this.difficultyLevel,
+    required this.difficultyLevels,
     required this.customPrompt,
     required this.email,
     required this.courseId,
@@ -90,7 +93,7 @@ class SessionFields {
   final DateTime? completedAt;
   final int earnedPoints;
   final bool isSessionCompleted;
-  final DifficultyLevel difficultyLevel;
+  final List<DifficultyLevel> difficultyLevels;
   final String? customPrompt;
   final String email;
   final String courseId;
@@ -102,9 +105,9 @@ class SessionFields {
       completedAt: (data['completedAt'] as Timestamp?)?.toDate(),
       earnedPoints: (data['earnedPoints'] as num?)?.toInt() ?? 0,
       isSessionCompleted: data['isSessionCompleted'] as bool? ?? false,
-      difficultyLevel: DifficultyLevelJson.fromJson(
-        data['difficultyLevel'] as String,
-      ),
+      difficultyLevels: List<String>.from(
+        data['difficultyLevels'] as List? ?? const [],
+      ).map(DifficultyLevelJson.fromJson).toList(),
       customPrompt: data['customPrompt'] as String?,
       email: data['email'] as String,
       courseId: data['courseId'] as String,
