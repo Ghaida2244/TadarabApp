@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/modernist-864e60f9-06a3-4e25-abe0-6d4c28005234/styles.css">
+<script src="_ds/modernist-864e60f9-06a3-4e25-abe0-6d4c28005234/_ds_bundle.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin:0; background:#f3f2f2; font-family:"Archivo",system-ui,sans-serif; color:#0B0F5B; }
+  a { color:#E31B23; text-underline-offset:3px; }
+  a:hover { color:#0B0F5B; }
+  @keyframes tdRise { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  @keyframes tdSheet { from { transform:translateY(100%); } to { transform:none; } }
+</style>
+</helmet>
+<section style="padding:48px 56px 96px; display:flex; flex-direction:column; gap:32px">
+  <div id="3a" style="display:flex; flex-direction:column; gap:8px; max-width:760px">
+    <div style="display:flex; align-items:baseline; gap:14px">
+      <span style="font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#E31B23">3a</span>
+      <h1 style="margin:0; font-size:32px; font-weight:800; letter-spacing:-0.015em; line-height:1.12">Home — your three states, redrawn</h1>
+    </div>
+    <p style="margin:0; font-size:14px; line-height:1.5; color:#4B5170; max-width:620px; text-wrap:pretty">Same content as your mockups — greeting, today's progress, upcoming events. No streak, no timer. The only addition is the new-student state, which guides the first course instead of showing two zeros.</p>
+    <hr style="height:2px; border:0; background:rgba(11,15,91,0.4); margin:12px 0 0; width:100%">
+  </div>
+
+  <div style="display:flex; gap:40px; align-items:flex-start; flex-wrap:wrap">
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <div style="display:flex; align-items:center; gap:10px">
+        <span style="font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">1 · New student</span>
+        <span style="font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#E31B23">tap through it</span>
+      </div>
+      <x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" hint-size="412px,892px">
+        <div style="position:relative; height:100%; display:flex; flex-direction:column; background:#FFFFFF; overflow:hidden">
+
+          <div style="background:#0B0F5B; padding:16px 20px; display:flex; align-items:center; justify-content:space-between">
+            <div style="display:flex; flex-direction:column; gap:2px">
+              <span style="font-size:10px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Good evening</span>
+              <span style="font-size:24px; font-weight:800; letter-spacing:-0.02em; line-height:1.05; color:#FFFFFF">Ghaida</span>
+            </div>
+            <span style="font-size:11px; font-weight:800; letter-spacing:0.14em; color:#FFFFFF">TADARAB</span>
+          </div>
+
+          <div style="flex:1; overflow:auto">
+            <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex; flex-direction:column">
+                <div style="background:#0B0F5B; padding:20px; border-top:2px solid #E31B23; display:flex; flex-direction:column; gap:8px">
+                  <h2 style="margin:0; font-size:24px; font-weight:800; line-height:1.1; letter-spacing:-0.02em; color:#FFFFFF">Welcome, Ghaida.<br>Add your first course.</h2>
+                  <p style="margin:0; font-size:13px; line-height:1.5; color:rgba(255,255,255,0.72); max-width:280px; text-wrap:pretty">Upload your lecture material and Tadarab turns it into quizzes and flashcards.</p>
+                </div>
+
+                <div style="padding:18px 20px 0">
+                  <div style="display:flex; align-items:baseline; justify-content:space-between; padding-bottom:8px">
+                    <span style="font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Your first steps</span>
+                    <span style="font-size:10px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:#6B7080">0 of 3</span>
+                  </div>
+                  <div style="height:2px; background:rgba(11,15,91,0.4)"></div>
+                  <div style="display:flex; gap:12px; align-items:baseline; padding:14px 0; border-bottom:2px solid rgba(11,15,91,0.12)">
+                    <span style="font-size:12px; font-weight:800; color:#E31B23; width:20px">01</span>
+                    <span style="font-size:15px; font-weight:800; flex:1">Create a course</span>
+                  </div>
+                  <div style="display:flex; gap:12px; align-items:baseline; padding:14px 0; border-bottom:2px solid rgba(11,15,91,0.12); color:#6B7080">
+                    <span style="font-size:12px; font-weight:800; width:20px">02</span>
+                    <span style="font-size:15px; font-weight:800; flex:1">Upload study material</span>
+                  </div>
+                  <div style="display:flex; gap:12px; align-items:baseline; padding:14px 0; color:#6B7080">
+                    <span style="font-size:12px; font-weight:800; width:20px">03</span>
+                    <span style="font-size:15px; font-weight:800; flex:1">Generate a quiz</span>
+                  </div>
+                </div>
+
+                <div style="padding:14px 20px 20px">
+                  <button type="button" onClick="{{ openSheet }}" style="width:100%; appearance:none; border:0; cursor:pointer; background:#E31B23; color:#FFFFFF; height:48px; padding:0 16px; display:flex; align-items:center; justify-content:space-between; font-family:Archivo,system-ui,sans-serif; font-size:13px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; transition:background 140ms ease" style-hover="background:#B8141B" style-active="background:#8E0F15">
+                    <span>Create a course</span>
+                    <span style="font-size:15px">&rarr;</span>
+                  </button>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ isCreated }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex; flex-direction:column; animation:tdRise 240ms ease both">
+                <div style="background:#0B0F5B; padding:20px; border-top:2px solid #E31B23; display:flex; flex-direction:column; gap:10px">
+                  <span style="font-size:10px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Course created</span>
+                  <span style="font-size:24px; font-weight:800; letter-spacing:-0.02em; line-height:1.1; color:#FFFFFF">{{ courseTitle }}</span>
+                  <div style="height:4px; background:rgba(255,255,255,0.22)"><div style="width:33%; height:100%; background:#E31B23"></div></div>
+                </div>
+                <div style="padding:18px 20px 0">
+                  <span style="font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Next step</span>
+                  <div style="height:2px; background:rgba(11,15,91,0.4); margin-top:8px"></div>
+                  <div style="display:flex; gap:12px; align-items:baseline; padding:14px 0">
+                    <span style="font-size:12px; font-weight:800; color:#E31B23; width:20px">02</span>
+                    <div style="display:flex; flex-direction:column; gap:3px; flex:1">
+                      <span style="font-size:15px; font-weight:800">Upload study material</span>
+                      <span style="font-size:12px; color:#6B7080; font-family:ui-monospace,monospace">PDF · PPTX · DOCX</span>
+                    </div>
+                  </div>
+                </div>
+                <div style="padding:6px 20px 20px; display:flex; flex-direction:column; gap:12px">
+                  <button type="button" onClick="{{ uploadMaterial }}" style="width:100%; appearance:none; border:0; cursor:pointer; background:#E31B23; color:#FFFFFF; height:48px; padding:0 16px; display:flex; align-items:center; justify-content:space-between; font-family:Archivo,system-ui,sans-serif; font-size:13px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; transition:background 140ms ease" style-hover="background:#B8141B">
+                    <span>Upload material</span>
+                    <span style="font-size:15px">&rarr;</span>
+                  </button>
+                  <button type="button" onClick="{{ reset }}" style="appearance:none; border:0; background:transparent; cursor:pointer; padding:0; text-align:left; font-family:Archivo,system-ui,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#6B7080; text-decoration:underline; text-underline-offset:3px" style-hover="color:#0B0F5B">Reset demo</button>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ isUploaded }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex; flex-direction:column; animation:tdRise 240ms ease both">
+                <div style="background:#0B0F5B; padding:20px; border-top:2px solid #E31B23; display:flex; flex-direction:column; gap:10px">
+                  <span style="font-size:10px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Material read</span>
+                  <span style="font-size:24px; font-weight:800; letter-spacing:-0.02em; line-height:1.1; color:#FFFFFF">{{ courseTitle }}</span>
+                  <div style="height:4px; background:rgba(255,255,255,0.22)"><div style="width:66%; height:100%; background:#E31B23"></div></div>
+                </div>
+                <div style="padding:18px 20px 0">
+                  <span style="font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Course materials</span>
+                  <div style="height:2px; background:rgba(11,15,91,0.4); margin-top:8px"></div>
+                  <div style="display:flex; justify-content:space-between; align-items:baseline; padding:13px 0">
+                    <span style="font-size:15px; font-weight:800">Lecture 1 — Introduction</span>
+                    <span style="font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#6B7080">24 pages</span>
+                  </div>
+                </div>
+                <div style="padding:6px 20px 20px; display:flex; flex-direction:column; gap:12px">
+                  <button type="button" onClick="{{ openQuiz }}" style="width:100%; appearance:none; border:0; cursor:pointer; background:#E31B23; color:#FFFFFF; height:48px; padding:0 16px; display:flex; align-items:center; justify-content:space-between; font-family:Archivo,system-ui,sans-serif; font-size:13px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; transition:background 140ms ease" style-hover="background:#B8141B">
+                    <span>Generate a quiz</span>
+                    <span style="font-size:15px">&rarr;</span>
+                  </button>
+                  <button type="button" onClick="{{ reset }}" style="appearance:none; border:0; background:transparent; cursor:pointer; padding:0; text-align:left; font-family:Archivo,system-ui,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#6B7080; text-decoration:underline; text-underline-offset:3px" style-hover="color:#0B0F5B">Reset demo</button>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+
+          <div style="display:flex; background:#0B0F5B">
+            <div style="flex:1; padding:10px 0 12px; text-align:center; border-top:3px solid #E31B23; background:rgba(255,255,255,0.08)">
+              <span style="font-size:10px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:#FFFFFF">Home</span>
+            </div>
+            <div style="flex:1; padding:10px 0 12px; text-align:center; border-top:3px solid transparent">
+              <span style="font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Courses</span>
+            </div>
+            <div style="flex:1; padding:10px 0 12px; text-align:center; border-top:3px solid transparent">
+              <span style="font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Calendar</span>
+            </div>
+            <div style="flex:1; padding:10px 0 12px; text-align:center; border-top:3px solid transparent">
+              <span style="font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Profile</span>
+            </div>
+          </div>
+
+          <sc-if value="{{ sheetOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; inset:0; background:rgba(11,15,91,0.55); display:flex; flex-direction:column; justify-content:flex-end">
+              <div onClick="{{ closeSheet }}" style="flex:1; cursor:pointer"></div>
+              <div style="background:#FFFFFF; border-top:2px solid #E31B23; padding:18px 20px 20px; display:flex; flex-direction:column; gap:14px; animation:tdSheet 200ms cubic-bezier(0.2,0.8,0.2,1) both">
+                <div style="display:flex; align-items:center; justify-content:space-between">
+                  <span style="font-size:20px; font-weight:800; letter-spacing:-0.02em">New course</span>
+                  <button type="button" onClick="{{ closeSheet }}" style="appearance:none; border:2px solid rgba(11,15,91,0.3); background:transparent; cursor:pointer; width:32px; height:32px; font-size:14px; font-weight:800; color:#0B0F5B; font-family:Archivo,system-ui,sans-serif">&times;</button>
+                </div>
+                <input value="{{ courseName }}" onChange="{{ onName }}" placeholder="Course name or code" style="width:100%; height:48px; padding:0 12px; border:2px solid #0B0F5B; background:#FFFFFF; font-family:Archivo,system-ui,sans-serif; font-size:14px; font-weight:600; color:#0B0F5B; outline:none">
+                <button type="button" onClick="{{ createCourse }}" style="width:100%; appearance:none; border:0; cursor:pointer; background:#E31B23; color:#FFFFFF; height:48px; padding:0 16px; display:flex; align-items:center; justify-content:space-between; font-family:Archivo,system-ui,sans-serif; font-size:13px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase" style-hover="background:#B8141B">
+                  <span>Create</span>
+                  <span style="font-size:15px">&rarr;</span>
+                </button>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ quizOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; inset:0; background:#FFFFFF; display:flex; flex-direction:column; animation:tdRise 200ms ease both">
+              <div style="background:#0B0F5B; padding:16px 20px; display:flex; align-items:center; justify-content:space-between">
+                <div style="display:flex; flex-direction:column; gap:2px">
+                  <span style="font-size:10px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Learning mode</span>
+                  <span style="font-size:15px; font-weight:800; color:#FFFFFF">Question 1 of 15</span>
+                </div>
+                <button type="button" onClick="{{ closeQuiz }}" style="appearance:none; border:2px solid rgba(255,255,255,0.45); background:transparent; cursor:pointer; width:32px; height:32px; font-size:14px; font-weight:800; color:#FFFFFF; font-family:Archivo,system-ui,sans-serif">&times;</button>
+              </div>
+              <div style="height:4px; background:rgba(11,15,91,0.12)"><div style="width:7%; height:100%; background:#E31B23"></div></div>
+              <div style="padding:20px; display:flex; flex-direction:column; gap:18px; flex:1">
+                <h3 style="margin:0; font-size:20px; font-weight:800; line-height:1.2; letter-spacing:-0.02em; text-wrap:pretty">What is a database?</h3>
+                <div style="display:flex; flex-direction:column; gap:2px">
+                  <sc-for list="{{ answers }}" as="a" hint-placeholder-count="4">
+                    <button type="button" onClick="{{ a.pick }}" style="appearance:none; cursor:pointer; text-align:left; display:flex; align-items:center; gap:12px; background:{{ a.bg }}; color:{{ a.fg }}; border:2px solid {{ a.border }}; padding:13px 12px; font-family:Archivo,system-ui,sans-serif; transition:background 140ms ease, border-color 140ms ease">
+                      <span style="font-size:12px; font-weight:800; letter-spacing:0.08em; width:16px">{{ a.key }}</span>
+                      <span style="font-size:14px; font-weight:600; line-height:1.35; flex:1">{{ a.text }}</span>
+                      <span style="font-size:11px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase">{{ a.mark }}</span>
+                    </button>
+                  </sc-for>
+                </div>
+                <sc-if value="{{ answered }}" hint-placeholder-val="{{ false }}">
+                  <div style="border-top:2px solid rgba(11,15,91,0.4); padding-top:14px; display:flex; flex-direction:column; gap:8px; animation:tdRise 180ms ease both">
+                    <span style="font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:{{ verdictColor }}">{{ verdict }}</span>
+                    <p style="margin:0; font-size:13px; line-height:1.5; color:#4B5170; text-wrap:pretty">A database is an organised collection of related data, stored so it can be queried and updated.</p>
+                    <button type="button" onClick="{{ nextQ }}" style="width:100%; appearance:none; border:0; cursor:pointer; background:#0B0F5B; color:#FFFFFF; height:48px; padding:0 16px; display:flex; align-items:center; justify-content:space-between; font-family:Archivo,system-ui,sans-serif; font-size:13px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase" style-hover="background:#070A3E">
+                      <span>Next question</span>
+                      <span style="font-size:15px">&rarr;</span>
+                    </button>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </x-import>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <span style="font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">2 · Progress + events</span>
+      <x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" hint-size="412px,892px">
+        <div style="height:100%; display:flex; flex-direction:column; background:#FFFFFF; overflow:hidden">
+          <div style="background:#0B0F5B; padding:16px 20px; display:flex; align-items:center; justify-content:space-between">
+            <div style="display:flex; flex-direction:column; gap:2px">
+              <span style="font-size:10px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Good evening</span>
+              <span style="font-size:24px; font-weight:800; letter-spacing:-0.02em; line-height:1.05; color:#FFFFFF">Ghaida</span>
+            </div>
+            <span style="font-size:11px; font-weight:800; letter-spacing:0.14em; color:#FFFFFF">TADARAB</span>
+          </div>
+
+          <div style="flex:1; overflow:auto">
+            <div style="padding:18px 20px 0">
+              <span style="font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Today's progress</span>
+              <div style="height:2px; background:rgba(11,15,91,0.4); margin-top:8px"></div>
+            </div>
+            <div style="display:flex; margin:0 20px; border-bottom:2px solid rgba(11,15,91,0.12)">
+              <div style="flex:1; padding:14px 0">
+                <div style="font-size:28px; font-weight:800; line-height:1; letter-spacing:-0.03em">40</div>
+                <div style="font-size:10px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:#6B7080; margin-top:5px">Questions</div>
+              </div>
+              <div style="width:2px; background:rgba(11,15,91,0.12)"></div>
+              <div style="flex:1; padding:14px 0 14px 16px">
+                <div style="font-size:28px; font-weight:800; line-height:1; letter-spacing:-0.03em">10</div>
+                <div style="font-size:10px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:#6B7080; margin-top:5px">Flashcards</div>
+              </div>
+            </div>
+            <div style="margin:0 20px; padding:12px 0; display:flex; align-items:center; justify-content:space-between">
+              <div style="display:flex; align-items:center; gap:8px">
+                <div style="width:8px; height:8px; background:#E31B23"></div>
+                <span style="font-size:12px; font-weight:800; letter-spacing:0.04em">Active Learner</span>
+              </div>
+              <span style="font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#6B7080">108 pts · view ranks</span>
+            </div>
+
+            <div style="padding:6px 20px 24px">
+              <div style="display:flex; align-items:baseline; justify-content:space-between; padding-bottom:8px">
+                <span style="font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Upcoming events</span>
+                <span style="font-size:11px; font-weight:800; color:#E31B23; letter-spacing:0.04em; text-transform:uppercase">See all</span>
+              </div>
+              <div style="height:2px; background:rgba(11,15,91,0.4)"></div>
+              <div style="display:flex; justify-content:space-between; align-items:baseline; padding:13px 0; border-bottom:2px solid rgba(11,15,91,0.12)">
+                <div style="display:flex; flex-direction:column; gap:2px">
+                  <span style="font-size:15px; font-weight:800">Midterm</span>
+                  <span style="font-size:11px; color:#6B7080; font-family:ui-monospace,monospace">IS230</span>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:2px; text-align:right">
+                  <span style="font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.06em; color:#E31B23">Today</span>
+                  <span style="font-size:11px; color:#6B7080">12:00 PM</span>
+                </div>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:baseline; padding:13px 0; border-bottom:2px solid rgba(11,15,91,0.12)">
+                <div style="display:flex; flex-direction:column; gap:2px">
+                  <span style="font-size:15px; font-weight:800">GP1 report submission</span>
+                  <span style="font-size:11px; color:#6B7080; font-family:ui-monospace,monospace">GP1</span>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:2px; text-align:right">
+                  <span style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:#6B7080">In 9 days</span>
+                  <span style="font-size:11px; color:#6B7080">11:59 PM</span>
+                </div>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:baseline; padding:13px 0; border-bottom:2px solid rgba(11,15,91,0.12)">
+                <div style="display:flex; flex-direction:column; gap:2px">
+                  <span style="font-size:15px; font-weight:800">GP1 presentation</span>
+                  <span style="font-size:11px; color:#6B7080; font-family:ui-monospace,monospace">GP1</span>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:2px; text-align:right">
+                  <span style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:#6B7080">In 9 days</span>
+                  <span style="font-size:11px; color:#6B7080">11:59 PM</span>
+                </div>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:baseline; padding:13px 0">
+                <div style="display:flex; flex-direction:column; gap:2px">
+                  <span style="font-size:15px; font-weight:800">GP1 discussion</span>
+                  <span style="font-size:11px; color:#6B7080; font-family:ui-monospace,monospace">GP1</span>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:2px; text-align:right">
+                  <span style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:#6B7080">In 15 days</span>
+                  <span style="font-size:11px; color:#6B7080">10:00 AM</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex; background:#0B0F5B">
+            <div style="flex:1; padding:10px 0 12px; text-align:center; border-top:3px solid #E31B23; background:rgba(255,255,255,0.08)">
+              <span style="font-size:10px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:#FFFFFF">Home</span>
+            </div>
+            <div style="flex:1; padding:10px 0 12px; text-align:center; border-top:3px solid transparent">
+              <span style="font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Courses</span>
+            </div>
+            <div style="flex:1; padding:10px 0 12px; text-align:center; border-top:3px solid transparent">
+              <span style="font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Calendar</span>
+            </div>
+            <div style="flex:1; padding:10px 0 12px; text-align:center; border-top:3px solid transparent">
+              <span style="font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Profile</span>
+            </div>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:12px">
+      <span style="font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">3 · Progress, no events</span>
+      <x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" hint-size="412px,892px">
+        <div style="height:100%; display:flex; flex-direction:column; background:#FFFFFF; overflow:hidden">
+          <div style="background:#0B0F5B; padding:16px 20px; display:flex; align-items:center; justify-content:space-between">
+            <div style="display:flex; flex-direction:column; gap:2px">
+              <span style="font-size:10px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Good evening</span>
+              <span style="font-size:24px; font-weight:800; letter-spacing:-0.02em; line-height:1.05; color:#FFFFFF">Ghaida</span>
+            </div>
+            <span style="font-size:11px; font-weight:800; letter-spacing:0.14em; color:#FFFFFF">TADARAB</span>
+          </div>
+
+          <div style="flex:1; overflow:auto">
+            <div style="padding:18px 20px 0">
+              <span style="font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Today's progress</span>
+              <div style="height:2px; background:rgba(11,15,91,0.4); margin-top:8px"></div>
+            </div>
+            <div style="display:flex; margin:0 20px; border-bottom:2px solid rgba(11,15,91,0.12)">
+              <div style="flex:1; padding:14px 0">
+                <div style="font-size:28px; font-weight:800; line-height:1; letter-spacing:-0.03em">40</div>
+                <div style="font-size:10px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:#6B7080; margin-top:5px">Questions</div>
+              </div>
+              <div style="width:2px; background:rgba(11,15,91,0.12)"></div>
+              <div style="flex:1; padding:14px 0 14px 16px">
+                <div style="font-size:28px; font-weight:800; line-height:1; letter-spacing:-0.03em">10</div>
+                <div style="font-size:10px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:#6B7080; margin-top:5px">Flashcards</div>
+              </div>
+            </div>
+            <div style="margin:0 20px; padding:12px 0; display:flex; align-items:center; justify-content:space-between">
+              <div style="display:flex; align-items:center; gap:8px">
+                <div style="width:8px; height:8px; background:#E31B23"></div>
+                <span style="font-size:12px; font-weight:800; letter-spacing:0.04em">Active Learner</span>
+              </div>
+              <span style="font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#6B7080">108 pts · view ranks</span>
+            </div>
+
+            <div style="padding:6px 20px 24px">
+              <span style="font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Upcoming events</span>
+              <div style="height:2px; background:rgba(11,15,91,0.4); margin-top:8px"></div>
+              <div style="padding:16px 0 4px; display:flex; flex-direction:column; gap:12px; align-items:flex-start">
+                <span style="font-size:15px; font-weight:800">Nothing scheduled.</span>
+                <span style="font-size:13px; line-height:1.5; color:#4B5170; max-width:260px; text-wrap:pretty">Add a deadline or an exam and it shows up here, counted down to the day.</span>
+                <button type="button" style="appearance:none; cursor:pointer; background:transparent; color:#0B0F5B; height:44px; padding:0 14px; border:2px solid #0B0F5B; display:flex; align-items:center; gap:10px; font-family:Archivo,system-ui,sans-serif; font-size:12px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; transition:background 140ms ease" style-hover="background:rgba(11,15,91,0.06)">
+                  <span>Add an event</span>
+                  <span style="font-size:14px">&rarr;</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex; background:#0B0F5B">
+            <div style="flex:1; padding:10px 0 12px; text-align:center; border-top:3px solid #E31B23; background:rgba(255,255,255,0.08)">
+              <span style="font-size:10px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:#FFFFFF">Home</span>
+            </div>
+            <div style="flex:1; padding:10px 0 12px; text-align:center; border-top:3px solid transparent">
+              <span style="font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Courses</span>
+            </div>
+            <div style="flex:1; padding:10px 0 12px; text-align:center; border-top:3px solid transparent">
+              <span style="font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Calendar</span>
+            </div>
+            <div style="flex:1; padding:10px 0 12px; text-align:center; border-top:3px solid transparent">
+              <span style="font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Profile</span>
+            </div>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <div style="width:250px; display:flex; flex-direction:column; gap:14px">
+      <span style="font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Against your mockups</span>
+      <div style="height:2px; background:rgba(11,15,91,0.4)"></div>
+      <ul style="margin:0; padding-left:16px; font-size:13px; line-height:1.6; color:#4B5170">
+        <li>No streak, no timer — questions, flashcards, rank and points only.</li>
+        <li>Progress stops being a floating navy card; the numbers sit on white so they read at a glance.</li>
+        <li>New-student state replaces two zeros with a 3-step start and one red action.</li>
+        <li>Empty events message is flush left with an action, not centered gray text.</li>
+        <li>Event rows keep the code and the time but drop the colored left bars.</li>
+      </ul>
+      <div style="height:2px; background:rgba(11,15,91,0.4)"></div>
+      <span style="font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Color</span>
+      <div style="display:flex; flex-direction:column; gap:10px; font-size:13px; line-height:1.5; color:#4B5170">
+        <span><strong style="color:#0B0F5B">#0B0F5B</strong> — greeting header, bottom nav, onboarding poster, all type</span>
+        <span><strong style="color:#0B0F5B">#E31B23</strong> — one action per screen, active tab, rank mark, "today", "see all"</span>
+        <span><strong style="color:#0B0F5B">#FFFFFF</strong> — content ground</span>
+        <span><strong style="color:#0B0F5B">#6B7080</strong> — meta: course codes, times, points, labels</span>
+        <span><strong style="color:#0B0F5B">Navy 40 / 12%</strong> — 2px rules instead of cards</span>
+      </div>
+    </div>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showRank&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Home&quot;}}">
+class Component extends DCLogic {
+  state = { stage: 'empty', sheet: false, name: '', picked: null, quiz: false };
+
+  renderVals() {
+    const correct = 1;
+    const picked = this.state.picked;
+    const answers = [
+      { key: 'A', text: 'A collection of unrelated data' },
+      { key: 'B', text: 'A collection of related data' },
+      { key: 'C', text: 'A programming language' },
+      { key: 'D', text: 'A hardware device' },
+    ].map((o, i) => {
+      let bg = '#FFFFFF', fg = '#0B0F5B', border = 'rgba(11,15,91,0.25)', mark = '';
+      if (picked !== null) {
+        if (i === correct) { bg = '#0B0F5B'; fg = '#FFFFFF'; border = '#0B0F5B'; mark = 'Correct'; }
+        else if (i === picked) { fg = '#E31B23'; border = '#E31B23'; mark = 'Your pick'; }
+        else { fg = '#6B7080'; border = 'rgba(11,15,91,0.12)'; }
+      }
+      return { ...o, bg, fg, border, mark, pick: () => this.setState({ picked: i }) };
+    });
+
+    const name = this.state.name;
+    return {
+      isEmpty: this.state.stage === 'empty',
+      isCreated: this.state.stage === 'created',
+      isUploaded: this.state.stage === 'uploaded',
+      sheetOpen: this.state.sheet,
+      quizOpen: this.state.quiz,
+      courseName: name,
+      courseTitle: name || 'New course',
+      answers,
+      answered: picked !== null,
+      verdict: picked === correct ? 'Correct' : 'Not quite',
+      verdictColor: picked === correct ? '#0B0F5B' : '#E31B23',
+      onName: (e) => this.setState({ name: e.target.value }),
+      openSheet: () => this.setState({ sheet: true }),
+      closeSheet: () => this.setState({ sheet: false }),
+      createCourse: () => this.setState({ sheet: false, stage: 'created' }),
+      uploadMaterial: () => this.setState({ stage: 'uploaded' }),
+      reset: () => this.setState({ stage: 'empty', name: '' }),
+      openQuiz: () => this.setState({ quiz: true, picked: null }),
+      closeQuiz: () => this.setState({ quiz: false }),
+      nextQ: () => this.setState({ picked: null }),
+    };
+  }
+}
+</script>
+</body>
+</html>

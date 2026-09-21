@@ -531,7 +531,363 @@ mark it done, note decisions made, note what starts next.)*
   Remaining for Phase B: none. The Courses tab is out of scope for Phase B —
   it's Manar's Courses & Material upload feature (`feature/courses`, see
   Feature split) in Phase C, for her to define once she starts it.
-- **Phase C — Feature split:** not started
+- **Phase C — Feature split:** Deemah's Flashcards & Sessions
+  (`feature/flashcards`, rebased onto latest `main` — picked up the Phase B
+  Home work and the AI generation Worker) is done except the live Worker
+  call. No Phase B UI existed for this feature yet (checked the working
+  tree, `main`, and the pre-existing `feature/flashcards` branch — none had
+  it), so this pass built the screens too, not just the logic layer, styled
+  with the existing `AppTheme` and informed by
+  `docs/mockups/design_handoff_flashcard/.../Tadarab Phase 2b -
+  Flashcards.dc.html` and its reference PNGs, but this was not a
+  pixel-precision design pass like Phase B's.
+
+  **Model changes** (audited against `docs/Attributes Dictionary Table.png`
+  first, per the required audit — full match on every other field):
+  `Session.difficultyLevel` → `difficultyLevels: List<DifficultyLevel>`
+  (non-empty assert), affecting `session.dart`, `quiz_session.dart`, and
+  `flashcard_session.dart` alike since `QuizSession` and `FlashcardSession`
+  share the base class — **a teammate may be making this same change
+  independently; expect a merge conflict on `session.dart`/
+  `quiz_session.dart` to resolve manually, not a bug.**
+  `FlashcardSession.materialTitles: List<String>` added (approved
+  deviation, same pattern as `StudyMaterial.document`) so the Sessions list
+  can show a session's material badge without a materials re-fetch.
+  `Flashcard.reviewStatus` changed from required to nullable (`ReviewStatus?`)
+  — needed for a freshly-generated card's pre-review state and for Retake's
+  reset, since the enum itself stays exactly `{knowIt, needsReview}` as
+  specified. `Flashcard.cardIndex: int` added (approved deviation) — Firestore
+  doesn't preserve document insertion order, but Resume must reopen a deck in
+  its original order and Retake must persist a freshly-shuffled order, so an
+  explicit, independently-rewritable position field per card was the only way
+  to support both.
+
+  **Worker call — still a placeholder.** `FlashcardService.generateFlashcards`
+  throws `UnimplementedError` exactly as specified; the Worker's live URL
+  hasn't been provided. Every other outcome (success at full count, short
+  result → limit dialog, any failure → retry-able banner) is wired and
+  tested against a fake service, so swapping in the real HTTP call later
+  should only require rewriting that one function's body.
+
+  **Message copy**: per instruction, did *not* touch auth_service.dart's
+  `_networkFailureMessage`/`_genericFailureMessage` (a teammate may be
+  actively editing that file) — `flashcard_service.dart` instead duplicates
+  the exact same text as its own public `kFlashcardNetworkFailureMessage`/
+  `kFlashcardGenericFailureMessage`, with a TODO to consolidate onto
+  auth_service.dart's constants once that file is confirmed safe to touch.
+
+  **New files**: `lib/services/flashcard_service.dart` (Firestore CRUD +
+  the Worker-call placeholder), `lib/features/flashcards/logic/
+  flashcard_logic.dart` (pure functions: points, tier selection, resume-index
+  clamping, Retake reshuffle+reset, delete-dialog body text — no Firestore
+  dependency, matching how `home_data_service.dart`'s pure helpers are
+  tested), five screens and five shared widgets under
+  `lib/features/flashcards/`. Did not touch `home_screen.dart` — it still
+  opens placeholders for flashcard setup/resume; wiring real navigation
+  there is shared/Phase-C-sensitive territory and wasn't asked for here.
+
+  55 new tests (21 unit on `flashcard_logic.dart`, 34 widget across the five
+  screens and five widgets — Generating overlay, limit dialog, empty
+  sessions list, all four progress-pip states, save-and-leave sheet, Review
+  Pass button-label logic including the single-card case, both delete-dialog
+  variants, all three Performance Summary tiers at their exact 50%/80%
+  boundaries, and Review-now visibility), 0 failures. Full suite: 144 tests,
+  0 failures. `flutter analyze` clean except two pre-existing infos
+  (`session.dart`'s assert form was specified verbatim; the
+  `auth_service.dart` doc-comment lint predates this work).
+
+  **Visual rebuild pass** (pure styling, no state/logic changes): the first
+  pass above was a reasonable approximation, not sourced from the actual
+  design files. Rebuilt all 5 screens + widgets against `docs/mockups/
+  design_handoff_flashcard/.../design_handoff/Tadarab Phase 2b -
+  Flashcards.dc.html` and its README, made the single source of truth for
+  this pass (screenshots deliberately excluded — the interactive prototype
+  and screenshots disagreed with each other in several places, e.g. header
+  colors on Sessions/Setup, so screenshots were dropped rather than
+  cross-referenced further).
+
+  Explicit decisions confirmed before rebuilding, overriding what the
+  hand-off alone would give: tier message copy stays the existing
+  research-cited text ("You've mastered this." etc. — Bloom 1968; Mueller &
+  Dweck 1998), not the handoff's own wording; stat-card labels stay "I know
+  it"/"Need review"; tier background colors are green/purple/pink (see
+  below re: "purple"); Review Pass reuses the Flip Deck's pip strip, not a
+  bar; Review Pass's "Next" is red; the Sessions header is a two-part
+  "Flashcards" + dimmer live count; new pip colors for the Flip Deck
+  (`#7BE0A0` known, white-alpha for needs-review/untouched); a "Retake
+  Flashcards" button was added to Performance Summary (a real behavior
+  addition, not just styling — done because it was explicitly requested and
+  the underlying `retake()` call already existed).
+
+  New color tokens needed by the handoff were kept **local to the Flashcards
+  feature files**, not added to `AppColors`/`AppTheme` — those are on
+  CLAUDE.md's frozen-shared-file list and a teammate may be mid-edit, same
+  reasoning as the earlier `kFlashcard*FailureMessage` duplication.
+
+  Two things this pass could not fully deliver, both flagged with inline
+  TODOs rather than silently approximated:
+  - **`AppButton` has no "disabled but not loading" visual state** (only
+    `loading`, which is grey) and no background/text-color override — so
+    the handoff's pink-fill (`#F3A8AC`) disabled Generate button, and a
+    true green-filled "I know it" / white-with-red-ink "Need review" pair,
+    aren't reachable through its public API. Per instruction,
+    `lib/widgets/app_button.dart` was **not** touched (possible teammate
+    collision). The Flip Deck's two verdict buttons are instead small
+    local, non-shared widgets (`_VerdictButton`) that hit the exact colors;
+    Generate's disabled state approximates by dropping the shadow and
+    showing the same reason text, with fill staying red instead of pink.
+  - **The handoff's front-face "EXAMPLE" panel and per-card "topic" tags
+    (Performance Summary's "Marked for review" chips) have no backing
+    field on `Flashcard`** — neither is in the Attributes Dictionary Table,
+    and neither was requested when the model was built. Both are omitted
+    rather than fabricated; flagging in case a future pass wants to add
+    them as an approved model deviation.
+
+  One correction made mid-pass, worth a teammate's attention if they touch
+  this screen: the handoff's "developing" (50–79%) tier is actually a light
+  navy/lavender tint (`#EEF0FF` + navy ink), not purple — the prior purple
+  (`#F3E8FF`) was this project's own invented color, not sourced from any
+  design file. Implemented the verified navy/lavender value instead.
+
+  Also fixed a real layout bug surfaced by the rebuild (not a visual
+  choice): the Sessions list's colored side-strip used `Row(
+  crossAxisAlignment: CrossAxisAlignment.stretch)` inside a `ListView`
+  (unbounded height), which is a circular layout dependency — Flutter threw
+  thousands of `RenderFlex`/`debugCheckForParentData` assertion errors and
+  every session-row widget test hung on `pumpAndSettle`. Fixed by wrapping
+  the row in `IntrinsicHeight`, the standard pattern for a "strip spans
+  full row height" layout when the row's own height isn't otherwise
+  bounded.
+
+  Updated 2 existing tests to match the deliberately-changed visual
+  behavior above (pip "known" color; the flip card's answer-side no longer
+  has a "FIND IT IN YOUR MATERIAL" heading, per the handoff). Full suite:
+  144 tests, 0 failures. `flutter analyze` clean (same two pre-existing
+  infos as above).
+
+  **Deliberate, explicit overrides of the .dc.html** (confirmed twice after
+  re-verifying the file showed otherwise both times — these are intentional
+  exceptions, not drift, and should not be "corrected" back to match the
+  file without the team re-discussing it): Sessions List and Setup screen
+  headers are **red** (`AppColors.red`), not the file's navy; the Setup
+  header reads **"Flashcard setup"**, not the file's "Build the deck"; the
+  Sessions List row's **"DECK" badge is removed**; the count-stepper's "A
+  target, not a promise — the AI writes as many good cards as your
+  material supports." helper line (present verbatim in the current
+  `.dc.html`, line 165) is **removed**. Materials picker still shows a
+  plain "N materials selected" / single-title summary, never a list of
+  titles — this one actually matches the current `.dc.html`. 55 flashcards
+  tests, 0 failures after these changes; full suite not re-run this pass
+  (no non-flashcards files touched).
+
+  **Reversal:** the "Retake flashcards" button added to Performance Summary
+  earlier in this same pass (to match the `.dc.html`) has been **removed
+  again** — Retake now lives only on the Sessions List, per explicit
+  instruction, so there's one place it can be triggered from, not two.
+  Also removed the "2 per card you knew" subtitle under "Points earned" —
+  that row now shows just the label and the number. 4 performance-summary
+  tests, 0 failures; `flutter analyze` clean.
+
+  **Five more UI tweaks**, on-device-testing feedback rather than
+  design-handoff conflicts:
+  - Sessions List: a session's material title(s) are now a pill badge
+    above the status row (was plain grey text below the stats line); if
+    the joined title text is wider than the pill, it loops in a continuous
+    horizontal scroll (`_MarqueeText`) instead of wrapping or eliding.
+    **Real bug hit and fixed while building this:** the first version used
+    a `LayoutBuilder` to detect overflow, but this session row sits inside
+    an `IntrinsicHeight` (added earlier for the colored side-strip) —
+    `LayoutBuilder` inside an intrinsic-sizing pass throws a storm of
+    `RenderFlex`/`debugCheckForParentData` assertions and hangs
+    `pumpAndSettle`, the same failure mode as the `IntrinsicHeight` bug
+    fixed in the visual rebuild pass. Fixed by measuring the rendered width
+    via a `GlobalKey` + `RenderBox` read in a post-frame callback instead —
+    the first build is always a plain, intrinsically-safe `Text`, and only
+    a later frame (outside any intrinsic pass) can switch to the scrolling
+    layout. Note for later: the marquee's `AnimationController` repeats
+    forever once scrolling starts, so any future widget test that calls
+    `pumpAndSettle()` on a row whose title is long enough to actually
+    scroll will hang the same way — none of the current tests trigger it
+    (their sample titles are short), but it's a trap for a longer one.
+  - Setup screen: "Medium" is now selected by default (still freely
+    changeable) instead of requiring the student to pick a difficulty
+    before anything is selected.
+  - Setup screen: the "Generate flashcards" button now genuinely fills
+    pink (`#F3A8AC`, the README's own documented disabled-red-fill token)
+    when disabled, closing the gap the TODO from the visual-rebuild pass
+    flagged. Required a small, additive extension to the shared
+    `lib/widgets/app_button.dart`: a new optional `disabledBackgroundColor`
+    param, applied only when the button is disabled-and-not-loading — every
+    other existing `AppButton` call site across the app omits it and is
+    therefore unaffected (verified: analyzed and tested the whole project,
+    not just Flashcards, after this change).
+  - Setup screen: the cards-to-aim-for count is now directly editable
+    (tap the number, type a value on the numeric keypad) alongside the
+    existing +/- buttons; invalid or empty input reverts to the last valid
+    value, and typed values respect the same bounds as the buttons. The
+    LinearProgressIndicator bar under the count was removed.
+  - Setup screen: count bounds changed from 3–20 to 5–150 (the visual
+    rebuild pass had already changed the original 1–50 to 3–20; this
+    changes it again).
+
+  55 flashcards tests, 0 failures (one test updated — "Generate button is
+  disabled" now accounts for Medium starting pre-selected — and the intent
+  preserved, not just made to pass). Full project suite re-run after the
+  shared `AppButton` change: 144 tests, 0 failures; `flutter analyze` clean.
+
+  **Fix: the material-title pill's marquee never actually triggered.** The
+  pill's `Container` was `width: double.infinity`, so it always stretched
+  to the full card width — nothing ever overflowed it, so the "scrolling"
+  branch was dead code in practice. Fixed by giving the pill a real fixed
+  `ConstrainedBox(maxWidth: 200)` (`_kMaterialPillMaxWidth`, tunable) and
+  rewriting `_MarqueeText` to compare the text's natural width against
+  that fixed number directly in `build()`, rather than measuring the
+  parent's rendered width at runtime — simpler, and sidesteps needing
+  `LayoutBuilder` or a post-frame `RenderBox` read entirely (both of which
+  have their own problems inside this row's `IntrinsicHeight`, per the
+  earlier note). Verified with two new tests, not just visual inspection:
+  one confirms a short title renders once with no `Positioned` (the
+  scrolling branch's tell), the other confirms a long joined title renders
+  twice (the loop + its follow-on copy) *and* that a `Positioned`'s `left`
+  offset actually changes between two pumps — proving real motion, not a
+  silent fallback to a wider box.
+
+  This exposed the trap flagged in the note above: the existing
+  "singular session count" / "in-progress" / "completed" row tests all use
+  the same default sample title ("Lecture 1 - Introduction"), which turned
+  out to be wide enough at the new fixed pill width to trigger scrolling —
+  so their `pumpAndSettle()` calls started hanging on the marquee's
+  infinite-repeat animation. Switched those three to a plain `pump()`
+  (they were never actually testing the marquee, just text/button
+  presence, so this loses nothing). General lesson for this row going
+  forward: **never call `pumpAndSettle()` on it — use `pump()`** — whether
+  a given title triggers the marquee depends on exact text-measurement
+  behavior that can differ between the test harness's font fallback and a
+  real device, so it's not safe to assume "short enough not to scroll"
+  will hold.
+
+  57 flashcards tests now (2 new), 0 failures. Full project suite: 146
+  tests, 0 failures; `flutter analyze` clean.
+
+  **Two more refinements to the pill, and its mechanism changed entirely.**
+  The fixed `_kMaterialPillMaxWidth` (200px) approach above was itself
+  wrong: the ask was for the pill to hug short content and grow only up
+  to the *card's* full width (not a flat constant), and — this is the
+  bigger change — for long content to be **manually drag-scrollable**,
+  not auto-looping. So `_MarqueeText` (`AnimationController`, the
+  `Positioned` duplicate-loop) is gone; `_MaterialTitlePill` replaces it:
+  hugs content via `Align` inside an invisible full-width sizing box (so
+  short titles don't stretch), and once text is wider than that box's
+  *measured* available width, becomes exactly that width with a plain
+  horizontal `SingleChildScrollView` inside — the user drags to see the
+  rest. Still reads the available width via `GlobalKey` + `RenderBox` in
+  a post-frame callback rather than `LayoutBuilder`, for the same
+  `IntrinsicHeight` reason as before.
+
+  Also moved the delete/trash icon out of the pill's line entirely — it
+  now sits beside the status-dot/detail-text block below (its original
+  position before the pill existed), so the pill's available width isn't
+  reduced by a sibling it no longer shares a `Row` with.
+
+  Rewrote the two marquee-behavior tests to match: one confirms a short
+  title introduces no `SingleChildScrollView` at all (hugging, not always
+  a fixed box); the other confirms a long joined title produces exactly
+  one horizontal `SingleChildScrollView` *and* that dragging it actually
+  moves its `ScrollableState.position.pixels` away from zero — proof it's
+  really draggable, not just present. 57 flashcards tests (same count,
+  2 replaced in place), 0 failures. Full project suite: 146 tests, 0
+  failures; `flutter analyze` clean.
+
+  **`FlashcardCard` (Flip Deck + Review Pass): fixed size, and two source-
+  strip corrections.** Re-verified directly against the current `.dc.html`
+  before changing anything, per the standing rule — two findings worth
+  recording:
+  - The handoff's source-location strip is `#EEF0FF` (a light navy tint)
+    with navy text/icon, **not** a navy background as it was described
+    when this request came in. Kept `#EEF0FF`, per the file. The existing
+    doc comment claiming the handoff has no "FIND IT IN YOUR MATERIAL"
+    heading was also double-checked directly against the file and found
+    to be accurate, not stale — left as-is. Two real (smaller) mismatches
+    were found and fixed: the strip's border-radius should be 16px (was
+    14, i.e. `AppRadius.md`), and its icon+text should be left-aligned
+    (was centered — the handoff's flex row has no `justify-content`,
+    which defaults to start).
+  - The handoff itself has **no fixed card size at all** — the card is
+    fluid (`width:100%` of its container, height auto-sized to content),
+    so front/back and short/long content render at different sizes there.
+    Treated the fixed-size ask as a deliberate choice for this app (fair
+    one — a card changing shape between its two faces reads as a glitch),
+    sized off the handoff's own reference phone frame: 412px wide minus
+    22px of deck-body padding on each side ≈ 368px available, so 320×320
+    (`_CardFace._size`) is a round number comfortably under that. Content
+    now overflows via an internal vertical scroll
+    (`SingleChildScrollView` + `ConstrainedBox(minHeight: ...)` +
+    `Center`) rather than growing the card — short content still centers
+    vertically when there's nothing to scroll. `FlashcardCard` isn't used
+    anywhere inside an `IntrinsicHeight` (verified: that's Sessions-List-
+    only), so `LayoutBuilder` was safe to use here, unlike the sessions
+    row.
+
+  Added 3 new tests verifying this isn't just visual: front and back
+  render at the exact same `Size(320, 320)` regardless of text length;
+  very long text throws no render-overflow exception and the card stays
+  fixed-size while its internal `Scrollable` has genuine
+  `maxScrollExtent > 0`; short text's vertical center lands close to the
+  card's own center (not pinned to the top). 60 flashcards tests now
+  (3 new), 0 failures. Full project suite: 149 tests, 0 failures;
+  `flutter analyze` clean.
+
+  **Explicit, deliberate departure from the handoff, requested directly
+  (no re-verification asked or done for this one):** the back face's
+  source-location strip is now navy (`AppColors.navy`) with a white icon
+  and two stacked white lines — a dim "FIND IT IN YOUR MATERIAL" label
+  above a bold location line — replacing the handoff's own `#EEF0FF`-
+  tint/no-heading version from the visual rebuild pass. The strip has an
+  explicit fixed height (`_kSourceStripHeight`, 62) so it can't grow with
+  a long location string; both text lines are capped at `maxLines: 1` +
+  `TextOverflow.ellipsis` instead. Also increased `_CardFace._size` from
+  320 to 352 (bigger, per request, still fixed/square) — sized against
+  the actual `Padding(all: 22)` both hosting screens use (44px fixed
+  horizontal budget) and the handoff's own 412px reference frame (~368px
+  available), leaving a 16px margin.
+
+  Added a `ValueKey('source-strip')` for test targeting, and 2 new tests:
+  the strip renders at the identical size for a short vs. a very long
+  location (proving it truly doesn't grow), and the location `Text`
+  widget's own `maxLines`/`overflow` properties are asserted directly
+  (not just eyeballing that it looks truncated). Updated the two existing
+  fixed-card-size test assertions from `Size(320, 320)` to `Size(352,
+  352)`, and the "flipped" test's stale "no heading" comment/assumption —
+  it now asserts the heading *is* present, matching the new deliberate
+  design. 62 flashcards tests now (2 new), 0 failures. Full project
+  suite: 151 tests, 0 failures; `flutter analyze` clean.
+
+  **Correction to the strip above:** it had been made full card width,
+  which was wrong — precise spec given directly (no re-verification asked
+  for this one, since it's an intentional handoff departure): narrower
+  than the card (`_kSourceStripWidth = 230`, ~74% of the card's 312px
+  inner content width), horizontally centered (free via the surrounding
+  Column's default center cross-axis alignment once the strip stopped
+  being `width: double.infinity`), height brought down from 62 to 54,
+  radius from 16 to 14, icon 20→17, icon-to-text gap 12→9, inter-line gap
+  3→2, label opacity 0.7→0.75. Colors/text sizes/maxLines+ellipsis
+  behavior unchanged from the previous pass. Added a test asserting the
+  strip-to-card width ratio falls in 0.55–0.85 (a deliberately wide band
+  around the requested "roughly 70–75%" — not pinning the exact private
+  constant) and that the strip's center-x matches the card's center-x
+  within 1px. 63 flashcards tests now (1 new), 0 failures. Full project
+  suite: 152 tests, 0 failures; `flutter analyze` clean.
+
+  **Answer text (`_back()`) enlarged to match the question text.** Was
+  `AppTypography.subtitle.copyWith(fontWeight: w800)` (14px); now the same
+  explicit style the front face's question text uses — `fontSize: 22,
+  fontWeight: w900`, navy — for visual consistency between the two faces.
+  Nothing else in `_back()` (ANSWER tag, spacing, source strip) touched.
+  Added a test comparing the answer style directly against the live
+  question style (not just checking it against a hardcoded 22/w900) so a
+  future change to the front's style would be caught here too if the two
+  drift apart again. 64 flashcards tests now (1 new), 0 failures. Full
+  project suite: 153 tests, 0 failures; `flutter analyze` clean.
 
 ## Design handoffs
 
@@ -540,3 +896,7 @@ mark it done, note decisions made, note what starts next.)*
   Courses) is in the same bundle: the Home frames are implemented. The
   Courses-tab frames are Manar's Courses & Material upload feature
   (`feature/courses`, see Feature split) — not yet built, and hers to scope.
+- `docs/mockups/design_handoff_flashcard/` — the same design-system bundle,
+  with the Phase 2b (Flashcards) frames and reference PNGs added. Used to
+  build the Flashcards feature's screens (see Phase C above); not a
+  pixel-precision pass like Phase B's.

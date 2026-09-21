@@ -10,12 +10,13 @@ class FlashcardSession extends Session {
     super.completedAt,
     super.earnedPoints,
     super.isSessionCompleted,
-    required super.difficultyLevel,
+    required super.difficultyLevels,
     super.customPrompt,
     required super.email,
     required super.courseId,
     required super.materialIds,
     this.numberOfFlashcards = 0,
+    required this.materialTitles,
     this.currentFlashcardIndex = 0,
     this.needsReviewCount = 0,
     this.knownCount = 0,
@@ -23,6 +24,13 @@ class FlashcardSession extends Session {
 
   /// Total number of flashcards generated for this session.
   final int numberOfFlashcards;
+
+  /// Titles of every selected material, in the order they were selected —
+  /// displayed joined with ", " on the Sessions list badge. Not in the
+  /// Attributes Dictionary Table — an approved deviation (same pattern as
+  /// [Course]'s color field) since Session.materialIds alone would require
+  /// a materials re-fetch just to render a session row.
+  final List<String> materialTitles;
 
   /// Index of the flashcard the student is currently on (for resuming).
   final int currentFlashcardIndex;
@@ -44,12 +52,15 @@ class FlashcardSession extends Session {
       completedAt: shared.completedAt,
       earnedPoints: shared.earnedPoints,
       isSessionCompleted: shared.isSessionCompleted,
-      difficultyLevel: shared.difficultyLevel,
+      difficultyLevels: shared.difficultyLevels,
       customPrompt: shared.customPrompt,
       email: shared.email,
       courseId: shared.courseId,
       materialIds: shared.materialIds,
       numberOfFlashcards: (data['numberOfFlashcards'] as num?)?.toInt() ?? 0,
+      materialTitles: List<String>.from(
+        data['materialTitles'] as List? ?? const [],
+      ),
       currentFlashcardIndex:
           (data['currentFlashcardIndex'] as num?)?.toInt() ?? 0,
       needsReviewCount: (data['needsReviewCount'] as num?)?.toInt() ?? 0,
@@ -61,6 +72,7 @@ class FlashcardSession extends Session {
     return {
       ...sharedFieldsToFirestore(),
       'numberOfFlashcards': numberOfFlashcards,
+      'materialTitles': materialTitles,
       'currentFlashcardIndex': currentFlashcardIndex,
       'needsReviewCount': needsReviewCount,
       'knownCount': knownCount,

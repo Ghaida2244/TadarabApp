@@ -53,3 +53,6 @@ worker/.wrangler/
 worker/.dev.vars
 
 docs/mockups/*.zip
+
+# Local dev-only preview entry point, not for the team repo
+lib/features/flashcards/dev_preview.dart

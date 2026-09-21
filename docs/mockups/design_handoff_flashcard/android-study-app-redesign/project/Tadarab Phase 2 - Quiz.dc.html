@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="design_doc_mode" content="canvas">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800;900&amp;display=swap" rel="stylesheet">
+  <style>
+    body { margin:0; background:#F0F1F7; font-family:Nunito, system-ui, sans-serif; color:#0B0F5B; }
+    a { color:#E31B23; }
+    a:hover { color:#A8141B; }
+    @keyframes popIn { from { opacity:0; transform:translateY(10px) scale(0.985); } to { opacity:1; transform:none; } }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    @keyframes sheetUp { from { transform:translateY(100%); } to { transform:none; } }
+  </style>
+</helmet>
+
+<div style="padding:48px 40px 80px; display:flex; flex-direction:column; gap:44px">
+
+  <div style="display:flex; flex-direction:column; gap:14px; max-width:820px">
+    <span style="font-size:13px; font-weight:900; letter-spacing:0.08em; color:#E31B23">TADARAB · PHASE 2</span>
+    <h1 style="margin:0; font-size:38px; font-weight:900; letter-spacing:-0.02em; line-height:1.1">The quiz flow, working</h1>
+    <p style="margin:0; font-size:15px; line-height:1.6; font-weight:700; color:#5B618F">One live prototype, not a set of stills: tap through sessions, setup, generation, both quiz modes, the summary and the review. Every button obeys its real rule — Exam Mode can't be exited, Next stays dead until you pick, points come from what you actually answered.</p>
+  </div>
+
+  <div style="display:flex; flex-wrap:wrap; gap:36px; align-items:flex-start">
+
+    <div style="display:flex; flex-direction:column; gap:14px">
+      <div style="display:flex; align-items:center; gap:10px">
+        <span style="font-size:13px; font-weight:900">Quiz flow — live</span>
+        <span style="font-size:12px; font-weight:800; color:#E31B23">{{ stateLabel }}</span>
+      </div>
+      <x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" hint-size="412px,892px">
+        <div style="position: relative; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; background: #FFFFF; overflow: hidden">
+
+          <sc-if value="{{ onSessions }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex; flex-direction:column; height:100%">
+              <div style="padding:18px 22px 22px; background:#0B0F5B; border-radius:0 0 28px 28px; display:flex; align-items:center; gap:13px" data-comment-anchor="d3a658729e-div">
+                <button type="button" onClick="{{ backToCourse }}" aria-label="Back to course" style="appearance:none; border:0; cursor:pointer; width:38px; height:38px; border-radius:999px; background:rgba(255,255,255,0.2); color:#FFFFFF; display:flex; align-items:center; justify-content:center; flex:none">
+                  <svg viewBox="0 0 24 24" style="width:19px; height:19px" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg>
+                </button>
+                <div style="flex:1; display:flex; align-items:baseline; justify-content:space-between; gap:10px">
+                  <span style="font-size:24px; font-weight:900; letter-spacing:-0.02em; color:#FFFFFF">Quiz sessions</span>
+                  <span style="font-size:13px; font-weight:900; color:rgba(255,255,255,0.65)">{{ sessionCount }}</span>
+                </div>
+              </div>
+
+              <div style="flex: 1; overflow: auto; padding: 0 22px 12px; display: flex; flex-direction: column; gap: 12px; background-color: #FFFFFF" data-comment-anchor="7c0355df50-div">
+                <sc-if value="{{ noSessions }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin:auto 0; display:flex; flex-direction:column; align-items:center; gap:16px; padding:34px 22px; border:2px dashed #C9CEE8; border-radius:26px; background:#FFFFFF">
+                    <div style="width:72px; height:72px; border-radius:24px; background:#EEF0FF; display:flex; align-items:center; justify-content:center; color:#0B0F5B">
+                      <svg viewBox="0 0 24 24" style="width:34px; height:34px" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2.5c0 4.6 1.9 6.7 6.4 7.4.8.1.8 1.3 0 1.4-4.5.7-6.4 2.8-6.4 7.4 0 .8-1.2.8-1.3 0-.5-4.6-2.4-6.7-6.9-7.4-.8-.1-.8-1.3 0-1.4 4.5-.7 6.4-2.8 6.9-7.4.1-.8 1.3-.8 1.3 0z"></path><path d="M19.5 16.5v3M18 18h3"></path><path d="M5 17.5v2M4 18.5h2"></path></svg>
+                    </div>
+                    <span style="font-size:20px; font-weight:900; text-align:center">No sessions yet</span>
+                    <span style="font-size:13px; font-weight:700; color:#7A80A6; text-align:center; line-height:1.55; max-width:230px">Generate a quiz from a lecture and it lands here — half-finished or done, you can always come back to it.</span>
+                  </div>
+                </sc-if>
+
+                <sc-for list="{{ sessions }}" as="s" hint-placeholder-count="2">
+                  <sc-if value="{{ s.showHeader }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex; align-items:center; gap:9px; padding:14px 2px 2px">
+                      <span style="font-size:11px; font-weight:900; letter-spacing:0.07em; color:#9AA0C4">{{ s.headerLabel }}</span>
+                      <span style="flex:1; height:2px; border-radius:999px; background:#E6E9F7"></span>
+                    </div>
+                  </sc-if>
+                  <div style="background:#FFFFFF; border-radius:22px; box-shadow:0 0 0 2px #EEF0FF, 0 3px 0 rgba(11,15,91,0.08); animation:popIn 220ms cubic-bezier(0.2,0.8,0.2,1) both">
+                    <div style="display:flex; align-items:stretch">
+                      <div style="width:7px; border-radius:22px 0 0 22px; background:{{ s.hue }}; flex:none"></div>
+                      <div style="flex:1; padding:15px 15px 19px; display:flex; flex-direction:column; gap:12px; min-width:0">
+                        <div style="position: relative; align-self: flex-start; max-width: 100%; border-radius: 999px; overflow: hidden; background-color: #0B0F5B">
+                          <div style="overflow-x: auto; overflow-y: hidden; white-space: nowrap; padding: 2px 22px 2px 9px; scrollbar-width: none; background-color: #EEF0FF">
+                            <span style="font-size: 10px; font-weight: 900; letter-spacing: 0.04em; color: #0B0F5B">{{ s.matsLabel }}</span>
+                          </div>
+                          <span style="position: absolute; top: 0; right: 0; bottom: 0; width: 22px; pointer-events: none; background: linear-gradient(90deg, rgba(11,15,91,0), #EEF0FF98)"></span>
+                        </div>
+                        <div style="display:flex; align-items:flex-start; gap:12px">
+                          <div style="flex:1; display:flex; flex-direction:column; gap:7px; min-width:0">
+                            <div style="display:flex; align-items:center; gap:7px">
+                              <span style="padding: 4px 9px; border-radius: 999px; font-size: 10px; font-weight: 900; letter-spacing: 0.04em; color: #0B0F5B; background-color: #EEF0FF">{{ s.modeLabel }}</span>
+                              <span style="display:flex; align-items:center; gap:5px">
+                                <span style="width:7px; height:7px; border-radius:999px; background:{{ s.hue }}"></span>
+                                <span style="font-size:12px; font-weight:900; color:{{ s.hue }}">{{ s.status }}</span>
+                              </span>
+                            </div>
+                            <span style="font-size:17px; font-weight:900; line-height:1.25">{{ s.detail }}</span>
+                          </div>
+                          <button type="button" onClick="{{ s.askRemove }}" aria-label="Delete session" style="appearance:none; border:0; cursor:pointer; width:32px; height:32px; border-radius:11px; background:#FFE9EA; color:#E31B23; display:flex; align-items:center; justify-content:center; flex:none" style-hover="background:#FFD3D5">
+                            <svg viewBox="0 0 24 24" style="width:16px; height:16px" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 14h10l1-14"></path><path d="M10 10v7M14 10v7"></path></svg>
+                          </button>
+                        </div>
+                        <button type="button" onClick="{{ s.act }}" style="appearance:none; border:0; cursor:pointer; width:100%; height:46px; border-radius:14px; background:#0B0F5B; color:#FFFFFF; box-shadow:0 3px 0 #070A3E99; display:flex; align-items:center; justify-content:center; gap:8px; font-family:Nunito,system-ui,sans-serif; font-size:14px; font-weight:900; line-height:1.2; text-align:center; transition:transform 90ms ease, box-shadow 90ms ease" style-active="transform:translateY(2px); box-shadow:0 1px 0 #070A3E99">{{ s.actLabel }}</button>
+                        <sc-if value="{{ s.canRetake }}" hint-placeholder-val="{{ false }}">
+                          <button type="button" onClick="{{ s.retake }}" style="appearance:none; cursor:pointer; width:100%; height:46px; border-radius:14px; background:#FFFFFF; border:2px solid #0B0F5B; color:#0B0F5B; box-shadow:0 3px 0 rgba(11,15,91,0.18); font-family:Nunito,system-ui,sans-serif; font-size:14px; font-weight:900; transition:transform 90ms ease, box-shadow 90ms ease" style-active="transform:translateY(2px); box-shadow:0 1px 0 rgba(11,15,91,0.18)">Retake quiz</button>
+                        </sc-if>
+                      </div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="padding: 10px 22px 26px; background-color: #FFFFFF">
+                <button type="button" onClick="{{ goSetup }}" style="appearance: none; border: 0; cursor: pointer; width: 100%; height: 56px; border-radius: 18px; background: #E31B23; color: #FFFFFF; box-shadow: 0 3px 0 #A8141B99; display: flex; align-items: center; justify-content: center; gap: 9px; font-family: Nunito,system-ui,sans-serif; font-size: 18px; font-weight: 900; transition: transform 90ms ease, box-shadow 90ms ease" style-active="transform:translateY(2px); box-shadow:0 1px 0 #A8141B99">
+                  
+                  Start new quiz
+                </button>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ onSetup }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; height:100%">
+              <div style="padding:18px 22px 22px; background:#0B0F5B; border-radius:0 0 28px 28px; display:flex; align-items:center; gap:13px">
+                <button type="button" onClick="{{ goSessions }}" aria-label="Back" style="appearance:none; border:0; cursor:pointer; width:38px; height:38px; border-radius:999px; background:rgba(255,255,255,0.2); color:#FFFFFF; display:flex; align-items:center; justify-content:center; flex:none">
+                  <svg viewBox="0 0 24 24" style="width:19px; height:19px" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg>
+                </button><span style="font-size:24px; font-weight:900; letter-spacing:-0.02em; color:#FFFFFF">Quiz setup</span>
+                
+              </div>
+
+              <div style="flex: 1; overflow: auto; padding: 4px 22px 16px; display: flex; flex-direction: column; gap: 22px; background-color: #FFFFFF">
+                <div style="display:flex; flex-direction:column; gap:9px">
+                  <span style="font-size: 12px; font-weight: 900; letter-spacing: 0.06em; color: #9AA0C4">MATERIALS</span>
+                  <button type="button" onClick="{{ toggleMats }}" style="appearance:none; cursor:pointer; text-align:left; display:flex; align-items:center; gap:12px; padding:0 14px; height:54px; border-radius:16px; background:#FFFFFF; border:2px solid {{ matsEdge }}; font-family:Nunito,system-ui,sans-serif" style-hover="border-color:#0B0F5B">
+                    <span style="width:32px; height:32px; border-radius:11px; background:#EEF0FF; color:#0B0F5B; display:flex; align-items:center; justify-content:center; flex:none">
+                      <svg viewBox="0 0 24 24" style="width:17px; height:17px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5.5A1.5 1.5 0 0 1 4.5 4H10a2 2 0 0 1 2 2v13a2 2 0 0 0-2-2H3z"></path><path d="M21 5.5A1.5 1.5 0 0 0 19.5 4H14a2 2 0 0 0-2 2v13a2 2 0 0 1 2-2h7z"></path></svg>
+                    </span>
+                    <span style="flex:1; font-size:15px; font-weight:900; color:{{ matsInk }}">{{ matsSummary }}</span>
+                    <span style="font-size:15px; font-weight:900; color:#7A80A6; transform:{{ caret }}; transition:transform 160ms ease">▾</span>
+                  </button>
+                  <sc-if value="{{ matsOpen }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex; flex-direction:column; gap:8px; padding:12px; border-radius:18px; background:#FFFFFF; border:2px solid #EEF0FF; animation:popIn 180ms cubic-bezier(0.2,0.8,0.2,1) both">
+                      <sc-for list="{{ materials }}" as="m" hint-placeholder-count="3">
+                        <button type="button" onClick="{{ m.pick }}" style="appearance:none; cursor:pointer; text-align:left; display:flex; align-items:center; gap:12px; padding:11px 12px; border-radius:14px; font-family:Nunito,system-ui,sans-serif; background:{{ m.bg }}; border:0; transition:transform 90ms ease" style-active="transform:scale(0.99)">
+                          <span style="width:24px; height:24px; border-radius:8px; background:{{ m.boxBg }}; border:2px solid {{ m.boxEdge }}; color:#FFFFFF; display:flex; align-items:center; justify-content:center; flex:none">
+                            <svg viewBox="0 0 24 24" style="width:14px; height:14px; opacity:{{ m.tick }}" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
+                          </span>
+                          <span style="flex:1; font-size:14px; font-weight:900; color:#0B0F5B; line-height:1.3">{{ m.title }}</span>
+                          <span style="font-size:10px; font-weight:900; color:#9AA0C4">{{ m.kind }}</span>
+                        </button>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:9px">
+                  <span style="font-size: 12px; font-weight: 900; letter-spacing: 0.06em; color: #9AA0C4">DIFFICULTY </span>
+                  <div style="display:flex; gap:8px">
+                    <sc-for list="{{ levels }}" as="l" hint-placeholder-count="3">
+                      <button type="button" onClick="{{ l.pick }}" style="appearance:none; cursor:pointer; flex:1; height:46px; border-radius:14px; font-family:Nunito,system-ui,sans-serif; font-size:14px; font-weight:900; background:{{ l.bg }}; color:{{ l.ink }}; border:{{ l.border }}; box-shadow:{{ l.shadow }}; transition:transform 90ms ease" style-active="transform:translateY(2px)">{{ l.label }}</button>
+                    </sc-for>
+                  </div>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:9px">
+                  <div style="display:flex; align-items:baseline; justify-content:space-between">
+                    <span style="font-size: 12px; font-weight: 900; letter-spacing: 0.06em; color: #9AA0C4">QUESTIONS TO AIM FOR</span>
+                  </div>
+                  
+                  <div style="display:flex; align-items:center; gap:14px">
+                    <button type="button" onClick="{{ dec }}" aria-label="Fewer questions" style="appearance:none; border:0; cursor:pointer; width:46px; height:46px; border-radius:999px; background:{{ decBg }}; color:{{ decInk }}; font-size:26px; font-weight:900; line-height:1; font-family:Nunito,system-ui,sans-serif; flex:none">−</button>
+                    <div style="flex:1; display:flex; flex-direction:column; gap:7px">
+                      <span style="font-size:30px; font-weight:900; line-height:1; text-align:center">{{ count }}</span>
+                      <div style="height:8px; border-radius:999px; background:#EEF0FF; overflow:hidden">
+                        <div style="width:{{ countFill }}; height:100%; border-radius:999px; background:#0B0F5B; transition:width 160ms ease"></div>
+                      </div>
+                    </div>
+                    <button type="button" onClick="{{ inc }}" aria-label="More questions" style="appearance:none; border:0; cursor:pointer; width:46px; height:46px; border-radius:999px; background:{{ incBg }}; color:{{ incInk }}; font-size:26px; font-weight:900; line-height:1; font-family:Nunito,system-ui,sans-serif; flex:none">+</button>
+                  </div>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:9px">
+                  <span style="font-size: 12px; font-weight: 900; letter-spacing: 0.06em; color: #9AA0C4">MODE</span>
+                  <button type="button" onClick="{{ pickExam }}" style="appearance:none; cursor:pointer; text-align:left; display:flex; align-items:center; gap:13px; padding:15px; border-radius:18px; font-family:Nunito,system-ui,sans-serif; background:{{ examBg }}; border:{{ examBorder }}; box-shadow:{{ examShadow }}; transition:transform 90ms ease" style-active="transform:translateY(2px)">
+                    <span style="width:38px; height:38px; border-radius:13px; background:{{ examChip }}; color:{{ examChipInk }}; display:flex; align-items:center; justify-content:center; flex:none">
+                      <svg viewBox="0 0 24 24" style="width:19px; height:19px" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h9l4 4v13H6z"></path><path d="M15 3.5v4h4"></path><path d="M9.5 12.5h5M9.5 16h3"></path></svg>
+                    </span>
+                    <span style="flex:1; display:flex; flex-direction:column; gap:2px">
+                      <span style="font-size:15px; font-weight:900; color:{{ examInk }}">Exam Mode</span>
+                      <span style="font-size:12px; font-weight:800; color:{{ examSub }}; line-height:1.4">Answer everything first. No exit until you submit.</span>
+                    </span>
+                  </button>
+                  <button type="button" onClick="{{ pickLearn }}" style="appearance:none; cursor:pointer; text-align:left; display:flex; align-items:center; gap:13px; padding:15px; border-radius:18px; font-family:Nunito,system-ui,sans-serif; background:{{ learnBg }}; border:{{ learnBorder }}; box-shadow:{{ learnShadow }}; transition:transform 90ms ease" style-active="transform:translateY(2px)">
+                    <span style="width:38px; height:38px; border-radius:13px; background:{{ learnChip }}; color:{{ learnChipInk }}; display:flex; align-items:center; justify-content:center; flex:none">
+                      <svg viewBox="0 0 24 24" style="width:19px; height:19px" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l8 4-8 4-8-4z"></path><path d="M6 10.5V15c0 1.7 2.7 3 6 3s6-1.3 6-3v-4.5"></path></svg>
+                    </span>
+                    <span style="flex:1; display:flex; flex-direction:column; gap:2px">
+                      <span style="font-size:15px; font-weight:900; color:{{ learnInk }}">Learning Mode</span>
+                      <span style="font-size:12px; font-weight:800; color:{{ learnSub }}; line-height:1.4">Feedback, explanation and source after each one.</span>
+                    </span>
+                  </button>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:9px">
+                  <span style="font-size:12px; font-weight:900; letter-spacing:0.06em; color:#9AA0C4">EXTRA INSTRUCTIONS <span style="color: #C9CEE8">· OPTIONAL</span></span>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap">
+                    <sc-for list="{{ promptChips }}" as="p" hint-placeholder-count="3">
+                      <button type="button" onClick="{{ p.pick }}" style="appearance:none; cursor:pointer; padding:8px 12px; border-radius:999px; background:#FFFFFF; border:2px solid #E2E6F5; font-family:Nunito,system-ui,sans-serif; font-size:12px; font-weight:900; color:#5B618F" style-hover="border-color:#0B0F5B; color:#0B0F5B">{{ p.label }}</button>
+                    </sc-for>
+                  </div><textarea rows="3" maxLength="{{ promptMax }}" value="{{ prompt }}" onChange="{{ onPrompt }}" placeholder="e.g. include an example with each question" style="width:100%; box-sizing:border-box; resize:none; appearance:none; background:#FFFFFF; border:2px solid {{ promptEdge }}; border-radius:16px; padding:13px 14px; font-family:Nunito,system-ui,sans-serif; font-size:14px; font-weight:800; color:#0B0F5B; line-height:1.5; outline:none" style-focus="border-color:#0B0F5B"></textarea>
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:10px">
+                    <span style="font-size:11px; font-weight:800; color:{{ promptHintInk }}">{{ promptHint }}</span>
+                    <span style="font-size:11px; font-weight:900; color:{{ promptCountInk }}">{{ promptCount }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style="padding:12px 22px 26px; background:#FFFFFF; border-radius:26px 26px 0 0; box-shadow:0 -3px 0 rgba(11,15,91,0.05); display:flex; flex-direction:column; gap:11px">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+                  
+                </div>
+                <button type="button" onClick="{{ generate }}" style="appearance:none; border:0; cursor:pointer; width:100%; height:56px; border-radius:18px; background:#E31B23; color:#FFFFFF; box-shadow:0 3px 0 #A8141B99; display:flex; align-items:center; justify-content:center; gap:9px; font-family:Nunito,system-ui,sans-serif; font-size:16px; font-weight:900; transition:transform 90ms ease, box-shadow 90ms ease" style-active="transform:translateY(2px); box-shadow:0 1px 0 #A8141B99">
+                  <svg viewBox="0 0 24 24" style="width:17px; height:17px" fill="currentColor"><path d="M8 5l11 7-11 7z"></path></svg>
+                  Generate quiz
+                </button>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ onQuiz }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; height:100%; background:#FFFFFF">
+              <div style="padding:18px 22px 16px; background:#0B0F5B; display:flex; flex-direction:column; gap:13px">
+                <div style="display:flex; align-items:center; gap:12px">
+                  <sc-if value="{{ canExit }}" hint-placeholder-val="{{ false }}">
+                    <button type="button" onClick="{{ askExit }}" aria-label="Leave quiz" style="appearance:none; border:0; cursor:pointer; width:34px; height:34px; border-radius:999px; background:rgba(255,255,255,0.2); color:#FFFFFF; display:flex; align-items:center; justify-content:center; flex:none">
+                      <svg viewBox="0 0 24 24" style="width:15px; height:15px" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+                    </button>
+                  </sc-if>
+                  <sc-if value="{{ locked }}" hint-placeholder-val="{{ false }}">
+                    <span style="display:flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,0.14); flex:none">
+                      <svg viewBox="0 0 24 24" style="width:13px; height:13px" fill="none" stroke="#FFFFFF" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="9.5" rx="2"></rect><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"></path></svg>
+                      <span style="font-size:10px; font-weight:900; letter-spacing:0.05em; color:#FFFFFF">LOCKED</span>
+                    </span>
+                  </sc-if>
+                  <span style="flex:1; font-size:15px; font-weight:900; color:#FFFFFF">{{ qHeading }}</span>
+                  <span style="font-size:12px; font-weight:900; color:rgba(255,255,255,0.6)">{{ modeName }}</span>
+                </div>
+                <div style="display:flex; gap:4px">
+                  <sc-for list="{{ pips }}" as="p" hint-placeholder-count="6">
+                    <div style="flex:1; height:6px; border-radius:999px; background:{{ p.bg }}"></div>
+                  </sc-for>
+                </div>
+              </div>
+
+              <div style="flex: 1; overflow: auto; padding: 20px 22px; display: flex; flex-direction: column; gap: 16px; background-color: #FFFFFF">
+                
+
+                <sc-if value="{{ hasExample }}" hint-placeholder-val="{{ false }}">
+                  
+                </sc-if>
+
+                <span style="font-size:21px; font-weight:900; line-height:1.35; text-wrap:pretty">{{ qText }}</span><div style="display:flex; flex-direction:column; gap:10px; padding-top:18px">
+                  <sc-for list="{{ options }}" as="o" hint-placeholder-count="4">
+                    <button type="button" onClick="{{ o.pick }}" style="appearance: none; cursor: {{ o.cursor }}; text-align: left; display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-radius: 16px; font-family: Nunito,system-ui,sans-serif; background: {{ o.bg }}; border: {{ o.border }}; box-shadow: {{ o.shadow }}; transition: transform 90ms ease; width: 353px; height: 65px" style-active="transform:scale(0.995)">
+                      <span style="width:29px; height:29px; border-radius:999px; background:{{ o.keyBg }}; color:{{ o.keyInk }}; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:900; flex:none">{{ o.key }}</span>
+                      <span style="flex:1; font-size:15px; font-weight:{{ o.weight }}; color:{{ o.ink }}; line-height:1.4">{{ o.text }}</span>
+                      <sc-if value="{{ o.mark }}" hint-placeholder-val="{{ false }}">
+                        <span style="font-size:11px; font-weight:900; color:{{ o.markInk }}; flex:none">{{ o.mark }}</span>
+                      </sc-if>
+                    </button>
+                  </sc-for>
+                </div>
+
+                <sc-if value="{{ revealed }}" hint-placeholder-val="{{ false }}">
+                  <div style="border-radius:20px; overflow:hidden; box-shadow:0 0 0 2px #EEF0FF, 0 3px 0 rgba(11,15,91,0.08); animation:popIn 240ms cubic-bezier(0.2,0.8,0.2,1) both">
+                    <div style="padding:15px; background:#F7F8FD; display:flex; flex-direction:column; gap:6px">
+                      <span style="font-size:11px; font-weight:900; letter-spacing:0.06em; color:#9AA0C4">EXPLANATION</span>
+                      <span style="font-size:14px; font-weight:800; line-height:1.6">{{ qWhy }}</span>
+                    </div>
+                    <div style="display:flex; align-items:stretch; background:#0B0F5B">
+                      <div style="width:46px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.1); color:#FFFFFF">
+                        <svg viewBox="0 0 24 24" style="width:19px; height:19px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h9a3 3 0 0 1 3 3v13H7a3 3 0 0 1-3-3z"></path><path d="M16 7h4v13h-4"></path><path d="M7.5 8.5h5M7.5 12h5"></path></svg>
+                      </div>
+                      <div style="flex:1; padding:12px 14px; display:flex; flex-direction:column; gap:2px">
+                        <span style="font-size:10px; font-weight:900; letter-spacing:0.07em; color:rgba(255,255,255,0.55)">FIND IT IN YOUR MATERIAL</span>
+                        <span style="font-size:14px; font-weight:900; color:#FFFFFF">{{ qSource }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </sc-if>
+              </div>
+
+              <div style="padding:14px 22px 26px; display:flex; flex-direction:column; gap:10px">
+                <button type="button" onClick="{{ advance }}" disabled="{{ nextOff }}" style="appearance:none; border:0; cursor:{{ nextCursor }}; width:100%; height:54px; border-radius:16px; background:{{ nextBg }}; color:#FFFFFF; box-shadow:{{ nextShadow }}; display:flex; align-items:center; justify-content:center; gap:8px; font-family:Nunito,system-ui,sans-serif; font-size:15px; font-weight:900; transition:transform 90ms ease, background 140ms ease" style-active="transform:translateY(2px)">
+                  {{ nextLabel }}
+                  <svg viewBox="0 0 24 24" style="width:16px; height:16px" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>
+                </button>
+                <sc-if value="{{ locked }}" hint-placeholder-val="{{ false }}">
+                  <button type="button" onClick="{{ prev }}" disabled="{{ prevOff }}" style="appearance:none; cursor:{{ prevCursor }}; width:100%; height:50px; border-radius:16px; background:#FFFFFF; border:2px solid {{ prevEdge }}; color:{{ prevInk }}; box-shadow:{{ prevShadow }}; display:flex; align-items:center; justify-content:center; gap:7px; font-family:Nunito,system-ui,sans-serif; font-size:15px; font-weight:900; transition:transform 90ms ease" style-active="transform:translateY(2px)">
+                    <svg viewBox="0 0 24 24" style="width:16px; height:16px" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg>
+                    Previous
+                  </button>
+                </sc-if>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ onSummary }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; height:100%">
+              
+
+              <div style="padding:22px; background:#0B0F5B; border-radius:0 0 30px 30px; display:flex; flex-direction:column; gap:7px">
+                <span style="font-size:26px; font-weight:900; color:#FFFFFF; line-height:1.15; letter-spacing:-0.02em; text-align:center">Performance Summary</span><span style="font-size: 12px; font-weight: 900; letter-spacing: 0.06em; color: rgba(255,255,255,0.55); text-align: center">{{ resultMode }}</span>
+                
+              </div><div style="flex:1; overflow:auto; padding:30px 22px 26px; display:flex; flex-direction:column; gap:18px; background:#FFFFFF">
+                <div style="display:flex; gap:12px">
+                  <div style="flex:1; border-radius:22px; padding:18px; display:flex; flex-direction:column; align-items:center; gap:9px; box-shadow:0 3px 0 rgba(11,15,91,0.1); background:#FFFFFF; border:2px solid #EEF0FF">
+                    <span style="width:42px; height:42px; border-radius:999px; background:#E6F7EC; color:#16A34A; display:flex; align-items:center; justify-content:center; flex:none">
+                      <svg viewBox="0 0 24 24" style="width:21px; height:21px" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
+                    </span>
+                    <span style="font-size:34px; font-weight:900; color:#16A34A; line-height:1">{{ correct }}</span>
+                    <span style="font-size:11px; font-weight:900; letter-spacing:0.06em; color:#7A80A6">CORRECT</span>
+                  </div>
+                  <div style="flex:1; border-radius:22px; padding:18px; display:flex; flex-direction:column; align-items:center; gap:9px; box-shadow:0 3px 0 rgba(11,15,91,0.1); background:#FFFFFF; border:2px solid #EEF0FF">
+                    <span style="width:42px; height:42px; border-radius:999px; background:#FFE9EA; color:#E31B23; display:flex; align-items:center; justify-content:center; flex:none">
+                      <svg viewBox="0 0 24 24" style="width:21px; height:21px" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+                    </span>
+                    <span style="font-size:34px; font-weight:900; color:#E31B23; line-height:1">{{ wrong }}</span>
+                    <span style="font-size:11px; font-weight:900; letter-spacing:0.06em; color:#7A80A6">WRONG</span>
+                  </div>
+                </div>
+
+                <div style="display:flex; align-items:center; gap:14px; padding:18px; border-radius:22px; background:{{ moodBg }}; box-shadow:0 3px 0 {{ moodShadow }}">
+                  <span style="width:48px; height:48px; border-radius:16px; background:#FFFFFF; display:flex; align-items:center; justify-content:center; color:{{ moodInk }}; flex:none">
+                    <svg viewBox="0 0 24 24" style="width:24px; height:24px" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="{{ moodPath }}"></path></svg>
+                  </span>
+                  <span style="flex:1; font-size:14px; font-weight:900; color:{{ moodInk }}; line-height:1.5">{{ resultLine }}</span>
+                </div>
+
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; box-sizing:border-box; padding:18px 20px; border-radius:22px; background:#FFF3DC">
+                  <span style="font-size:14px; font-weight:900; color:#8A5A06">Points earned</span>
+                  <span style="font-size:24px; font-weight:900; color:#8A5A06">{{ points }}</span>
+                </div>
+
+                <div style="margin-top:auto; padding-top:20px; display:flex; flex-direction:column; gap:11px">
+                  <sc-for list="{{ actions }}" as="a" hint-placeholder-count="2">
+                    <button type="button" onClick="{{ a.go }}" style="appearance:none; cursor:pointer; width:100%; height:56px; border-radius:16px; font-family:Nunito,system-ui,sans-serif; font-size:16px; font-weight:900; background:{{ a.bg }}; color:{{ a.ink }}; border:{{ a.border }}; box-shadow:{{ a.shadow }}; transition:transform 90ms ease" style-active="transform:translateY(2px)">{{ a.label }}</button>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ onReview }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; height:100%">
+              <div style="padding:18px 22px 22px; background:#0B0F5B; border-radius:0 0 28px 28px; display:flex; align-items:center; gap:13px">
+                <button type="button" onClick="{{ backToSummary }}" aria-label="Back" style="appearance:none; border:0; cursor:pointer; width:38px; height:38px; border-radius:999px; background:rgba(255,255,255,0.2); color:#FFFFFF; display:flex; align-items:center; justify-content:center; flex:none">
+                  <svg viewBox="0 0 24 24" style="width:19px; height:19px" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg>
+                </button>
+                <div style="display:flex; flex-direction:column; gap:1px">
+                  <span style="font-size:22px; font-weight:900; letter-spacing:-0.02em; color:#FFFFFF">Your mistakes</span>
+                  <span style="font-size:12px; font-weight:800; color:rgba(255,255,255,0.65)">{{ mistakeCount }}</span>
+                </div>
+              </div>
+
+              <div style="flex: 1; overflow: auto; padding: 6px 22px 16px; display: flex; flex-direction: column; gap: 12px; background-color: #FFFFFF">
+                <sc-for list="{{ mistakes }}" as="m" hint-placeholder-count="2">
+                  <div style="background: #FFFFFF; border-radius: 20px; padding: 16px; display: flex; flex-direction: column; gap: 11px; box-shadow: 0px 0px 0px 2px #0B0F5B13">
+                    <div style="display:flex; align-items:center; gap:9px">
+                      <span style="padding:4px 9px; border-radius:999px; background:#FFE9EA; font-size:10px; font-weight:900; color:#A8141B">{{ m.tag }}</span>
+                      <span style="font-size:11px; font-weight:900; color:#9AA0C4">{{ m.source }}</span>
+                    </div>
+                    <span style="font-size:16px; font-weight:900; line-height:1.35; text-wrap:pretty">{{ m.text }}</span>
+                    <div style="display:flex; align-items:center; gap:10px; padding:11px 12px; border-radius:14px; background:#FFF7F7">
+                      <span style="width:8px; height:8px; border-radius:999px; background:#E31B23; flex:none"></span>
+                      <span style="font-size:13px; font-weight:900; color:#8F0C13; line-height:1.4">{{ m.chose }}</span>
+                    </div>
+                    <sc-if value="{{ m.open }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex; flex-direction:column; gap:11px; animation:popIn 200ms cubic-bezier(0.2,0.8,0.2,1) both">
+                        <div style="display:flex; align-items:center; gap:10px; padding:11px 12px; border-radius:14px; background:#F4FCF7">
+                          <span style="width:8px; height:8px; border-radius:999px; background:#16A34A; flex:none"></span>
+                          <span style="font-size:13px; font-weight:900; color:#15803D; line-height:1.4">{{ m.answer }}</span>
+                        </div>
+                        <div style="padding:13px; border-radius:14px; background:#F7F8FD; display:flex; flex-direction:column; gap:5px">
+                          <span style="font-size:10px; font-weight:900; letter-spacing:0.06em; color:#9AA0C4">EXPLANATION</span>
+                          <span style="font-size:13px; font-weight:800; line-height:1.6">{{ m.why }}</span>
+                        </div>
+                      </div>
+                    </sc-if>
+                    <button type="button" onClick="{{ m.toggle }}" style="appearance: none; cursor: pointer; width: 100%; height: 44px; border-radius: 14px; border: 2px solid #DDE1F0; color: #ffffff; font-family: Nunito,system-ui,sans-serif; font-size: 14px; font-weight: 900; display: flex; align-items: center; justify-content: center; gap: 7px; background-color: #0B0F5B" style-hover="border-color:#0B0F5B">{{ m.toggleLabel }}</button>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="padding: 0 22px 26px; background-color: #FFFFFF">
+                <button type="button" onClick="{{ backToCourse }}" style="appearance:none; border:0; cursor:pointer; width:100%; height:56px; border-radius:18px; background:#E31B23; color:#FFFFFF; box-shadow:0 3px 0 #A8141B99; font-family:Nunito,system-ui,sans-serif; font-size:16px; font-weight:900; transition:transform 90ms ease, box-shadow 90ms ease" style-active="transform:translateY(2px); box-shadow:0 1px 0 #A8141B99">Back to course</button>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ generating }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; inset:0; background:#0B0F5BE6; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:34px">
+              <span style="width:46px; height:46px; border-radius:999px; border:5px solid rgba(255,255,255,0.28); border-top-color:#FFFFFF; animation:spin 720ms linear infinite; display:block"></span>
+              <span style="font-size:19px; font-weight:900; color:#FFFFFF; text-align:center">Reading your material…</span>
+              <span style="font-size:13px; font-weight:800; color:rgba(255,255,255,0.7); text-align:center; line-height:1.5">{{ genNote }}</span>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ limitOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; inset:0; background:rgba(11,15,91,0.5); display:flex; align-items:center; justify-content:center; padding:26px">
+              <div style="width:100%; background:#FFFFFF; border-radius:26px; padding:24px 22px 22px; display:flex; flex-direction:column; align-items:center; gap:13px; animation:popIn 220ms cubic-bezier(0.2,0.8,0.2,1) both">
+                <span style="width:52px; height:52px; border-radius:17px; background:#FFF3DC; color:#8A5A06; display:flex; align-items:center; justify-content:center">
+                  <svg viewBox="0 0 24 24" style="width:25px; height:25px" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l9 16H3z"></path><path d="M12 10v4M12 17.4v.2"></path></svg>
+                </span>
+                <span style="font-size:19px; font-weight:900; text-align:center">Fewer questions than asked</span>
+                <span style="font-size:14px; font-weight:700; color:#7A80A6; text-align:center; line-height:1.6">{{ limitBody }}</span>
+                <button type="button" onClick="{{ acceptLimit }}" style="appearance:none; border:0; cursor:pointer; width:100%; height:52px; border-radius:16px; background:#0B0F5B; color:#FFFFFF; box-shadow:0 3px 0 #070A3E99; font-family:Nunito,system-ui,sans-serif; font-size:15px; font-weight:900; transition:transform 90ms ease" style-active="transform:translateY(2px)">Start with these</button>
+                <button type="button" onClick="{{ cancelLimit }}" style="appearance:none; cursor:pointer; width:100%; height:46px; border-radius:16px; background:#FFFFFF; border:2px solid #E2E6F5; color:#7A80A6; font-family:Nunito,system-ui,sans-serif; font-size:14px; font-weight:900">Change the setup</button>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ deleteOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; inset:0; background:rgba(11,15,91,0.5); display:flex; align-items:center; justify-content:center; padding:26px">
+              <div style="width:100%; background:#FFFFFF; border-radius:26px; padding:24px 22px 22px; display:flex; flex-direction:column; align-items:center; gap:13px; animation:popIn 220ms cubic-bezier(0.2,0.8,0.2,1) both">
+                <span style="width:52px; height:52px; border-radius:17px; background:#FFE9EA; color:#E31B23; display:flex; align-items:center; justify-content:center">
+                  <svg viewBox="0 0 24 24" style="width:24px; height:24px" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 14h10l1-14"></path><path d="M10 10v7M14 10v7"></path></svg>
+                </span>
+                <span style="font-size:19px; font-weight:900; text-align:center">Delete this session?</span>
+                <span style="font-size:14px; font-weight:700; color:#7A80A6; text-align:center; line-height:1.6">You will lose your progress</span>
+                <button type="button" onClick="{{ confirmDelete }}" style="appearance:none; border:0; cursor:pointer; width:100%; height:52px; border-radius:16px; background:#E31B23; color:#FFFFFF; box-shadow:0 3px 0 #A8141B99; font-family:Nunito,system-ui,sans-serif; font-size:15px; font-weight:900; transition:transform 90ms ease" style-active="transform:translateY(2px)">Delete session</button>
+                <button type="button" onClick="{{ cancelDelete }}" style="appearance:none; cursor:pointer; width:100%; height:46px; border-radius:16px; background:#FFFFFF; border:2px solid #E2E6F5; color:#7A80A6; font-family:Nunito,system-ui,sans-serif; font-size:14px; font-weight:900">Keep it</button>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ exitOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; inset:0; background:rgba(11,15,91,0.5); display:flex; flex-direction:column; justify-content:flex-end">
+              <div onClick="{{ dismissExit }}" style="flex:1; cursor:pointer"></div>
+              <div style="background:#FFFFFF; border-radius:28px 28px 0 0; padding:22px; display:flex; flex-direction:column; gap:13px; animation:sheetUp 240ms cubic-bezier(0.2,0.8,0.2,1) both">
+                <span style="width:44px; height:5px; border-radius:999px; background:#DDE1F0; align-self:center"></span>
+                <span style="font-size:20px; font-weight:900">Leave this session?</span>
+                <span style="font-size:13px; font-weight:800; color:#7A80A6; line-height:1.55">{{ exitBody }}</span>
+                <button type="button" onClick="{{ confirmExit }}" style="appearance:none; border:0; cursor:pointer; width:100%; height:52px; border-radius:16px; background:#0B0F5B; color:#FFFFFF; box-shadow:0 3px 0 #070A3E99; font-family:Nunito,system-ui,sans-serif; font-size:15px; font-weight:900; transition:transform 90ms ease" style-active="transform:translateY(2px)">Save and leave</button>
+                <button type="button" onClick="{{ dismissExit }}" style="appearance:none; cursor:pointer; width:100%; height:48px; border-radius:16px; background:#FFFFFF; border:2px solid #E2E6F5; color:#7A80A6; font-family:Nunito,system-ui,sans-serif; font-size:14px; font-weight:900">Keep going</button>
+              </div>
+            </div>
+          </sc-if>
+
+        </div>
+      </x-import>
+    </div>
+
+    <div style="width:330px; display:flex; flex-direction:column; gap:22px">
+      <div style="display:flex; flex-direction:column; gap:10px">
+        <span style="font-size:13px; font-weight:900">Try these paths</span>
+        <div style="display:flex; flex-direction:column; gap:7px; font-size:13px; font-weight:700; color:#5B618F; line-height:1.6">
+          <span>Start new quiz → raise the count above what one lecture holds → the limit dialog appears before any question does.</span>
+          <span>Pick Exam Mode: the close button is gone, Previous is dead on question one, Next stays pink until you choose an option, and the last question turns Next into Submit.</span>
+          <span>Pick Learning Mode: Submit is dead until you pick; after it, the answer, the reason and the slide appear and the button becomes Next Question.</span>
+          <span>Leave a Learning session through the X — it saves into the <em>same</em> session and resumes at the same question; answering more and leaving again updates that one session, it never makes a second.</span>
+          <span>Practice the weak ones after a Learning summary: the X leaves straight away with no save prompt — practice is never tracked, so it always starts over.</span>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:10px">
+        <span style="font-size:13px; font-weight:900">Button rules</span>
+        <div style="display:flex; flex-direction:column; gap:7px; font-size:13px; font-weight:700; color:#5B618F; line-height:1.6">
+          <span><strong style="color:#0B0F5B; font-weight:900">Disabled</strong> — pink fill for a red action, grey outline for a secondary one; never hidden, so the student can see what's coming.</span>
+          <span><strong style="color:#0B0F5B; font-weight:900">Exam Mode</strong> — no close, no system back, no exit sheet. The only way out is Submit.</span>
+          <span><strong style="color:#0B0F5B; font-weight:900">Points</strong> — 4 per correct answer, shown on the summary and added to the streak.</span>
+          <span><strong style="color:#0B0F5B; font-weight:900">Review Mistakes</strong> — Exam Mode only, and only when something was wrong.</span>
+        </div>
+      </div>
+      <button type="button" onClick="{{ reset }}" style="appearance:none; cursor:pointer; align-self:flex-start; padding:11px 16px; border-radius:14px; background:#FFFFFF; border:2px solid #DDE1F0; color:#0B0F5B; font-family:Nunito,system-ui,sans-serif; font-size:13px; font-weight:900" style-hover="border-color:#E31B23; color:#E31B23">Reset the prototype</button>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1200,&quot;height&quot;:980}}">
+const BANK = [
+  { q: 'What is a database?', ex: 'A university system stores student names, courses and grades.',
+    opts: ['A collection of unrelated data', 'A collection of related data', 'A programming language', 'A hardware device'], a: 1,
+    why: 'A database is a collection of related data representing some aspect of the real world, organised so it can be accessed, managed and updated.',
+    src: 'Lecture 1 · Slide 8', topic: 'Database basics' },
+  { q: 'Which of the following best describes "data"?', ex: '',
+    opts: ['System processes', 'Known facts that can be recorded and have meaning', 'A type of hardware', 'A styling language'], a: 1,
+    why: 'Data are known facts that can be recorded and carry implicit meaning — raw material that becomes information once processed.',
+    src: 'Lecture 1 · Slide 4', topic: 'Data vs information' },
+  { q: 'Which of the following describes the database approach?', ex: 'Multiple departments share the same database system.',
+    opts: ['Each department keeps separate files', 'Centralised data management using a DBMS', 'No data sharing between users', 'Storage in random order'], a: 1,
+    why: 'The database approach centralises data in a DBMS so many users and applications share it while consistency and control are preserved.',
+    src: 'Lecture 1 · Slide 12', topic: 'Database approach' },
+  { q: 'What does a DBMS sit between?', ex: '',
+    opts: ['The user and the stored data', 'Two unrelated databases', 'The CPU and the display', 'The network and the router'], a: 0,
+    why: 'A DBMS is the software layer between users or applications and the stored data — every read and write passes through it.',
+    src: 'Lecture 1 · Slide 15', topic: 'DBMS role' },
+  { q: 'Which is NOT an advantage of the database approach?', ex: '',
+    opts: ['Controlled redundancy', 'Shared access', 'Data independence', 'Guaranteed lower hardware cost'], a: 3,
+    why: 'Centralising data controls redundancy and enables sharing and independence, but it usually needs more capable hardware, not less.',
+    src: 'Lecture 1 · Slide 19', topic: 'Database approach' },
+  { q: 'A schema describes…', ex: '',
+    opts: ['The current rows in a table', 'The structure and constraints of the data', 'The physical disk layout only', 'A single query result'], a: 1,
+    why: 'The schema is the description of structure and constraints; the rows that satisfy it at a moment in time are the instance.',
+    src: 'Lecture 1 · Slide 22', topic: 'Schemas' }
+];
+
+const MATERIALS = [
+  { id: 1, kind: 'PPTX', title: 'Lecture 1 — Introduction', pool: 6 },
+  { id: 2, kind: 'DOCX', title: 'Lecture 2 — Requirements', pool: 4 },
+  { id: 3, kind: 'TXT', title: 'Lecture 3 — Diagram notes', pool: 3 }
+];
+
+const CHIPS = ['Include an example with each question', 'Focus on definitions', 'Add real-world scenarios'];
+const NAVY = '#0B0F5B', RED = '#E31B23', GREEN = '#16A34A';
+
+class Component extends DCLogic {
+  state = {
+    screen: 'sessions',
+    sessions: [
+      { id: 1, mode: 'learn', mats: [1], done: 4, total: 20, resumeAt: 4, answers: { 0: 1, 1: 1, 2: 1, 3: 0 } },
+      { id: 2, mode: 'exam', mats: [1, 2, 3], done: 20, total: 20, result: { mode: 'exam', correct: 19, wrong: 1, total: 20, points: 76, mistakes: [{ i: 2, chose: 0 }] } }
+    ],
+    matIds: [1], matsOpen: false, levels: ['Medium'], count: 6, mode: 'exam', prompt: '', pendingDelete: null,
+    generating: false, limit: null,
+    quiz: null, index: 0, answers: {}, revealed: false,
+    exitOpen: false, result: null, open: {}
+  };
+
+  pool() {
+    const ids = this.state.matIds;
+    const sum = MATERIALS.filter((m) => ids.indexOf(m.id) > -1).reduce((t, m) => t + m.pool, 0);
+    return Math.max(1, Math.min(sum, BANK.length));
+  }
+
+  startQuiz(n, resumeAt, opts) {
+    const o = opts || {};
+    this.setState({
+      quiz: { mode: this.state.mode, total: n, sid: o.sid || null, practice: !!o.practice, mats: o.mats || this.state.matIds.slice() },
+      index: resumeAt || 0, answers: o.answers ? Object.assign({}, o.answers) : {}, revealed: false, screen: 'quiz'
+    });
+  }
+
+  generate = () => {
+    this.setState({ generating: true, genStep: 0 });
+    clearTimeout(this._t);
+    this._t = setTimeout(() => {
+      const pool = this.pool();
+      if (this.state.count > pool) this.setState({ generating: false, limit: pool });
+      else { this.setState({ generating: false }); this.startQuiz(this.state.count); }
+    }, 1400);
+  };
+
+  finish = () => {
+    const q = this.state.quiz, n = Math.min(q.total, BANK.length);
+    let correct = 0; const mistakes = [];
+    for (let i = 0; i < n; i++) {
+      const picked = this.state.answers[i];
+      if (picked === BANK[i].a) correct++;
+      else mistakes.push({ i, chose: picked });
+    }
+    const result = { mode: q.mode, correct, wrong: n - correct, total: n, points: correct * 4, mistakes };
+    this.setState((s) => {
+      if (q.practice) return { screen: 'summary', result, quiz: null, open: {} };
+      const sessions = q.sid
+        ? s.sessions.map((x) => (x.id === q.sid
+            ? Object.assign({}, x, { done: n, total: n, answers: null, resumeAt: null, result })
+            : x))
+        : [{ id: Date.now(), mode: q.mode, mats: q.mats, done: n, total: n, result }].concat(s.sessions);
+      return { screen: 'summary', result, quiz: null, open: {}, sessions };
+    });
+  };
+
+  advance = () => {
+    const q = this.state.quiz, n = Math.min(q.total, BANK.length);
+    const last = this.state.index >= n - 1;
+    if (q.mode === 'learn' && !this.state.revealed) { this.setState({ revealed: true }); return; }
+    if (last) { this.finish(); return; }
+    this.setState((s) => ({ index: s.index + 1, revealed: false }));
+  };
+
+  leave = () => {
+    const q = this.state.quiz, n = Math.min(q.total, BANK.length);
+    this.setState((s) => {
+      if (q.practice) return { screen: 'sessions', quiz: null, exitOpen: false, answers: {}, index: 0 };
+      const done = Object.keys(s.answers).length;
+      const patch = { done, total: n, resumeAt: s.index, answers: Object.assign({}, s.answers) };
+      const sessions = q.sid
+        ? s.sessions.map((x) => (x.id === q.sid ? Object.assign({}, x, patch) : x))
+        : [Object.assign({ id: Date.now(), mode: q.mode, mats: q.mats }, patch)].concat(s.sessions);
+      return { screen: 'sessions', quiz: null, exitOpen: false, sessions, answers: {}, index: 0 };
+    });
+  };
+
+  renderVals() {
+    const st = this.state;
+    const screen = st.screen;
+    const q = st.quiz;
+    const n = q ? Math.min(q.total, BANK.length) : 0;
+    const item = q ? BANK[st.index] : null;
+    const picked = st.answers[st.index];
+    const hasPick = picked !== undefined;
+    const last = q ? st.index >= n - 1 : false;
+    const learn = q ? q.mode === 'learn' : false;
+    const revealed = learn && st.revealed;
+    const r = st.result;
+    const pool = this.pool();
+
+    const vals = {
+      stateLabel: { sessions: 'sessions list', setup: 'setup', quiz: q ? (learn ? 'learning mode' : 'exam mode · locked') : '', summary: 'performance summary', review: 'review mistakes' }[screen],
+      onSessions: screen === 'sessions', onSetup: screen === 'setup', onQuiz: screen === 'quiz',
+      onSummary: screen === 'summary', onReview: screen === 'review',
+      generating: st.generating, limitOpen: st.limit !== null, exitOpen: st.exitOpen,
+      genNote: 'Aiming for ' + st.count + ' questions · ' + st.levels.join(' + '),
+      limitBody: 'Your material supported ' + pool + ' solid questions out of the ' + st.count + ' you aimed for. Start with these ' + pool + ', or add another material.',
+      acceptLimit: () => { this.setState({ limit: null }); this.startQuiz(pool); },
+      cancelLimit: () => this.setState({ limit: null, count: pool }),
+      reset: () => this.setState({ screen: 'sessions', quiz: null, result: null, answers: {}, revealed: false, index: 0, count: 6, mode: 'exam', levels: ['Medium'], matIds: [1], matsOpen: false, prompt: '', open: {}, pendingDelete: null }),
+
+      deleteOpen: st.pendingDelete !== null,
+      deleteBody: (function (s) {
+        const t = s.sessions.filter((x) => x.id === s.pendingDelete)[0];
+        if (!t) return '';
+        return t.done >= t.total ? 'Its score and mistake list will go with it.' : 'You will lose the ' + t.done + ' answers already in it.';
+      })(st),
+      confirmDelete: () => this.setState((p) => ({ sessions: p.sessions.filter((x) => x.id !== p.pendingDelete), pendingDelete: null })),
+      cancelDelete: () => this.setState({ pendingDelete: null }),
+
+      noSessions: st.sessions.length === 0,
+      sessionCount: st.sessions.length === 1 ? '1 session' : st.sessions.length + ' sessions',
+      goSetup: () => this.setState({ screen: 'setup' }),
+      goSessions: () => this.setState({ screen: 'sessions' }),
+      sessions: st.sessions.slice().sort((a, b) => (a.done >= a.total ? 1 : 0) - (b.done >= b.total ? 1 : 0)).map((s, i, arr) => {
+        const complete = s.done >= s.total;
+        const first = i === 0 || (arr[i - 1].done >= arr[i - 1].total) !== complete;
+        return {
+          showHeader: first,
+          headerLabel: complete ? 'COMPLETED' : 'IN PROGRESS',
+          hue: complete ? GREEN : RED,
+          matsLabel: MATERIALS.filter((m) => (s.mats || []).indexOf(m.id) > -1).map((m) => m.title).join(', ') || 'Material removed',
+          modeLabel: s.mode === 'learn' ? 'LEARNING' : 'EXAM',
+          status: complete ? 'Completed' : 'In progress',
+          detail: complete
+            ? s.total + ' questions · ' + (s.result ? s.result.correct + ' correct' : '')
+            : s.done + ' of ' + s.total + ' answered',
+          actLabel: complete ? 'View performance summary' : 'Resume at question ' + ((s.resumeAt || s.done) + 1),
+          canRetake: complete,
+          act: () => {
+            if (complete && s.result) this.setState({ screen: 'summary', result: s.result, open: {} });
+            else {
+              this.setState({ mode: s.mode });
+              this.startQuiz(s.total, s.resumeAt || s.done, { sid: s.id, answers: s.answers, mats: s.mats });
+            }
+          },
+          retake: () => { this.setState({ mode: s.mode }); this.startQuiz(s.total, 0, { sid: s.id, mats: s.mats }); },
+          askRemove: () => this.setState({ pendingDelete: s.id })
+        };
+      }),
+
+      matsOpen: st.matsOpen,
+      matsEdge: st.matsOpen ? NAVY : '#DDE1F0',
+      matsInk: st.matIds.length ? NAVY : '#9AA0C4',
+      caret: st.matsOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+      matsSummary: st.matIds.length === 0 ? 'Select materials'
+        : (st.matIds.length === 1 ? (MATERIALS.filter((m) => m.id === st.matIds[0])[0] || {}).title : st.matIds.length + ' materials selected'),
+      toggleMats: () => this.setState((p) => ({ matsOpen: !p.matsOpen })),
+      materials: MATERIALS.map((m) => {
+        const on = st.matIds.indexOf(m.id) > -1;
+        return {
+          kind: m.kind, title: m.title,
+          bg: on ? '#F4F6FF' : '#FFFFFF',
+          boxBg: on ? NAVY : '#FFFFFF', boxEdge: on ? NAVY : '#DDE1F0', tick: on ? '1' : '0',
+          pick: () => this.setState((p) => ({
+            matIds: on ? p.matIds.filter((x) => x !== m.id) : p.matIds.concat([m.id])
+          }))
+        };
+      }),
+      levels: ['Easy', 'Medium', 'Hard'].map((l) => {
+        const on = st.levels.indexOf(l) > -1;
+        return { label: l, bg: on ? NAVY : '#FFFFFF', ink: on ? '#FFFFFF' : '#5B618F',
+          border: on ? '2px solid ' + NAVY : '2px solid #E2E6F5', shadow: on ? '0 3px 0 #070A3E99' : 'none',
+          pick: () => this.setState((p) => ({
+            levels: on ? (p.levels.length > 1 ? p.levels.filter((x) => x !== l) : p.levels) : p.levels.concat([l])
+          })) };
+      }),
+      count: st.count, countFill: Math.round((st.count / 20) * 100) + '%',
+      dec: () => this.setState((p) => ({ count: Math.max(3, p.count - 1) })),
+      inc: () => this.setState((p) => ({ count: Math.min(20, p.count + 1) })),
+      decBg: st.count <= 3 ? '#EEF0FF' : NAVY, decInk: st.count <= 3 ? '#C9CEE8' : '#FFFFFF',
+      incBg: st.count >= 20 ? '#EEF0FF' : NAVY, incInk: st.count >= 20 ? '#C9CEE8' : '#FFFFFF',
+
+      pickExam: () => this.setState({ mode: 'exam' }),
+      pickLearn: () => this.setState({ mode: 'learn' }),
+      examBg: st.mode === 'exam' ? NAVY : '#FFFFFF', examBorder: st.mode === 'exam' ? '2px solid ' + NAVY : '2px solid #E2E6F5',
+      examShadow: st.mode === 'exam' ? '0 3px 0 #070A3E99' : 'none',
+      examChip: st.mode === 'exam' ? 'rgba(255,255,255,0.18)' : '#EEF0FF', examChipInk: st.mode === 'exam' ? '#FFFFFF' : NAVY,
+      examInk: st.mode === 'exam' ? '#FFFFFF' : NAVY, examSub: st.mode === 'exam' ? 'rgba(255,255,255,0.7)' : '#7A80A6',
+      learnBg: st.mode === 'learn' ? NAVY : '#FFFFFF', learnBorder: st.mode === 'learn' ? '2px solid ' + NAVY : '2px solid #E2E6F5',
+      learnShadow: st.mode === 'learn' ? '0 3px 0 #070A3E99' : 'none',
+      learnChip: st.mode === 'learn' ? 'rgba(255,255,255,0.18)' : '#EEF0FF', learnChipInk: st.mode === 'learn' ? '#FFFFFF' : NAVY,
+      learnInk: st.mode === 'learn' ? '#FFFFFF' : NAVY, learnSub: st.mode === 'learn' ? 'rgba(255,255,255,0.7)' : '#7A80A6',
+      prompt: st.prompt,
+      promptMax: 300,
+      onPrompt: (e) => this.setState({ prompt: e.target.value.slice(0, 300) }),
+      promptCount: st.prompt.length + '/300',
+      promptCountInk: st.prompt.length >= 300 ? '#C31018' : (st.prompt.length >= 260 ? '#8A5A06' : '#9AA0C4'),
+      promptEdge: st.prompt.length >= 300 ? '#E31B23' : (st.prompt.length >= 260 ? '#F5A524' : '#DDE1F0'),
+      promptHint: st.prompt.length >= 300 ? 'Character limit reached' : (st.prompt.length >= 260 ? 'Approaching the limit' : ''),
+      promptHintInk: st.prompt.length >= 300 ? '#C31018' : '#8A5A06',
+      promptChips: CHIPS.map((c) => ({ label: c, pick: () => this.setState({ prompt: c.slice(0, 300) }) })),
+      recipe: 'Up to ' + st.count + ' questions · ' + st.levels.join(' + ') + ' · ' + (st.mode === 'exam' ? 'Exam Mode' : 'Learning Mode'),
+      generate: this.generate,
+
+      qHeading: q ? 'Question ' + (st.index + 1) + ' of ' + n : '',
+      modeName: q && q.practice ? 'Practice' : (learn ? 'Learning' : 'Exam'),
+      canExit: !!q && learn, locked: !!q && !learn, practice: !!(q && q.practice),
+      qText: item ? item.q : '', qExample: item ? item.ex : '', hasExample: !!(item && item.ex),
+      qWhy: item ? item.why : '', qSource: item ? item.src : '',
+      pips: q ? Array.from({ length: n }, (_, i) => ({
+        bg: i === st.index ? RED : (st.answers[i] !== undefined ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.22)')
+      })) : [],
+      options: item ? item.opts.map((text, i) => {
+        const sel = picked === i;
+        const isAnswer = i === item.a;
+        let bg = '#FFFFFF', border = '2px solid #E2E6F5', ink = NAVY, keyBg = '#EEF0FF', keyInk = '#5B618F', shadow = '0 3px 0 rgba(11,15,91,0.06)', weight = '800', mark = '', markInk = NAVY;
+        if (revealed) {
+          if (isAnswer) { bg = '#F4FCF7'; border = '2px solid ' + GREEN; ink = '#15803D'; keyBg = GREEN; keyInk = '#FFFFFF'; shadow = 'none'; weight = '900'; mark = 'CORRECT'; markInk = '#15803D'; }
+          else if (sel) { bg = '#FFF7F7'; border = '2px solid ' + RED; ink = '#8F0C13'; keyBg = RED; keyInk = '#FFFFFF'; shadow = 'none'; weight = '900'; mark = 'YOURS'; markInk = '#A8141B'; }
+          else { shadow = 'none'; ink = '#9AA0C4'; }
+        } else if (sel) {
+          bg = NAVY; border = '2px solid ' + NAVY; ink = '#FFFFFF'; keyBg = '#FFFFFF'; keyInk = NAVY; shadow = '0 3px 0 #070A3E99'; weight = '900';
+        }
+        return { key: 'ABCD'[i], text, bg, border, ink, keyBg, keyInk, shadow, weight, mark, markInk,
+          cursor: revealed ? 'default' : 'pointer',
+          pick: () => { if (!revealed) this.setState((p) => ({ answers: Object.assign({}, p.answers, { [p.index]: i }) })); } };
+      }) : [],
+      revealed,
+      verdictBg: picked === (item ? item.a : -1) ? '#E6F7EC' : '#FFE9EA',
+      verdictInk: picked === (item ? item.a : -1) ? '#15803D' : '#8F0C13',
+      verdictPath: picked === (item ? item.a : -1) ? 'M20 6L9 17l-5-5' : 'M6 6l12 12M18 6L6 18',
+      verdictTitle: picked === (item ? item.a : -1) ? 'Correct' : 'Not quite',
+      verdictSub: picked === (item ? item.a : -1) ? 'Nice — that is the one.' : (item ? 'The right answer is highlighted above.' : ''),
+
+      prev: () => this.setState((p) => ({ index: Math.max(0, p.index - 1) })),
+      prevOff: st.index === 0, prevCursor: st.index === 0 ? 'not-allowed' : 'pointer',
+      prevEdge: st.index === 0 ? '#E2E6F5' : NAVY, prevInk: st.index === 0 ? '#C9CEE8' : NAVY,
+      prevShadow: st.index === 0 ? 'none' : '0 3px 0 rgba(11,15,91,0.18)',
+      advance: this.advance,
+      nextOff: !hasPick,
+      nextCursor: hasPick ? 'pointer' : 'not-allowed',
+      nextBg: hasPick ? RED : '#F3A8AC',
+      nextShadow: hasPick ? '0 3px 0 #A8141B99' : 'none',
+      nextGrow: learn ? 1 : 1.3,
+      nextLabel: learn ? (revealed ? (last ? 'Finish quiz' : 'Next question') : 'Submit answer') : (last ? 'Submit quiz' : 'Next'),
+      askExit: () => { if (q && q.practice) this.leave(); else this.setState({ exitOpen: true }); },
+      dismissExit: () => this.setState({ exitOpen: false }),
+      confirmExit: this.leave,
+      exitBody: q ? 'You have answered ' + Object.keys(st.answers).length + ' of ' + n + '. We will keep this session so you can pick it up at question ' + (st.index + 1) + '.' : '',
+
+
+      resultMode: r ? (r.mode === 'exam' ? 'EXAM MODE · ' + r.total + ' QUESTIONS' : 'LEARNING MODE · ' + r.total + ' QUESTIONS') : '',
+      resultHead: r ? (r.correct / r.total >= 0.8 ? 'Performance Summary' : (r.correct / r.total >= 0.5 ? 'Solid, with gaps' : 'Performance Summary')) : '',
+      resultLine: r ? (r.correct / r.total >= 0.8 ? 'Excellent work — keep it up. You are ready for the next lecture.' : (r.correct / r.total >= 0.5 ? 'Good progress. Close the gaps below and you have got this.' : 'Keep practising, you are improving\n')) : '',
+      correct: r ? r.correct : 0, wrong: r ? r.wrong : 0, points: r ? '+' + r.points : '+0',
+      moodPath: r ? (r.correct / r.total >= 0.8
+        ? 'M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0zM17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3'
+        : (r.correct / r.total >= 0.5
+          ? 'M12 3l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.4 6.8 19.2l1-5.9L3.5 9.2l5.9-.8z'
+          : 'M12 20V9M12 9l-4.5 3.5M12 9l4.5 3.5M9 5.5a3 3 0 0 1 6 0'))
+        : 'M12 20V9M12 9l-4.5 3.5M12 9l4.5 3.5M9 5.5a3 3 0 0 1 6 0',
+      moodBg: r ? (r.correct / r.total >= 0.8 ? '#E6F7EC' : (r.correct / r.total >= 0.5 ? '#EEF0FF' : '#FFE9EA')) : '#EEF0FF',
+      moodShadow: r ? (r.correct / r.total >= 0.8 ? 'rgba(22,163,74,0.22)' : (r.correct / r.total >= 0.5 ? 'rgba(11,15,91,0.12)' : 'rgba(227,27,35,0.18)')) : 'rgba(11,15,91,0.12)',
+      moodInk: r ? (r.correct / r.total >= 0.8 ? '#15803D' : (r.correct / r.total >= 0.5 ? '#0B0F5B' : '#A8141B')) : '#0B0F5B',
+      hasWeak: !!(r && r.mistakes.length),
+      weakTopics: r ? Array.from(new Set(r.mistakes.map((m) => BANK[m.i].topic))).map((t) => ({ label: t })) : [],
+      noReviewNote: !!(r && r.mode === 'learn' && r.mistakes.length),
+      actions: r ? (function (self) {
+        const a = [];
+        if (r.mode === 'exam' && r.mistakes.length) a.push({ label: 'Review mistakes', bg: NAVY, ink: '#FFFFFF', border: '0', shadow: '0 3px 0 #070A3E99', go: () => self.setState({ screen: 'review' }) });
+        if (r.mode === 'learn' && r.mistakes.length) a.push({ label: 'Practice Now', bg: NAVY, ink: '#FFFFFF', border: '0', shadow: '0 3px 0 #070A3E99', go: () => { self.setState({ mode: 'learn' }); self.startQuiz(Math.max(3, r.mistakes.length), 0, { practice: true }); } });
+        a.push({ label: 'Back to course', bg: RED, ink: '#FFFFFF', border: '0', shadow: '0 3px 0 #A8141B99', go: () => self.setState({ screen: 'sessions' }) });
+        return a;
+      })(this) : [],
+
+      mistakeCount: r ? (r.mistakes.length === 1 ? '1 wrong out of ' + r.total : r.mistakes.length + ' wrong out of ' + r.total) : '',
+      mistakes: r ? r.mistakes.map((m, k) => {
+        const b = BANK[m.i];
+        const open = !!st.open[k];
+        return { tag: 'QUESTION ' + (m.i + 1), source: b.src, text: b.q,
+          chose: m.chose === undefined ? 'You left this one blank' : 'You chose: ' + b.opts[m.chose],
+          answer: 'Correct: ' + b.opts[b.a], why: b.why, open,
+          toggleLabel: open ? 'Hide details' : 'Show the answer',
+          toggle: () => this.setState((p) => ({ open: Object.assign({}, p.open, { [k]: !p.open[k] }) })) };
+      }) : [],
+      backToSummary: () => this.setState({ screen: 'summary' }),
+      backToCourse: () => this.setState({ screen: 'sessions' })
+    };
+    return vals;
+  }
+}
+
+</script>
+</body>
+</html>
