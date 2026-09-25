@@ -5,8 +5,10 @@ import {
   validateCustomPrompt,
   computeMaxTokens,
   buildPrompt,
+  buildSourceText,
   buildToolSchema,
   shuffleQuizOptions,
+  filterGroundedItems,
 } from './generation.js';
 
 // Google's published JWK set for Firebase ID tokens. jose caches this
@@ -146,13 +148,28 @@ async function handleGenerate(request, env) {
     );
   }
 
-  const items = req.type === 'quiz' ? shuffleQuizOptions(toolUse.input.items) : toolUse.input.items;
+  // Grounding check (CLAUDE.md, corrected): sourceLocation must name a real
+  // location tag from the source text sent to Claude, not just be trusted
+  // as-is. Ungrounded items are discarded rather than shown to the student;
+  // this doesn't re-call Claude to regenerate a replacement.
+  const sourceText = buildSourceText(req.materials);
+  const { grounded, discarded } = filterGroundedItems(toolUse.input.items, sourceText);
+
+  const items = req.type === 'quiz' ? shuffleQuizOptions(grounded) : grounded;
+
+  const claudeNote = toolUse.input.note ?? null;
+  const groundingNote =
+    discarded.length > 0
+      ? `${discarded.length} generated item${discarded.length === 1 ? '' : 's'} could not be verified against ` +
+        `the material's source locations and ${discarded.length === 1 ? 'was' : 'were'} left out.`
+      : null;
+  const note = [claudeNote, groundingNote].filter(Boolean).join(' ') || null;
 
   return jsonResponse({
     uid: payload.sub,
     type: req.type,
     items,
-    note: toolUse.input.note ?? null,
+    note,
   });
 }
 

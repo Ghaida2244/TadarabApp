@@ -34,17 +34,34 @@ void main() {
       expect(fields.difficultyLevels, [DifficultyLevel.medium]);
     });
 
-    test('failure case: missing difficultyLevels throws', () {
-      final map = baseMap()..remove('difficultyLevels');
-      expect(() => SessionFields.fromMap(map), throwsStateError);
-    });
+    test(
+      'failure case: a missing difficultyLevels field falls back to Medium, does not throw',
+      () {
+        final map = baseMap()..remove('difficultyLevels');
+        final fields = SessionFields.fromMap(map);
+        expect(fields.difficultyLevels, [DifficultyLevel.medium]);
+      },
+    );
 
-    test('failure case: empty difficultyLevels list throws', () {
-      expect(
-        () => SessionFields.fromMap(baseMap(difficultyLevels: [])),
-        throwsStateError,
-      );
-    });
+    test(
+      'failure case: an empty difficultyLevels list falls back to Medium, does not throw',
+      () {
+        final fields = SessionFields.fromMap(baseMap(difficultyLevels: []));
+        expect(fields.difficultyLevels, [DifficultyLevel.medium]);
+      },
+    );
+
+    test(
+      'failure case: an unrecognized difficulty value falls back to Medium, does not throw',
+      () {
+        // e.g. a document hand-edited in the Firebase console with a typo
+        // or a value from before the enum's current names.
+        final fields = SessionFields.fromMap(
+          baseMap(difficultyLevels: ['legendary']),
+        );
+        expect(fields.difficultyLevels, [DifficultyLevel.medium]);
+      },
+    );
   });
 
   group('Session.sharedFieldsToFirestore (via QuizSession)', () {

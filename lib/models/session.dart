@@ -22,7 +22,7 @@ abstract class Session {
     required this.courseId,
     required this.materialIds,
   }) : assert(
-         difficultyLevels.length > 0,
+         difficultyLevels.isNotEmpty,
          'A session must request at least one difficulty level',
        );
 
@@ -118,14 +118,29 @@ class SessionFields {
   }
 }
 
+/// A safe stand-in for a session whose stored difficulty can't be read —
+/// picked because it's the Setup screen's own default selection.
+const List<DifficultyLevel> _fallbackDifficultyLevels = [DifficultyLevel.medium];
+
 /// Reads `difficultyLevels` (current shape: a list) from a session document.
+///
+/// Never throws: an old document that predates this field (e.g. one
+/// hand-created directly in the Firebase console before the
+/// difficultyLevel -> difficultyLevels rename) may have it missing, empty,
+/// or holding a value that no longer matches a [DifficultyLevel] — any of
+/// those fall back to [_fallbackDifficultyLevels] instead of crashing the
+/// whole screen that's reading this session. This is a display fallback,
+/// not a fix for the document itself — a stored session showing "Medium"
+/// this way should still be corrected or deleted at the data level.
 List<DifficultyLevel> _readDifficultyLevels(Map<String, dynamic> data) {
   final raw = data['difficultyLevels'] as List?;
-  if (raw == null || raw.isEmpty) {
-    throw StateError(
-      'Session document ${data['sessionId'] ?? ''} is missing '
-      'difficultyLevels',
-    );
+  if (raw == null || raw.isEmpty) return _fallbackDifficultyLevels;
+  try {
+    final parsed = raw
+        .map((v) => DifficultyLevelJson.fromJson(v as String))
+        .toList();
+    return parsed.isEmpty ? _fallbackDifficultyLevels : parsed;
+  } catch (_) {
+    return _fallbackDifficultyLevels;
   }
-  return raw.map((v) => DifficultyLevelJson.fromJson(v as String)).toList();
 }

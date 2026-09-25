@@ -55,6 +55,43 @@ void main() {
       expect(flagged.studentAnswer, 'A programming language');
       expect(flagged.isReported, isTrue);
     });
+
+    test('failure case: copyWith cannot clear studentAnswer back to null', () {
+      // Documents the exact gap asUnanswered() exists to fix: `?? this.
+      // studentAnswer` can't distinguish "clear it" from "leave it alone".
+      final q = aQuestion(studentAnswer: 'A programming language');
+      final stillAnswered = q.copyWith(studentAnswer: null);
+      expect(stillAnswered.studentAnswer, 'A programming language');
+    });
+  });
+
+  group('asUnanswered', () {
+    test('normal case: clears a previously-recorded answer', () {
+      final q = aQuestion(studentAnswer: 'A programming language');
+      final fresh = q.asUnanswered();
+
+      expect(fresh.studentAnswer, isNull);
+      expect(fresh.isCorrect, isNull);
+    });
+
+    test('edge case: an already-unanswered question stays unanswered', () {
+      final q = aQuestion();
+      expect(q.asUnanswered().studentAnswer, isNull);
+    });
+
+    test('does not touch any other field', () {
+      final q = aQuestion(studentAnswer: 'A programming language', isReported: true);
+      final fresh = q.asUnanswered();
+
+      expect(fresh.questionId, q.questionId);
+      expect(fresh.questionText, q.questionText);
+      expect(fresh.correctAnswer, q.correctAnswer);
+      expect(fresh.explanation, q.explanation);
+      expect(fresh.sourceLocation, q.sourceLocation);
+      expect(fresh.options, q.options);
+      expect(fresh.sessionId, q.sessionId);
+      expect(fresh.isReported, q.isReported);
+    });
   });
 
   group('toFirestore', () {

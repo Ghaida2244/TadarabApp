@@ -100,4 +100,26 @@ class Question {
       isReported: isReported ?? this.isReported,
     );
   }
+
+  /// Returns a copy with [studentAnswer] explicitly cleared — [copyWith]
+  /// can only set/replace an answer, never blank one out (its `?? this.
+  /// studentAnswer` fallback can't tell "clear it" apart from "leave it
+  /// alone"). Used to give a Practice Now round a completely fresh copy of
+  /// each mistake, fully independent of the original session's stored
+  /// answer — practice must never inherit "already answered" state, which
+  /// would otherwise make the resume/reveal logic treat every question as
+  /// already submitted.
+  Question asUnanswered() {
+    return Question(
+      questionId: questionId,
+      questionText: questionText,
+      correctAnswer: correctAnswer,
+      explanation: explanation,
+      sourceLocation: sourceLocation,
+      studentAnswer: null,
+      options: options,
+      sessionId: sessionId,
+      isReported: isReported,
+    );
+  }
 }

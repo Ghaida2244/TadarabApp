@@ -8,6 +8,9 @@ import {
   buildToolSchema,
   shuffleArray,
   shuffleQuizOptions,
+  extractLocationTags,
+  isLocationGrounded,
+  filterGroundedItems,
   MAX_CUSTOM_PROMPT_LENGTH,
   MODEL_MAX_OUTPUT_TOKENS,
 } from '../src/generation.js';
@@ -218,5 +221,68 @@ describe('shuffleQuizOptions', () => {
     const original = JSON.parse(JSON.stringify(items));
     shuffleQuizOptions(items);
     expect(items).toEqual(original);
+  });
+});
+
+describe('extractLocationTags', () => {
+  test('normal: pulls every bracketed tag, de-duplicated', () => {
+    const text = '[Material: Lecture 1]\n[Slide 2]\nSome text.\n\n[Slide 5]\nMore text.\n[Slide 2]\nrepeat.';
+    expect(extractLocationTags(text)).toEqual(['Material: Lecture 1', 'Slide 2', 'Slide 5']);
+  });
+
+  test('edge: no tags at all returns an empty list', () => {
+    expect(extractLocationTags('plain text with no brackets')).toEqual([]);
+  });
+
+  test('failure-adjacent: an empty string returns an empty list, not an error', () => {
+    expect(extractLocationTags('')).toEqual([]);
+  });
+});
+
+describe('isLocationGrounded', () => {
+  const tags = ['Material: Lecture 1', 'Slide 5'];
+
+  test('normal: a readable rendering of a real tag matches (case-insensitive substring)', () => {
+    expect(isLocationGrounded('Lecture 1, slide 5', tags)).toBe(true);
+  });
+
+  test('edge: a tag with no surrounding prose still matches', () => {
+    expect(isLocationGrounded('Slide 5', tags)).toBe(true);
+  });
+
+  test('failure: a location naming a slide that was never tagged is not grounded', () => {
+    expect(isLocationGrounded('Slide 99', tags)).toBe(false);
+  });
+
+  test('failure: missing/empty sourceLocation is not grounded', () => {
+    expect(isLocationGrounded(undefined, tags)).toBe(false);
+    expect(isLocationGrounded('', tags)).toBe(false);
+  });
+});
+
+describe('filterGroundedItems', () => {
+  const sourceText = '[Material: Lecture 1]\n[Slide 5]\nPhotosynthesis is...';
+
+  test('normal: a grounded item is kept, an ungrounded one is discarded', () => {
+    const items = [
+      { questionText: 'Q1', sourceLocation: 'Lecture 1, Slide 5' },
+      { questionText: 'Q2', sourceLocation: 'Slide 42 (made up)' },
+    ];
+    const { grounded, discarded } = filterGroundedItems(items, sourceText);
+    expect(grounded).toEqual([items[0]]);
+    expect(discarded).toEqual([items[1]]);
+  });
+
+  test('edge: every item grounded yields an empty discarded list', () => {
+    const items = [{ questionText: 'Q1', sourceLocation: 'Slide 5' }];
+    const { grounded, discarded } = filterGroundedItems(items, sourceText);
+    expect(grounded).toEqual(items);
+    expect(discarded).toEqual([]);
+  });
+
+  test('failure: an empty items array returns two empty lists, not an error', () => {
+    const { grounded, discarded } = filterGroundedItems([], sourceText);
+    expect(grounded).toEqual([]);
+    expect(discarded).toEqual([]);
   });
 });

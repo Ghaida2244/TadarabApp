@@ -66,6 +66,33 @@ void main() {
     );
 
     testWidgets(
+      'returning from a pushed screen re-fetches Home data instead of staying stale',
+      (tester) async {
+        // HomeScreen keeps every bottom-nav tab alive (IndexedStack), so
+        // this State is never recreated by navigating away and back — the
+        // real bug this guards against was a `late final` Future computed
+        // once and never refreshed (e.g. finishing a quiz updates points/
+        // streak in Firestore, but Home kept showing the pre-quiz snapshot).
+        final dataService = FakeHomeDataService();
+        await pumpHome(tester, dataService: dataService);
+        expect(dataService.fetchCoursesCalls, 1);
+
+        final button = find.text('Create my first course');
+        await tester.ensureVisible(button);
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+        expect(find.text('Add Course screen'), findsOneWidget);
+
+        // PlaceholderScreen has no AppBar/back button (nothing to tap) —
+        // pop the pushed route directly instead of tester.pageBack().
+        tester.state<NavigatorState>(find.byType(Navigator)).pop();
+        await tester.pumpAndSettle();
+
+        expect(dataService.fetchCoursesCalls, 2);
+      },
+    );
+
+    testWidgets(
       'the greeting shows the real student name and a time-appropriate greeting',
       (tester) async {
         await pumpHome(
@@ -189,6 +216,7 @@ void main() {
         courseName: 'IS230',
         currentIndex: 6,
         total: 15,
+        resumePosition: 7,
       );
       await pumpHome(
         tester,
@@ -200,8 +228,8 @@ void main() {
 
       expect(find.text('Pick up where you left off'), findsOneWidget);
       expect(find.text('IS230 — Quiz'), findsOneWidget);
-      expect(find.text('6/15'), findsOneWidget);
-      expect(find.text('Resume'), findsOneWidget);
+      expect(find.text('6 of 15 answered'), findsOneWidget);
+      expect(find.text('Resume at question 7'), findsOneWidget);
       expect(find.text('Nothing in progress'), findsNothing);
     });
 
@@ -215,6 +243,7 @@ void main() {
           courseName: 'IS230',
           currentIndex: 2,
           total: 20,
+          resumePosition: 3,
         );
         await pumpHome(
           tester,
@@ -224,7 +253,7 @@ void main() {
           ),
         );
 
-        await tester.tap(find.text('Resume'));
+        await tester.tap(find.text('Resume at card 3'));
         await tester.pumpAndSettle();
 
         expect(find.text('Flashcard session screen'), findsOneWidget);
@@ -279,7 +308,7 @@ void main() {
     'course picker (reachable only once the student has at least one course)',
     () {
       testWidgets(
-        'picking a real course closes the sheet and opens the quiz setup placeholder',
+        'picking a real course closes the sheet and opens the real Quiz sessions screen',
         (tester) async {
           await pumpHome(
             tester,
@@ -291,9 +320,19 @@ void main() {
           expect(find.text('IS230'), findsOneWidget);
 
           await tester.tap(find.text('IS230'));
-          await tester.pumpAndSettle();
+          // Not pumpAndSettle: QuizSessionsScreen shows a CircularProgress-
+          // Indicator while its Firestore fetch is pending (no real Firebase
+          // app in this test, so it never resolves) — an indeterminate
+          // spinner animates forever, which would make pumpAndSettle hang.
+          // Two pumps (one for the sheet closing, one for the route's push
+          // transition) are enough to prove navigation happened; the header
+          // renders synchronously, independent of that fetch.
+          // QuizSessionsScreen's own states are covered by
+          // test/screens/quiz_sessions_screen_test.dart.
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
 
-          expect(find.text('Quiz setup screen'), findsOneWidget);
+          expect(find.text('Quiz sessions'), findsOneWidget);
         },
       );
 
