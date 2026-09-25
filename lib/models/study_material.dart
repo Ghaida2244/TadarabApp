@@ -13,6 +13,7 @@ class StudyMaterial {
     required this.type,
     required this.document,
     required this.courseId,
+    required this.extractedText,
   });
 
   /// Firestore document ID.
@@ -30,6 +31,13 @@ class StudyMaterial {
   /// Owning course's ID (foreign key to Course).
   final String courseId;
 
+  /// Plain-text extraction of the file's content, tagged with
+  /// `[Slide N: ...]` / `[Heading N: ...]` / `[Paragraph N]` markers per
+  /// courses_material_upload_spec.md §7 — not in the original Attributes
+  /// Dictionary Table. The generation Worker parses these exact labels, so
+  /// the tagging format is a fixed contract, not a display detail.
+  final String extractedText;
+
   factory StudyMaterial.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> doc,
   ) {
@@ -40,6 +48,7 @@ class StudyMaterial {
       type: data['type'] as String,
       document: data['document'] as String,
       courseId: data['courseId'] as String,
+      extractedText: data['extractedText'] as String,
     );
   }
 
@@ -49,6 +58,7 @@ class StudyMaterial {
       'type': type,
       'document': document,
       'courseId': courseId,
+      'extractedText': extractedText,
     };
   }
 }

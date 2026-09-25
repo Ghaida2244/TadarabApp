@@ -531,7 +531,293 @@ mark it done, note decisions made, note what starts next.)*
   Remaining for Phase B: none. The Courses tab is out of scope for Phase B —
   it's Manar's Courses & Material upload feature (`feature/courses`, see
   Feature split) in Phase C, for her to define once she starts it.
-- **Phase C — Feature split:** not started
+- **Phase C — Feature split:** in progress.
+
+  **Courses & Material upload** (Manar, `feature/courses`) — starting, per
+  `courses_material_upload_spec.md` at the project root. Model deviation
+  reported per that spec before writing the class: `StudyMaterial` gains a
+  new `extractedText` (String) field, not in the original Attributes
+  Dictionary Table — the plain-text extraction of the uploaded file's
+  content, tagged with `[Slide N: ...]` / `[Heading N: ...]` / `[Paragraph
+  N]` markers per the spec's exact contract with Ghaida's generation Worker.
+  Final field set: `materialID, title, type, document, courseID,
+  extractedText`.
+
+  Text extraction library choice, per the spec's instruction to test the
+  suggested packages on real files before committing: neither suggested
+  package fit. Verified directly against `docs/Lecture1.pptx` and
+  `docs/SRS_GP1...docx` (real files) plus each package's actual source/docs
+  on GitHub — `open_xml`'s `WordDocument.parseText()` yields a flat stream
+  of text runs with no paragraph-style info, so it can't tell a `Heading1`
+  paragraph from body text; its `.pptx` support is generation/template-
+  focused with no documented API for reading arbitrary slide text. 
+  `doc_text_extractor`'s "chapter splitting" feature isn't exposed in its
+  documented API, and it pulls in `syncfusion_flutter_pdf` for a PDF path
+  this feature doesn't need. Inspecting the real files' raw XML showed the
+  structure needed is simple and well-defined (PPTX: `<p:ph type="title"/>`
+  marks a slide's title shape; DOCX: `<w:pStyle w:val="HeadingN"/>` marks a
+  real heading, distinguishable from `TOC1-3`/`Caption`/`Bibliography`
+  styles that share similar formatting but aren't headings) — so
+  `lib/services/text_extraction_service.dart` parses PPTX/DOCX/TXT directly
+  with the `archive` (unzip) and `xml` (parse) packages, the same
+  lower-level packages both suggested libraries build on. This gives exact
+  control matching the spec's tagging contract instead of adapting to
+  either library's undocumented behavior.
+
+  **Built out.** `lib/services/courses_service.dart` (course/material CRUD,
+  cascade delete — course doc + materials subcollection + their Storage
+  files + this course's calendar events, per §3 — the direct
+  `users/{uid}/events` query/delete written inline since Leen's
+  `CalendarService.deleteEventsForCourse(uid, courseId)` isn't merged yet;
+  swap the call site once it is), the 4 screens (`lib/screens/courses/`:
+  courses list empty/list states, Add Course as a full pushed screen per
+  the design handoff — confirmed with the team over the mockup's own
+  `upload-material.png` frame, which is a lower-fidelity draft that
+  disagreed with the actual `.dc.html` handoff — Course Detail
+  locked/unlocked, and the Upload Material bottom sheet), and the delete
+  confirmation dialog. `file_picker`/`archive`/`xml` added as dependencies.
+  10MB file-size limit used everywhere per §8's default, with the 10 vs
+  20MB conflict still flagged and unresolved for the team. Routing: the
+  single authorized line in `lib/screens/home/home_screen.dart` (Courses
+  tab → `CoursesListScreen`) swapped in its own commit, per §9.
+
+  136 tests, 0 failures: 15 extraction unit tests (including against the
+  real `docs/Lecture1.pptx`/SRS `.docx`), 14 pure-logic unit tests (name/
+  material-name uniqueness, color-lock incl. freeing on delete, initials),
+  and 18 widget tests covering every state §10 lists (empty, list, Add
+  Course incl. duplicate-name/no-color-disabled, Course Detail locked/
+  unlocked, Upload Material idle/uploading/success/duplicate/empty-file-
+  error, delete confirmation).
+
+  **On-device verification**, per CLAUDE.md's standing rule to actually
+  exercise UI changes rather than rely on tests alone: run against the real
+  `tadarabapp-2e060` project on a local Android emulator (`sdk gphone64
+  arm64`, API 36), signed in as the existing `student1` test account.
+  Confirmed live: the Courses tab renders the real screen (not the old
+  placeholder); the empty state, Add Course's live validation (duplicate-
+  name warning, color lock/select, live preview), and course creation all
+  worked end-to-end — a real `IS230` course document was written and
+  persisted (confirmed indirectly: Home switched from the zero-courses
+  onboarding state to the has-courses state on the next launch).
+
+  This surfaced one real bug, now fixed: `CoursesService`'s Firestore/
+  Storage calls (`createCourse`, `deleteCourse`, `uploadMaterial`, the list/
+  materials fetches) had no timeout. The emulator's network went
+  genuinely flaky mid-session (confirmed via `adb logcat`: real
+  `UnknownHostException` resolving `firestore.googleapis.com`, and a bare
+  `ping 8.8.8.8` from the emulator shell hung with no reply — a sandbox
+  network limitation, not a code issue), and a `createCourse` write hung
+  for 30+ seconds with the Save button stuck spinning and no way out —
+  exactly what the NFR's "never a frozen screen" rule exists to prevent.
+  Added a 15s timeout on every Firestore call and a 60s timeout (with
+  `UploadTask.cancel()`) on the Storage upload specifically, since a real
+  file transfer legitimately needs more headroom than a small document
+  write; both map to the existing `CoursesFailure` error path. Re-verified
+  live after the fix: the Courses list now shows "Couldn't load your
+  courses." with a working Retry button within the timeout window instead
+  of hanging — confirmed by triggering the same network condition again.
+
+  **Upload and cascade-delete verification, completed in a follow-up
+  on-device pass** after the emulator's network fully stopped responding
+  (confirmed: DNS resolution failed for every hostname, not just
+  `firestore.googleapis.com`, and the emulator's own network settings
+  (private DNS off, wifi/airplane-mode toggles) didn't fix it, while the
+  host machine's own DNS/`curl` to the same hosts worked fine throughout —
+  isolating the problem to the emulator's QEMU/slirp networking layer, not
+  the code, the project, or the host). Fixed by killing and relaunching the
+  AVD (`Pixel_10_API_36`) with explicit `-dns-server 8.8.8.8,8.8.4.4`.
+
+  With real network restored: pushed `docs/Lecture1.pptx` to the
+  emulator's Downloads folder, opened Upload Material, picked it through
+  Android's real system file picker (not a stub), watched a real Storage
+  upload progress bar, and — confirmed by reopening Course Detail — the
+  material was actually written: Study Tools unlocked, the materials list
+  and type-filter counts (`All 1 / PPTX 1`) updated, all against the live
+  `tadarabapp-2e060` project.
+
+  This caught a second real bug, now fixed: both `CoursesListScreen` and
+  `CourseDetailScreen`'s `_reload()` used
+  `setState(() => _field = someFuture)` — an assignment expression as an
+  arrow-function body evaluates to the assigned value, so the callback's
+  inferred return type was `Future<...>` instead of `void`. In debug
+  builds this trips `State.setState`'s "callback argument returned a
+  Future" assertion, which *throws before reaching `markNeedsBuild()`* —
+  caught by `adb logcat` right after a successful upload, where it made
+  Course Detail appear to silently fail to refresh (the material had in
+  fact saved; the screen just didn't reliably rebuild to show it). Fixed
+  by using a block body (`setState(() { _field = future; })`) in both
+  places, which returns `void`. Confirmed fixed by re-running the exact
+  same upload afterward. Note for the team: this class of bug is silent in
+  release builds (`assert` is compiled out there), so it's easy to miss
+  outside an on-device debug run — worth checking for the same
+  `setState(() => x = someFuture)` pattern in any future feature's reload
+  logic.
+
+  **Cascade-delete verification, including calendar events**, done against
+  a throwaway account rather than reusing `student1`, since the Calendar
+  feature doesn't exist yet to create a real linked event through the UI:
+  created a temporary account via the Identity Toolkit REST API (the same
+  method Phase A's rules verification used), wrote a course, a material,
+  and a calendar event (with `courseId` pointing at that course) directly
+  via the Firestore REST API, logged into the app as that account, and
+  deleted the course through the real UI delete-confirmation flow. Verified
+  by re-querying all three documents over the Firestore REST API
+  afterward: course, material, and **event all returned `404 NOT_FOUND`**.
+  The event-deletion path in particular — invisible in the app's own UI
+  today, since there's no Calendar screen yet to show its absence — is now
+  confirmed working end-to-end against the live project, not just via the
+  widget tests' fake service. The throwaway account and its data were
+  deleted afterward (Identity Toolkit `accounts:delete`); `student1` and
+  its real `IS230` course (with its one uploaded material) were left
+  intact for any future manual testing.
+
+  Every state/flow this feature spec calls for has now been confirmed both
+  by the automated test suite and by a real run against the live Firebase
+  project: courses empty/list, Add Course validation, Course Detail locked/
+  unlocked, the full upload pipeline (real file → Storage → extraction →
+  Firestore) with the real `docs/Lecture1.pptx`, and cascade delete
+  including calendar events.
+
+  **Home-screen regression investigated and ruled out as unrelated to this
+  feature.** After the above was done, `student1`'s Home tab started
+  showing "Could not load your progress" with a working connection and a
+  successful login. Confirmed by direct A/B test — `git stash` on just
+  `lib/screens/home/home_screen.dart` (reverting it to the exact
+  pre-Courses version, i.e. the Courses tab back to
+  `PlaceholderScreen`) and relaunching against the same account
+  reproduced the *identical* error — that neither this feature's one-line
+  routing change nor the `_reload()` fix touches this code path or caused
+  it. Root-caused (via temporary, since-removed debug prints — never
+  committed) to a plain Dart type error, not a network/Firestore
+  exception: `type 'Null' is not a subtype of type 'String' in type
+  cast`, thrown from `HomeDataService.fetchInProgressSession` and
+  `fetchWeeklyProgress` specifically (`fetchCourses` and
+  `fetchUpcomingEvents` succeed fine) — both go through
+  `SessionFields.fromMap` (`lib/models/session.dart`), which casts
+  `difficultyLevel`, `email`, and `courseId` as non-nullable `String`
+  with no fallback. `student1` has real documents in both `quizSessions`
+  and `flashcardSessions` that are missing one of those fields (confirmed
+  via the Courses tab loading fine with "2 courses" — Manar's own
+  `IS230` plus a second, "data base", that Manar created herself through
+  this feature's real UI while testing it, unrelated to the session
+  documents). The session documents themselves can't have come from using
+  the app, though: grepping the whole codebase shows `HomeDataService` is
+  the *only* code anywhere that touches the `quizSessions`/
+  `flashcardSessions` collections, and it only ever reads (`.get()`) —
+  there is no writer, since Quiz/Flashcard generation (Ghaida's and
+  Deemah's Phase C features) hasn't been built yet. So the malformed
+  document(s) must have been added some other way — most likely by hand
+  via the Firebase console, by someone testing Home's Continue/Start or
+  Today's Progress card early, before generation existed to write real
+  ones — and is unrelated to Manar's own course-creation testing. This is
+  a pre-existing gap in shared, frozen model code (`lib/models/
+  session.dart` — not this feature's file, and not safe for a single
+  branch to change without full-team review per the Git workflow rules)
+  that any malformed session document was always going to trip; it
+  surfaced now by coincidence of timing, not because of anything in this
+  feature.
+  **Not fixed here** — flagged for the team: either harden
+  `SessionFields.fromMap`'s three casts the same way `Course.fromFirestore`
+  already does for `color` (nullable with a fallback), or delete/fix
+  whatever hand-created `quizSessions`/`flashcardSessions` documents
+  `student1` has via the Firebase console.
+
+  **Two more real bugs found on-device and fixed**, both stemming from the
+  same root cause: `HomeScreen`'s `IndexedStack` keeps every tab's State
+  alive and independent, so nothing ever told a tab to refresh once
+  another tab (or a screen pushed on top of one) changed the data it had
+  already fetched.
+  1. Home's onboarding "Create my first course" button opened the real
+     `AddCourseScreen` (per the fix above) but never awaited its result —
+     `_HomeTabState._openAddCourse` called `Navigator.push` without
+     awaiting, so a successful save's `Navigator.pop(true)` returned to
+     Home with nothing done about it: no refresh, and the newly-created
+     course invisible until something else happened to trigger one.
+  2. Switching to the Courses tab after creating a course elsewhere showed
+     stale data (sometimes an empty list) because `CoursesListScreen`'s
+     `late Future ... _courses = ...` only ever fetches once, at
+     construction — which, since `IndexedStack` builds every child up
+     front, happens once at Home's very first frame, not each time the
+     tab becomes visible.
+
+  Fixed both with the same mechanism: `_HomeTab` and `CoursesListScreen`
+  each gained an `active` flag (true only while its own bottom-nav tab is
+  selected) and a `didUpdateWidget` that reloads on `active` flipping
+  false→true — so switching tabs now refreshes whichever tab you land on,
+  symmetrically in both directions. `_openAddCourse` now also awaits its
+  `Navigator.push` and reloads immediately on a successful create, so
+  Home updates the instant you're popped back to it, without needing a
+  tab switch at all. `HomeScreen` gained an injectable `coursesService`
+  (mirroring the existing `homeDataService` override), since both the
+  onboarding button and the embedded Courses tab needed one and it's what
+  made these regressions properly testable — this was the one further
+  change to this frozen file beyond the button-routing fix above; flagged
+  the same way, its own commit when this lands.
+
+  4 new tests reproducing each bug's exact repro steps against the real
+  screens (fakes only at the network boundary) and confirming the fix: in
+  `courses_list_screen_test.dart`, a course added while inactive appears
+  on becoming active again, and staying active doesn't cause a needless
+  refetch; in `home_screen_test.dart`, creating a course through the
+  onboarding button both returns to Home and lifts it out of onboarding,
+  and a course created while Home was the inactive tab appears on
+  returning to it. 140 tests total, 0 failures. Not re-verified live on
+  the emulator this round (the fix is a pure navigation/reload wiring
+  change with no new Firebase interaction shape, and the regression tests
+  drive the real screens end-to-end down to the fake network boundary) —
+  worth a quick manual pass before merging given how much this session's
+  device testing has been worth in general.
+
+  **Two visual bugs in the Upload Material sheet**, caught live on-device
+  and fixed, both confined to `upload_material_sheet.dart` (no frozen-file
+  touch): the Upload button rendered navy instead of red — it never set
+  `variant: AppButtonVariant.accent`, silently falling back to `AppButton`'s
+  navy default — and now also dims to a pale red (`Opacity` at 0.4) while
+  disabled and goes full solid red once a file's picked, matching the
+  pattern already used for the locked Study Tools tiles and locked color
+  swatches, since `AppButton` itself has no disabled-vs-enabled visual (it
+  only dims for its separate `loading` state). The "Choose a file"
+  drop-zone's dashed border was being drawn but was completely invisible:
+  its opaque `surfaceFaint` fill lived on `DashedRoundedBorder`'s own
+  child, and `CustomPaint` draws its `painter` *behind* the child — so the
+  fill painted over the dashes it was meant to sit inside. Moved the fill
+  to a new outer `Container` wrapping `DashedRoundedBorder` instead,
+  leaving its child transparent; `DashedRoundedBorder` itself
+  (`lib/widgets/dashed_border.dart`) wasn't touched. Both fixes verified
+  live on the emulator (idle-pale, empty-file-picked-solid, dashes visible
+  throughout).
+
+  **Delete single material**, a new feature request (deleting one study
+  material without deleting its course), scoped and confirmed with the
+  team before coding per the standing rule. `CoursesService.deleteMaterial`
+  deletes just that material's Firestore doc, then best-effort-deletes its
+  Storage file (mirroring `deleteCourse`'s per-material cleanup) — it
+  never touches the course doc, any other material, or any quiz/flashcard
+  session, on purpose (out of scope unless asked). UI:
+  `delete_material_dialog.dart` mirrors `delete_course_dialog.dart`'s
+  structure/copy exactly ("Delete [name]?" / "This material will be
+  permanently deleted. This can't be undone." / red "Delete material" +
+  outlined "Keep it"), kept as its own file rather than sharing one with
+  the course dialog so that already-verified flow stays untouched. Each
+  material row in Course Detail now has its own trash icon — navy on the
+  same pale tint used by the row's own PPTX/DOCX/TXT type badge, per an
+  explicit correction from the initial plan (which had proposed red,
+  reasoning from an old removed courses-list design reference) — that
+  turns into a small spinner while that specific material is deleting, via
+  a per-row `Set<String>` of in-flight material IDs on
+  `_CourseDetailScreenState` rather than one screen-wide flag, so deleting
+  one material doesn't freeze the rest of the list. On success the list
+  updates immediately in place (no navigation away from Course Detail); on
+  failure, the existing SnackBar+Retry pattern used elsewhere in this
+  feature. 6 new widget tests added to `course_detail_screen_test.dart`
+  (trash icon present per row, tapping opens the dialog with the correct
+  material name, "Keep it" is a no-op, confirming deletes and updates the
+  list without navigating away, a failure shows the SnackBar with Retry
+  and leaves the row in place, deleting the last material re-locks Study
+  Tools and shows the empty-materials state) plus the matching
+  `FakeCoursesService.deleteMaterial` override. 146 tests total, 0
+  failures. Not yet re-verified live on the emulator for this specific
+  feature.
 
 ## Design handoffs
 

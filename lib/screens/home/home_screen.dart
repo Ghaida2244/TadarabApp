@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../models/course.dart';
 import '../../models/student.dart';
+import '../../services/courses_service.dart';
 import '../../services/home_data_service.dart';
 import '../../theme/app_theme.dart';
+import '../courses/add_course_screen.dart';
+import '../courses/courses_list_screen.dart';
 import '../placeholder_screen.dart';
 import 'widgets/continue_or_start_card.dart';
 import 'widgets/course_picker_sheet.dart';
@@ -19,6 +22,7 @@ class HomeScreen extends StatefulWidget {
     super.key,
     required this.uid,
     this.homeDataService,
+    this.coursesService,
     this.now,
     this.onSignOut,
   });
@@ -27,6 +31,11 @@ class HomeScreen extends StatefulWidget {
 
   /// Overridable for tests; defaults to the real Firebase-backed service.
   final HomeDataService? homeDataService;
+
+  /// Overridable for tests; defaults to the real Firebase-backed service.
+  /// Used both by the onboarding "Create my first course" button and by
+  /// the embedded Courses tab, so a single override covers both.
+  final CoursesService? coursesService;
 
   /// Overridable for tests, so "today"/greeting/streak-row highlighting is deterministic.
   final DateTime? now;
@@ -41,6 +50,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late final _dataService = widget.homeDataService ?? HomeDataService();
+  late final _coursesService = widget.coursesService ?? CoursesService();
   int _tabIndex = 0;
 
   DateTime get _now => widget.now ?? DateTime.now();
@@ -52,8 +62,18 @@ class _HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(
         index: _tabIndex,
         children: [
-          _HomeTab(uid: widget.uid, dataService: _dataService, now: _now),
-          const PlaceholderScreen(label: 'Courses screen'),
+          _HomeTab(
+            uid: widget.uid,
+            dataService: _dataService,
+            coursesService: _coursesService,
+            now: _now,
+            active: _tabIndex == 0,
+          ),
+          CoursesListScreen(
+            uid: widget.uid,
+            coursesService: _coursesService,
+            active: _tabIndex == 1,
+          ),
           const PlaceholderScreen(label: 'Calendar screen'),
           PlaceholderScreen(
             label: 'Profile screen',
@@ -80,34 +100,74 @@ class _HomeTab extends StatefulWidget {
   const _HomeTab({
     required this.uid,
     required this.dataService,
+    required this.coursesService,
     required this.now,
+    required this.active,
   });
 
   final String uid;
   final HomeDataService dataService;
+  final CoursesService coursesService;
   final DateTime now;
+
+  /// Whether this is the currently-selected bottom-nav tab. Home lives in a
+  /// persistent IndexedStack alongside Courses, so this State survives tab
+  /// switches — without reloading on becoming active again, a course
+  /// created from the Courses tab would never lift Home out of its
+  /// zero-courses onboarding state within the same session.
+  final bool active;
 
   @override
   State<_HomeTab> createState() => _HomeTabState();
 }
 
 class _HomeTabState extends State<_HomeTab> {
-  late final Future<List<Course>> _courses = widget.dataService.fetchCourses(
-    widget.uid,
-  );
-  late final Future<WeeklyProgress> _weeklyProgress = widget.dataService
-      .fetchWeeklyProgress(widget.uid, now: widget.now);
-  late final Future<InProgressSession?> _inProgress = widget.dataService
-      .fetchInProgressSession(widget.uid);
-  late final Future<List<UpcomingEventView>> _upcoming = widget.dataService
-      .fetchUpcomingEvents(widget.uid, now: widget.now);
+  late Future<List<Course>> _courses;
+  late Future<WeeklyProgress> _weeklyProgress;
+  late Future<InProgressSession?> _inProgress;
+  late Future<List<UpcomingEventView>> _upcoming;
 
-  void _openAddCoursePlaceholder() {
-    Navigator.of(context).push(
+  @override
+  void initState() {
+    super.initState();
+    _loadAll();
+  }
+
+  @override
+  void didUpdateWidget(covariant _HomeTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !oldWidget.active) _reload();
+  }
+
+  void _loadAll() {
+    _courses = widget.dataService.fetchCourses(widget.uid);
+    _weeklyProgress = widget.dataService.fetchWeeklyProgress(
+      widget.uid,
+      now: widget.now,
+    );
+    _inProgress = widget.dataService.fetchInProgressSession(widget.uid);
+    _upcoming = widget.dataService.fetchUpcomingEvents(
+      widget.uid,
+      now: widget.now,
+    );
+  }
+
+  void _reload() => setState(_loadAll);
+
+  Future<void> _openAddCourse() async {
+    // Only reachable from the zero-courses onboarding card, so the
+    // student's current course list is already known to be empty here —
+    // no need to refetch it just to pass it along.
+    final created = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => const PlaceholderScreen(label: 'Add Course screen'),
+        builder: (_) => AddCourseScreen(
+          uid: widget.uid,
+          coursesService: widget.coursesService,
+          existingCourses: const [],
+        ),
       ),
     );
+    if (created == true) _reload();
   }
 
   void _openSetupPlaceholder(SessionKind kind) {
@@ -231,7 +291,7 @@ class _HomeTabState extends State<_HomeTab> {
                               ],
                             )
                           : NewStudentOnboardingCard(
-                              onCreateFirstCourse: _openAddCoursePlaceholder,
+                              onCreateFirstCourse: _openAddCourse,
                             ),
                     ),
                   ),
