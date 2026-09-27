@@ -41,6 +41,10 @@ void main() {
     expect(find.text('You chose: A programming language'), findsOneWidget);
     expect(find.text('Correct: A collection of related data'), findsNothing);
     expect(find.text('EXPLANATION'), findsNothing);
+    // The citation box (and the old always-visible eyebrow it replaced)
+    // only shows once expanded, same as EXPLANATION.
+    expect(find.text('FIND IT IN YOUR MATERIAL'), findsNothing);
+    expect(find.text('Slide 1'), findsNothing);
     expect(find.text('Show the answer'), findsOneWidget);
   });
 
@@ -73,12 +77,16 @@ void main() {
 
     expect(find.text('Correct: A collection of related data'), findsOneWidget);
     expect(find.text('EXPLANATION'), findsOneWidget);
+    expect(find.text('FIND IT IN YOUR MATERIAL'), findsOneWidget);
+    expect(find.text('Slide 1'), findsOneWidget);
     expect(find.text('Hide details'), findsOneWidget);
 
     await tester.tap(find.text('Hide details'));
     await tester.pumpAndSettle();
 
     expect(find.text('Correct: A collection of related data'), findsNothing);
+    expect(find.text('FIND IT IN YOUR MATERIAL'), findsNothing);
+    expect(find.text('Slide 1'), findsNothing);
     expect(find.text('Show the answer'), findsOneWidget);
   });
 

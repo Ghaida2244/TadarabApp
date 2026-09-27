@@ -6,6 +6,7 @@ import 'package:tadarab_app/models/student.dart';
 import 'package:tadarab_app/screens/home/home_screen.dart';
 import 'package:tadarab_app/services/home_data_service.dart';
 
+import '../helpers/fake_courses_service.dart';
 import '../helpers/fake_home_data_service.dart';
 
 void main() {
@@ -18,6 +19,7 @@ void main() {
   Future<void> pumpHome(
     WidgetTester tester, {
     FakeHomeDataService? dataService,
+    FakeCoursesService? coursesService,
     VoidCallback? onSignOut,
   }) async {
     await tester.pumpWidget(
@@ -25,6 +27,7 @@ void main() {
         home: HomeScreen(
           uid: 'uid-1',
           homeDataService: dataService ?? FakeHomeDataService(),
+          coursesService: coursesService ?? FakeCoursesService(),
           now: now,
           onSignOut: onSignOut,
         ),
@@ -51,7 +54,8 @@ void main() {
     );
 
     testWidgets(
-      'tapping Create my first course opens its own placeholder, distinct from the Courses tab',
+      'tapping Create my first course opens the real Add Course screen '
+      '(feature/courses), not a placeholder',
       (tester) async {
         await pumpHome(tester);
 
@@ -60,8 +64,56 @@ void main() {
         await tester.tap(button);
         await tester.pumpAndSettle();
 
-        expect(find.text('Add Course screen'), findsOneWidget);
-        expect(find.text('Courses screen'), findsNothing);
+        expect(find.text('Add course'), findsOneWidget);
+        expect(
+          find.text('Create a course to organize your studies'),
+          findsOneWidget,
+        );
+        expect(find.text('Add Course screen'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'creating a course through this entry point returns to Home and '
+      'lifts it out of the onboarding state — regression test for a bug '
+      'where Save neither navigated back nor refreshed anything',
+      (tester) async {
+        // The same list backs both fakes, mirroring how HomeDataService and
+        // CoursesService both read the same real Firestore collection —
+        // creating a course through one is visible to the other.
+        final sharedCourses = <Course>[];
+        final homeDataService = FakeHomeDataService(courses: sharedCourses);
+        final coursesService = FakeCoursesService(courses: sharedCourses);
+
+        await pumpHome(
+          tester,
+          dataService: homeDataService,
+          coursesService: coursesService,
+        );
+        expect(find.text('Create my first course'), findsOneWidget);
+
+        await tester.ensureVisible(find.text('Create my first course'));
+        await tester.tap(find.text('Create my first course'));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.byType(TextField), 'IS230');
+        await tester.pump();
+        await tester.tap(
+          find
+              .byWidgetPredicate((w) => w.runtimeType.toString() == '_Swatch')
+              .first,
+        );
+        await tester.pump();
+        await tester.tap(find.text('Save course'));
+        await tester.pumpAndSettle();
+
+        // Back on Home, not still on the Add Course screen.
+        expect(coursesService.createCourseCalls, 1);
+        expect(find.text('Add course'), findsNothing);
+        // ...and Home reflects the new course instead of the stale
+        // zero-courses onboarding state.
+        expect(find.text('Create my first course'), findsNothing);
+        expect(find.text("Today's progress"), findsOneWidget);
       },
     );
 
@@ -73,19 +125,35 @@ void main() {
         // real bug this guards against was a `late final` Future computed
         // once and never refreshed (e.g. finishing a quiz updates points/
         // streak in Firestore, but Home kept showing the pre-quiz snapshot).
-        final dataService = FakeHomeDataService();
-        await pumpHome(tester, dataService: dataService);
+        //
+        // The real Add Course screen (feature/courses) only reports back
+        // to Home (`created == true`) once a course is actually saved —
+        // unlike the old placeholder, a bare pop doesn't trigger a reload —
+        // so this drives the real save flow rather than just popping.
+        final sharedCourses = <Course>[];
+        final dataService = FakeHomeDataService(courses: sharedCourses);
+        final coursesService = FakeCoursesService(courses: sharedCourses);
+        await pumpHome(
+          tester,
+          dataService: dataService,
+          coursesService: coursesService,
+        );
         expect(dataService.fetchCoursesCalls, 1);
 
         final button = find.text('Create my first course');
         await tester.ensureVisible(button);
         await tester.tap(button);
         await tester.pumpAndSettle();
-        expect(find.text('Add Course screen'), findsOneWidget);
 
-        // PlaceholderScreen has no AppBar/back button (nothing to tap) —
-        // pop the pushed route directly instead of tester.pageBack().
-        tester.state<NavigatorState>(find.byType(Navigator)).pop();
+        await tester.enterText(find.byType(TextField), 'IS230');
+        await tester.pump();
+        await tester.tap(
+          find
+              .byWidgetPredicate((w) => w.runtimeType.toString() == '_Swatch')
+              .first,
+        );
+        await tester.pump();
+        await tester.tap(find.text('Save course'));
         await tester.pumpAndSettle();
 
         expect(dataService.fetchCoursesCalls, 2);
@@ -201,6 +269,54 @@ void main() {
           find.text('2'),
           findsOneWidget,
         ); // today's filled white cell (1 question + 1 flashcard)
+      },
+    );
+
+    testWidgets(
+      'a streak still alive as of today (studied yesterday) shows its real '
+      'stored value',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(
+            courses: [aCourse],
+            student: Student(
+              uid: 'uid-1',
+              email: 'student@example.com',
+              name: 'Ghaida',
+              currentStreak: 4,
+              lastStudyDate: DateTime(2026, 3, 10), // yesterday (now: Wed 3/11)
+            ),
+          ),
+        );
+
+        expect(find.text('4-day streak'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'bug repro: a stale stored streak (real gap since last activity) '
+      'shows as broken (0) immediately, not the stale stored count',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(
+            courses: [aCourse],
+            student: Student(
+              uid: 'uid-1',
+              email: 'student@example.com',
+              name: 'Ghaida',
+              currentStreak: 4,
+              // 3 days before `now` (Wed 3/11) — nothing has re-run
+              // computeNextStreak since it broke, but it's shown as broken
+              // right now regardless.
+              lastStudyDate: DateTime(2026, 3, 8),
+            ),
+          ),
+        );
+
+        expect(find.text('0-day streak'), findsOneWidget);
+        expect(find.text('4-day streak'), findsNothing);
       },
     );
   });
@@ -368,7 +484,10 @@ void main() {
 
         await tester.tap(find.text('Courses'));
         await tester.pumpAndSettle();
-        expect(find.text('Courses screen'), findsOneWidget);
+        // The Courses tab (feature/courses) now renders the real
+        // CoursesListScreen rather than a placeholder — assert on its
+        // header, which is present regardless of its loading/data state.
+        expect(find.text('Courses'), findsWidgets);
 
         await tester.tap(find.text('Calendar'));
         await tester.pumpAndSettle();
@@ -380,6 +499,32 @@ void main() {
 
         await tester.tap(find.text('Home'));
         await tester.pumpAndSettle();
+        expect(find.text("Today's progress"), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a course created while Home was inactive shows up on returning to '
+      'the Home tab — regression test for Home never refreshing itself',
+      (tester) async {
+        final courses = <Course>[];
+        final homeDataService = FakeHomeDataService(courses: courses);
+        await pumpHome(tester, dataService: homeDataService);
+
+        expect(find.text('Create my first course'), findsOneWidget);
+        expect(homeDataService.fetchCoursesCalls, 1);
+
+        await tester.tap(find.text('Courses'));
+        await tester.pumpAndSettle();
+
+        // A course "created" while Home sat inactive on another tab.
+        courses.add(aCourse);
+
+        await tester.tap(find.text('Home'));
+        await tester.pumpAndSettle();
+
+        expect(homeDataService.fetchCoursesCalls, 2);
+        expect(find.text('Create my first course'), findsNothing);
         expect(find.text("Today's progress"), findsOneWidget);
       },
     );

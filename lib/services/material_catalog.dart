@@ -1,14 +1,17 @@
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../models/study_material.dart';
+import 'courses_service.dart';
 
 /// Where Quiz Setup gets its list of materials for a course, and the text
 /// sent to the generation Worker for each one.
 ///
-/// Two implementations: [StubMaterialCatalog] (used by the running app
-/// today) and, once the Courses & Material upload feature (Manar,
-/// `feature/courses`) lands and `StudyMaterial` exposes real extracted
-/// text, a Firestore-backed implementation swaps in here —
-/// [QuizSessionService] (see quiz_session_service.dart) only depends on
-/// this interface, so nothing else changes.
+/// Two implementations: [CoursesMaterialCatalog] (real, used by the running
+/// app now that the Courses & Material upload feature — Manar,
+/// `feature/courses` — is merged and `StudyMaterial` carries real extracted
+/// text) and [StubMaterialCatalog] (seed data, kept only as a test double
+/// now). [QuizSessionService] (see quiz_session_service.dart) only depends
+/// on this interface, so nothing else about it changes.
 abstract class MaterialCatalog {
   /// The materials available to pick from for [courseId].
   Future<List<StudyMaterial>> fetchMaterials(String courseId);
@@ -17,11 +20,46 @@ abstract class MaterialCatalog {
   Future<String> sourceTextFor(StudyMaterial material);
 }
 
-/// Deterministic seed materials + source text, so the Quiz feature's whole
-/// pipeline (setup -> generate -> play -> summary) can be built, run, and
-/// tested for real before the Courses/upload feature exists and before any
-/// student has uploaded anything. Content is short, real study material
-/// (not lorem ipsum) so a real generation call produces sensible output.
+/// The real [MaterialCatalog]: the signed-in student's own courses and
+/// materials, via [CoursesService] — the same Firestore-backed data
+/// Manar's Courses & Material upload feature reads and writes. Every
+/// [StudyMaterial] it returns already carries real `extractedText` (see
+/// courses_material_upload_spec.md §7), so [sourceTextFor] just reads that
+/// field back rather than looking anything up separately.
+class CoursesMaterialCatalog implements MaterialCatalog {
+  CoursesMaterialCatalog({CoursesService? coursesService, FirebaseAuth? auth})
+    : _coursesService = coursesService ?? CoursesService(),
+      _authOverride = auth;
+
+  final CoursesService _coursesService;
+  final FirebaseAuth? _authOverride;
+
+  // A getter, not resolved in the initializer list — mirrors
+  // QuizSessionService/CoursesService's own lazy pattern, so merely
+  // constructing this (e.g. as QuizSessionService's default) never touches
+  // FirebaseAuth.instance before it's actually needed.
+  FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
+
+  @override
+  Future<List<StudyMaterial>> fetchMaterials(String courseId) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return const [];
+    return _coursesService.fetchMaterials(uid, courseId);
+  }
+
+  @override
+  Future<String> sourceTextFor(StudyMaterial material) async =>
+      material.extractedText;
+}
+
+/// Deterministic seed materials + source text. Originally let the Quiz
+/// feature's whole pipeline (setup -> generate -> play -> summary) be
+/// built, run, and tested for real before the Courses/upload feature
+/// existed; now that [CoursesMaterialCatalog] is the real app's default,
+/// this is kept only as a test double (material_catalog_test.dart and
+/// friends) — not constructed anywhere in the running app. Content is
+/// short, real study material (not lorem ipsum) so a real generation call
+/// still produces sensible output wherever a test uses it.
 class StubMaterialCatalog implements MaterialCatalog {
   const StubMaterialCatalog();
 
@@ -82,6 +120,7 @@ class StubMaterialCatalog implements MaterialCatalog {
             type: m.type,
             document: '',
             courseId: courseId,
+            extractedText: m.sourceText,
           ),
         )
         .toList();

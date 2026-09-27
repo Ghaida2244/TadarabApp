@@ -159,6 +159,7 @@ void main() {
               type: 'pptx',
               document: '',
               courseId: 'course-1',
+              extractedText: '',
             ),
           ],
         );
@@ -192,6 +193,7 @@ void main() {
             type: 'pptx',
             document: '',
             courseId: 'course-1',
+            extractedText: '',
           ),
           StudyMaterial(
             materialId: 'm2',
@@ -199,6 +201,7 @@ void main() {
             type: 'docx',
             document: '',
             courseId: 'course-1',
+            extractedText: '',
           ),
         ],
       );
@@ -233,6 +236,7 @@ void main() {
             type: 'pptx',
             document: '',
             courseId: 'course-1',
+            extractedText: '',
           ),
         );
         final session = QuizSession(
@@ -292,6 +296,7 @@ void main() {
             type: 'pptx',
             document: '',
             courseId: 'course-1',
+            extractedText: '',
           ),
         );
         final session = QuizSession(
@@ -366,6 +371,7 @@ void main() {
             type: 'pptx',
             document: '',
             courseId: 'course-1',
+            extractedText: '',
           ),
         );
         final service = FakeQuizSessionService(
@@ -436,6 +442,7 @@ void main() {
             type: 'pptx',
             document: '',
             courseId: 'course-1',
+            extractedText: '',
           ),
         ],
       );

@@ -16,6 +16,7 @@ final _material = StudyMaterial(
   type: 'pptx',
   document: '',
   courseId: 'course-1',
+  extractedText: '',
 );
 
 QuizSession _newSession({int numberOfQuestions = 5, Mode mode = Mode.exam}) {

@@ -130,28 +130,16 @@ class _MistakeCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.errorBannerBackground,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  'QUESTION ${index + 1}',
-                  style: AppTypography.quizBadge.copyWith(color: AppColors.errorBannerBody),
-                ),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  question.sourceLocation,
-                  style: AppTypography.quizEyebrow.copyWith(letterSpacing: 0),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.errorBannerBackground,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              'QUESTION ${index + 1}',
+              style: AppTypography.quizBadge.copyWith(color: AppColors.errorBannerBody),
+            ),
           ),
           const SizedBox(height: 11),
           Text(question.questionText, style: AppTypography.quizCardTitle.copyWith(fontSize: 16)),
@@ -200,6 +188,48 @@ class _MistakeCard extends StatelessWidget {
                 ],
               ),
             ),
+            const SizedBox(height: 11),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                color: AppColors.navy,
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        width: 34,
+                        alignment: Alignment.center,
+                        color: Colors.white.withValues(alpha: 0.1),
+                        child: const Icon(Icons.menu_book_outlined, size: 14, color: Colors.white),
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'FIND IT IN YOUR MATERIAL',
+                                style: AppTypography.quizPanelLabel(
+                                  color: Colors.white.withValues(alpha: 0.55),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                question.sourceLocation,
+                                style: AppTypography.quizSourceValue.copyWith(fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ],
           const SizedBox(height: 11),
           AppButton(
@@ -207,6 +237,7 @@ class _MistakeCard extends StatelessWidget {
             onPressed: onToggle,
             height: 44,
             borderRadius: 14,
+            shadowColor: AppColors.navy.withValues(alpha: 0.10),
           ),
         ],
       ),

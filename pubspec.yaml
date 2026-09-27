@@ -41,6 +41,9 @@ dependencies:
   # Calls the deployed Cloudflare Worker's POST /generate endpoint (Quiz
   # generation & Sessions feature) — see lib/services/quiz_generation_client.dart.
   http: ^1.2.2
+  archive: ^4.3.0
+  xml: ^7.0.1
+  file_picker: ^13.1.0
 
 dev_dependencies:
   flutter_test:

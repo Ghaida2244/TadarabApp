@@ -20,11 +20,9 @@ import 'review_mistakes_screen.dart';
 class PerformanceSummaryScreen extends StatefulWidget {
   const PerformanceSummaryScreen({
     super.key,
-    required String sessionId,
-    required QuizSessionService service,
-  }) : sessionId = sessionId,
-       service = service,
-       practiceCorrect = null,
+    required String this.sessionId,
+    required QuizSessionService this.service,
+  }) : practiceCorrect = null,
        practiceTotal = null;
 
   const PerformanceSummaryScreen.practiceResult({
@@ -214,6 +212,7 @@ class _PerformanceSummaryScreenState extends State<PerformanceSummaryScreen> {
           variant: AppButtonVariant.accent,
           height: 56,
           borderRadius: 16,
+          shadowColor: AppColors.navy.withValues(alpha: 0.10),
           onPressed: () => popToQuizSessions(context),
         ),
       );
@@ -227,6 +226,7 @@ class _PerformanceSummaryScreenState extends State<PerformanceSummaryScreen> {
           label: 'Review mistakes',
           height: 56,
           borderRadius: 16,
+          shadowColor: AppColors.navy.withValues(alpha: 0.10),
           onPressed: () => _reviewMistakes(data),
         ),
       );
@@ -238,6 +238,7 @@ class _PerformanceSummaryScreenState extends State<PerformanceSummaryScreen> {
           label: 'Practice Now',
           height: 56,
           borderRadius: 16,
+          shadowColor: AppColors.navy.withValues(alpha: 0.10),
           onPressed: () => _practiceNow(data),
         ),
       );
@@ -249,6 +250,7 @@ class _PerformanceSummaryScreenState extends State<PerformanceSummaryScreen> {
         variant: AppButtonVariant.accent,
         height: 56,
         borderRadius: 16,
+        shadowColor: AppColors.navy.withValues(alpha: 0.10),
         onPressed: () => popToQuizSessions(context),
       ),
     );

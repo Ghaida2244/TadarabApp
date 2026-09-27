@@ -205,7 +205,7 @@ class QuizSessionService {
            (kUseFakeQuizGeneration
                ? FakeQuizGenerationClient()
                : QuizGenerationClient()),
-       _materialCatalog = materialCatalog ?? const StubMaterialCatalog(),
+       _materialCatalog = materialCatalog ?? CoursesMaterialCatalog(),
        _streakService = streakService ?? StreakService();
 
   final FirebaseFirestore? _firestoreOverride;

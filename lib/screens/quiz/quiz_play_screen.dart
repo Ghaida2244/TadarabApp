@@ -447,6 +447,10 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
                         height: 54,
                         borderRadius: 16,
                         variant: AppButtonVariant.accent,
+                        // While loading, AppButton already shows its own
+                        // grey disabledShadow — leave shadowColor unset so
+                        // this override doesn't stomp it.
+                        shadowColor: _finishing ? null : AppColors.navy.withValues(alpha: 0.10),
                         disabledBackgroundColor: AppColors.disabledRedFill,
                         disabledRemovesShadow: true,
                         loading: _finishing,
@@ -459,6 +463,7 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
                           variant: AppButtonVariant.outlinedBrand,
                           height: 50,
                           borderRadius: 16,
+                          shadowColor: AppColors.navy.withValues(alpha: 0.10),
                           onPressed: _index == 0 ? null : () => _previous(data),
                         ),
                       ],
@@ -675,7 +680,12 @@ class _SaveAndLeaveSheet extends StatelessWidget {
             style: AppTypography.quizEmptyBody,
           ),
           const SizedBox(height: 16),
-          AppButton(label: 'Save and leave', onPressed: onLeave, height: 52),
+          AppButton(
+            label: 'Save and leave',
+            onPressed: onLeave,
+            height: 52,
+            shadowColor: AppColors.navy.withValues(alpha: 0.10),
+          ),
           const SizedBox(height: 10),
           AppButton(
             label: 'Keep going',

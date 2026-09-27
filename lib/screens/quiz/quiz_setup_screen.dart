@@ -195,6 +195,7 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                 label: 'Start with these',
                 onPressed: () => Navigator.of(context).pop(true),
                 height: 52,
+                shadowColor: AppColors.navy.withValues(alpha: 0.10),
               ),
               const SizedBox(height: 10),
               AppButton(
@@ -285,6 +286,7 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                         variant: AppButtonVariant.accent,
                         height: 56,
                         borderRadius: 18,
+                        shadowColor: AppColors.navy.withValues(alpha: 0.10),
                         disabledBackgroundColor: AppColors.disabledRedFill,
                         disabledRemovesShadow: true,
                         onPressed: canGenerate ? () => _generate(materials) : null,
@@ -309,7 +311,7 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                 .firstWhere(
                   (m) => m.materialId == _selectedMaterialIds.first,
                   orElse: () => materials.isEmpty
-                      ? StudyMaterial(materialId: '', title: '', type: '', document: '', courseId: '')
+                      ? StudyMaterial(materialId: '', title: '', type: '', document: '', courseId: '', extractedText: '')
                       : materials.first,
                 )
                 .title

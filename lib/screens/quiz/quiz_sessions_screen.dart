@@ -72,8 +72,21 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
   void didPopNext() => _reload();
 
   Future<Map<String, String>> _loadMaterialTitles() async {
-    final materials = await widget.service.fetchMaterials(widget.courseId);
-    return {for (final m in materials) m.materialId: m.title};
+    // Best-effort, not a hard dependency: this only feeds the materials
+    // badge on each session card, and _SessionCard already falls back to
+    // "Material removed" for any id it can't resolve. It matters because
+    // this Future's only consumer (build(), below) is nested inside
+    // _sessionsFuture's own FutureBuilder and never gets built at all on
+    // _sessionsFuture's error/empty branches — so if fetchMaterials also
+    // failed there, that failure would otherwise go completely unhandled
+    // (nothing ever attaches to this Future) instead of just showing
+    // unlabeled badges.
+    try {
+      final materials = await widget.service.fetchMaterials(widget.courseId);
+      return {for (final m in materials) m.materialId: m.title};
+    } catch (_) {
+      return const {};
+    }
   }
 
   void _reload() {
@@ -299,6 +312,7 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
                 variant: AppButtonVariant.accent,
                 height: 56,
                 borderRadius: 18,
+                shadowColor: AppColors.navy.withValues(alpha: 0.10),
                 onPressed: _openSetup,
               ),
             ),
@@ -381,7 +395,12 @@ class _ErrorState extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            AppButton(label: 'Try again', onPressed: onRetry, height: 48),
+            AppButton(
+              label: 'Try again',
+              onPressed: onRetry,
+              height: 48,
+              shadowColor: AppColors.navy.withValues(alpha: 0.10),
+            ),
           ],
         ),
       ),
@@ -559,6 +578,7 @@ class _SessionCard extends StatelessWidget {
                       onPressed: onAct,
                       height: 46,
                       borderRadius: 14,
+                      shadowColor: AppColors.navy.withValues(alpha: 0.10),
                     ),
                     if (onRetake != null) ...[
                       const SizedBox(height: 10),
@@ -568,6 +588,7 @@ class _SessionCard extends StatelessWidget {
                         onPressed: onRetake,
                         height: 46,
                         borderRadius: 14,
+                        shadowColor: AppColors.navy.withValues(alpha: 0.10),
                       ),
                     ],
                   ],
@@ -729,6 +750,7 @@ class _DeleteSessionDialog extends StatelessWidget {
               label: 'Delete session',
               variant: AppButtonVariant.accent,
               height: 52,
+              shadowColor: AppColors.navy.withValues(alpha: 0.10),
               onPressed: () => Navigator.of(context).pop(true),
             ),
             const SizedBox(height: 10),

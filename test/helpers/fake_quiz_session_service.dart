@@ -34,10 +34,8 @@ class FakeQuizSessionService extends QuizSessionService {
   Object? createSessionError;
   GeneratedSessionResult? retakeSessionResult;
 
-  int fetchMaterialsCalls = 0;
   int deleteCalls = 0;
   int completeCalls = 0;
-  int retakeCalls = 0;
   int reportCalls = 0;
   int createSessionCalls = 0;
   int fetchSessionsCalls = 0;
@@ -53,7 +51,6 @@ class FakeQuizSessionService extends QuizSessionService {
 
   @override
   Future<List<StudyMaterial>> fetchMaterials(String courseId) async {
-    fetchMaterialsCalls++;
     return materials;
   }
 
@@ -207,7 +204,6 @@ class FakeQuizSessionService extends QuizSessionService {
 
   @override
   Future<GeneratedSessionResult> retakeSession(String sessionId) async {
-    retakeCalls++;
     final result = retakeSessionResult!;
     // Mirrors the real retakeSession: only Learning writes immediately.
     // An Exam retake stays a pure in-memory draft until its own final

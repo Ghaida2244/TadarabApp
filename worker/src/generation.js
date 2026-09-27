@@ -120,7 +120,7 @@ export function buildPrompt({ type, count, difficulties, customPrompt, materials
     [
       'CONTENT RULE (most important — overrides everything else):',
       '- The concept, term, or formula each item tests must genuinely appear in the source text.',
-      '- Never use knowledge from outside the source text.',
+      '- Never use knowledge from outside the source text.',// never use new concepts/ terms / concepts not present in the source text
     ].join('\n'),
     [
       'WORDING & LANGUAGE RULE:',
