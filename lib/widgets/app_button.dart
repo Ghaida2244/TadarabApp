@@ -26,6 +26,7 @@ class AppButton extends StatefulWidget {
     this.shadowColor,
     this.disabledBackgroundColor,
     this.disabledRemovesShadow = false,
+
   });
 
   final String label;
@@ -55,6 +56,7 @@ class AppButton extends StatefulWidget {
   /// Overrides the variant's default shadow color.
   final Color? shadowColor;
 
+
   /// When [onPressed] is null and the button isn't [loading] (a "disabled,
   /// not in flight" state — e.g. Next before an answer is picked), swaps
   /// the background to this color instead of the variant's normal one. Per
@@ -66,6 +68,7 @@ class AppButton extends StatefulWidget {
   /// Paired with [disabledBackgroundColor]: drops the button's shadow
   /// entirely while disabled-not-loading, per the same design rule.
   final bool disabledRemovesShadow;
+
 
   @override
   State<AppButton> createState() => _AppButtonState();
@@ -98,6 +101,7 @@ class _AppButtonState extends State<AppButton> {
     if (disabledNotLoading && widget.disabledBackgroundColor != null) {
       colors = colors.copyWithBackground(widget.disabledBackgroundColor!);
     }
+
     if (disabledNotLoading && widget.disabledRemovesShadow) {
       colors = colors.copyWithShadow(null);
     }

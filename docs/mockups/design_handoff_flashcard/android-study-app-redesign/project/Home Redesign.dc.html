@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&display=swap">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin:0; background:#f3f2f2; font-family:"Archivo",system-ui,sans-serif; color:#0B0F5B; }
+  a { color:#E31B23; text-underline-offset:3px; }
+  a:hover { color:#0B0F5B; }
+  @keyframes tdRise { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+  @keyframes tdBar { from { width:4%; } to { width:100%; } }
+  @keyframes tdSheet { from { transform:translateY(100%); } to { transform:none; } }
+</style>
+</helmet>
+<section style="padding:48px 56px 96px; display:flex; flex-direction:column; gap:40px">
+  <div id="1a" style="display:flex; flex-direction:column; gap:8px; max-width:900px">
+    <div style="display:flex; align-items:baseline; gap:16px">
+      <span style="font-size:13px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#E31B23">1a</span>
+      <h1 style="margin:0; font-size:42px; font-weight:800; letter-spacing:-0.015em; line-height:1.12">Tadarab Home — redesign</h1>
+    </div>
+    <p style="margin:0; font-size:15px; line-height:1.55; color:#5B5F86; max-width:640px; text-wrap:pretty">Modernist structure on your palette: flat fields, zero radius, 2px rules, everything flush left. The empty state is a guided setup — tap through it and the screen becomes the live home.</p>
+    <hr style="height:2px; border:0; background:rgba(11,15,91,0.4); margin:16px 0 0; width:100%">
+  </div>
+
+  <div style="display:flex; gap:56px; align-items:flex-start; flex-wrap:wrap">
+
+    <div style="display:flex; flex-direction:column; gap:16px">
+      <div style="display:flex; align-items:center; gap:12px">
+        <span style="font-size:13px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Screen 1 — Empty state</span>
+        <span style="font-size:12px; font-weight:600; color:#E31B23; text-transform:uppercase; letter-spacing:0.06em">interactive</span>
+      </div>
+      <x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" hint-size="412px,892px">
+        <div style="position:relative; height:100%; display:flex; flex-direction:column; background:#FFFFFF; overflow:hidden">
+
+          <div style="background:#0B0F5B; padding:20px 20px 18px; display:flex; align-items:flex-end; justify-content:space-between">
+            <div style="display:flex; flex-direction:column; gap:4px">
+              <span style="font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:rgba(255,255,255,0.62)">Good evening</span>
+              <span style="font-size:32px; font-weight:800; letter-spacing:-0.02em; line-height:1; color:#FFFFFF">Ghaida</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px">
+              <div style="width:2px; height:26px; background:#E31B23"></div>
+              <span style="font-size:12px; font-weight:800; letter-spacing:0.14em; color:#FFFFFF">TADARAB</span>
+            </div>
+          </div>
+
+          <div style="flex:1; overflow:auto">
+            <sc-if value="{{ aEmpty }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex; flex-direction:column">
+                <div style="background:#0B0F5B; padding:24px 20px 26px; display:flex; flex-direction:column; gap:12px; border-top:2px solid #E31B23">
+                  <h2 style="margin:0; font-size:30px; font-weight:800; line-height:1.05; letter-spacing:-0.02em; color:#FFFFFF">Nothing to<br>study — yet.</h2>
+                  <p style="margin:0; font-size:14px; line-height:1.5; color:rgba(255,255,255,0.74); max-width:290px; text-wrap:pretty">Create a course, drop in your slides or PDF, and Tadarab turns them into quizzes and flashcards.</p>
+                </div>
+
+                <div style="padding:22px 20px 8px; display:flex; align-items:center; justify-content:space-between">
+                  <span style="font-size:13px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Start here</span>
+                  <span style="font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#6B7080">0 of 3 done</span>
+                </div>
+                <div style="padding:0 20px"><div style="height:2px; background:rgba(11,15,91,0.4)"></div></div>
+
+                <div style="padding:0 20px">
+                  <div style="display:flex; gap:14px; padding:18px 0; border-bottom:2px solid rgba(11,15,91,0.12)">
+                    <span style="font-size:20px; font-weight:800; color:#E31B23; line-height:1.1; width:26px">01</span>
+                    <div style="display:flex; flex-direction:column; gap:3px; flex:1">
+                      <span style="font-size:16px; font-weight:800; line-height:1.2">Create a course</span>
+                      <span style="font-size:13px; line-height:1.45; color:#6B7080">Name it after the subject or the course code.</span>
+                    </div>
+                  </div>
+                  <div style="display:flex; gap:14px; padding:18px 0; border-bottom:2px solid rgba(11,15,91,0.12); opacity:0.45">
+                    <span style="font-size:20px; font-weight:800; line-height:1.1; width:26px">02</span>
+                    <div style="display:flex; flex-direction:column; gap:3px; flex:1">
+                      <span style="font-size:16px; font-weight:800; line-height:1.2">Upload material</span>
+                      <span style="font-size:13px; line-height:1.45; color:#6B7080">PDF, slides or your own typed notes.</span>
+                    </div>
+                  </div>
+                  <div style="display:flex; gap:14px; padding:18px 0; opacity:0.45">
+                    <span style="font-size:20px; font-weight:800; line-height:1.1; width:26px">03</span>
+                    <div style="display:flex; flex-direction:column; gap:3px; flex:1">
+                      <span style="font-size:16px; font-weight:800; line-height:1.2">Generate & study</span>
+                      <span style="font-size:13px; line-height:1.45; color:#6B7080">Quiz, flashcards, or a timed exam run.</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="padding:8px 20px 24px; display:flex; flex-direction:column; gap:10px">
+                  <button type="button" onClick="{{ openSheet }}" style="appearance:none; border:0; cursor:pointer; background:#E31B23; color:#FFFFFF; height:56px; padding:0 18px; display:flex; align-items:center; justify-content:space-between; font-family:Archivo,system-ui,sans-serif; font-size:15px; font-weight:800; letter-spacing:0.02em; text-transform:uppercase; transition:background 140ms ease" style-hover="background:#B8141B" style-active="background:#8E0F15">
+                    <span>Create your first course</span>
+                    <span style="font-size:18px">&rarr;</span>
+                  </button>
+                  <button type="button" onClick="{{ createSample }}" style="appearance:none; cursor:pointer; background:transparent; color:#0B0F5B; height:52px; padding:0 18px; border:2px solid #0B0F5B; display:flex; align-items:center; justify-content:space-between; font-family:Archivo,system-ui,sans-serif; font-size:14px; font-weight:800; letter-spacing:0.02em; text-transform:uppercase; transition:background 140ms ease" style-hover="background:rgba(11,15,91,0.06)">
+                    <span>Try a sample course</span>
+                    <span style="font-size:16px">&rarr;</span>
+                  </button>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ aStarted }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex; flex-direction:column; animation:tdRise 260ms ease both">
+                <div style="background:#0B0F5B; padding:20px; display:flex; flex-direction:column; gap:14px; border-top:2px solid #E31B23">
+                  <div style="display:flex; align-items:center; justify-content:space-between">
+                    <span style="font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:rgba(255,255,255,0.62)">Course created</span>
+                    <span style="font-size:11px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#FFFFFF; background:#E31B23; padding:3px 8px">+10 pts</span>
+                  </div>
+                  <span style="font-size:26px; font-weight:800; letter-spacing:-0.02em; line-height:1.1; color:#FFFFFF">{{ courseTitle }}</span>
+                  <div style="display:flex; gap:10px; align-items:center">
+                    <div style="flex:1; height:6px; background:rgba(255,255,255,0.22)">
+                      <div style="width:33%; height:100%; background:#E31B23"></div>
+                    </div>
+                    <span style="font-size:11px; font-weight:800; letter-spacing:0.08em; color:rgba(255,255,255,0.74)">1/3</span>
+                  </div>
+                </div>
+
+                <div style="padding:22px 20px 8px"><span style="font-size:13px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Next step</span></div>
+                <div style="padding:0 20px"><div style="height:2px; background:rgba(11,15,91,0.4)"></div></div>
+                <div style="padding:18px 20px 24px; display:flex; flex-direction:column; gap:14px">
+                  <div style="display:flex; gap:14px">
+                    <span style="font-size:20px; font-weight:800; color:#E31B23; line-height:1.1; width:26px">02</span>
+                    <div style="display:flex; flex-direction:column; gap:3px; flex:1">
+                      <span style="font-size:16px; font-weight:800; line-height:1.2">Upload material</span>
+                      <span style="font-size:13px; line-height:1.45; color:#6B7080">Drop a lecture PDF and we read it for you.</span>
+                    </div>
+                  </div>
+                  <div style="border:2px dashed rgba(11,15,91,0.3); padding:26px 18px; display:flex; flex-direction:column; gap:6px">
+                    <span style="font-size:15px; font-weight:800; text-transform:uppercase; letter-spacing:0.02em">Drop a file here</span>
+                    <span style="font-size:12px; color:#6B7080; font-family:ui-monospace,monospace">PDF · PPTX · DOCX · up to 20 MB</span>
+                  </div>
+                  <button type="button" onClick="{{ uploadMaterial }}" style="appearance:none; border:0; cursor:pointer; background:#E31B23; color:#FFFFFF; height:56px; padding:0 18px; display:flex; align-items:center; justify-content:space-between; font-family:Archivo,system-ui,sans-serif; font-size:15px; font-weight:800; letter-spacing:0.02em; text-transform:uppercase; transition:background 140ms ease" style-hover="background:#B8141B">
+                    <span>Upload material</span>
+                    <span style="font-size:18px">&rarr;</span>
+                  </button>
+                  <button type="button" onClick="{{ resetA }}" style="appearance:none; border:0; background:transparent; cursor:pointer; padding:0; text-align:left; font-family:Archivo,system-ui,sans-serif; font-size:12px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#6B7080; text-decoration:underline; text-underline-offset:3px" style-hover="color:#0B0F5B">Reset demo</button>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ aUploaded }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex; flex-direction:column; animation:tdRise 260ms ease both">
+                <div style="background:#0B0F5B; padding:20px; display:flex; flex-direction:column; gap:14px; border-top:2px solid #E31B23">
+                  <div style="display:flex; align-items:center; justify-content:space-between">
+                    <span style="font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:rgba(255,255,255,0.62)">Material ready</span>
+                    <span style="font-size:11px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#FFFFFF; background:#E31B23; padding:3px 8px">+20 pts</span>
+                  </div>
+                  <span style="font-size:26px; font-weight:800; letter-spacing:-0.02em; line-height:1.1; color:#FFFFFF">{{ courseTitle }}</span>
+                  <div style="display:flex; gap:10px; align-items:center">
+                    <div style="flex:1; height:6px; background:rgba(255,255,255,0.22)">
+                      <div style="width:66%; height:100%; background:#E31B23"></div>
+                    </div>
+                    <span style="font-size:11px; font-weight:800; letter-spacing:0.08em; color:rgba(255,255,255,0.74)">2/3</span>
+                  </div>
+                </div>
+
+                <div style="padding:22px 20px 8px"><span style="font-size:13px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Sources</span></div>
+                <div style="padding:0 20px"><div style="height:2px; background:rgba(11,15,91,0.4)"></div></div>
+                <div style="padding:0 20px">
+                  <div style="display:flex; justify-content:space-between; align-items:flex-start; padding:14px 0; border-bottom:2px solid rgba(11,15,91,0.12)">
+                    <div style="display:flex; flex-direction:column; gap:2px">
+                      <span style="font-size:15px; font-weight:800">Chapter 1 — Introduction</span>
+                      <span style="font-size:12px; color:#6B7080; font-family:ui-monospace,monospace">PDF · 24 pages · read</span>
+                    </div>
+                    <span style="font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:0.06em; color:#E31B23">Ready</span>
+                  </div>
+                </div>
+
+                <div style="padding:18px 20px 24px; display:flex; flex-direction:column; gap:14px">
+                  <div style="display:flex; gap:14px">
+                    <span style="font-size:20px; font-weight:800; color:#E31B23; line-height:1.1; width:26px">03</span>
+                    <div style="display:flex; flex-direction:column; gap:3px; flex:1">
+                      <span style="font-size:16px; font-weight:800; line-height:1.2">Generate & study</span>
+                      <span style="font-size:13px; line-height:1.45; color:#6B7080">15 questions and 20 flashcards from this chapter.</span>
+                    </div>
+                  </div>
+                  <button type="button" onClick="{{ generateA }}" style="appearance:none; border:0; cursor:pointer; background:#E31B23; color:#FFFFFF; height:56px; padding:0 18px; display:flex; align-items:center; justify-content:space-between; font-family:Archivo,system-ui,sans-serif; font-size:15px; font-weight:800; letter-spacing:0.02em; text-transform:uppercase; transition:background 140ms ease" style-hover="background:#B8141B">
+                    <span>Generate quiz</span>
+                    <span style="font-size:18px">&rarr;</span>
+                  </button>
+                  <button type="button" onClick="{{ resetA }}" style="appearance:none; border:0; background:transparent; cursor:pointer; padding:0; text-align:left; font-family:Archivo,system-ui,sans-serif; font-size:12px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#6B7080; text-decoration:underline; text-underline-offset:3px" style-hover="color:#0B0F5B">Reset demo</button>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+
+          <div style="display:flex; background:#0B0F5B">
+            <div style="flex:1; padding:12px 0 14px; text-align:center; border-top:3px solid #E31B23; background:rgba(255,255,255,0.08)">
+              <span style="font-size:11px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:#FFFFFF">Home</span>
+            </div>
+            <div style="flex:1; padding:12px 0 14px; text-align:center; border-top:3px solid transparent">
+              <span style="font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Courses</span>
+            </div>
+            <div style="flex:1; padding:12px 0 14px; text-align:center; border-top:3px solid transparent">
+              <span style="font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Calendar</span>
+            </div>
+            <div style="flex:1; padding:12px 0 14px; text-align:center; border-top:3px solid transparent">
+              <span style="font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Profile</span>
+            </div>
+          </div>
+
+          <sc-if value="{{ genOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; inset:0; background:#0B0F5B; display:flex; flex-direction:column; justify-content:flex-end; padding:24px 20px 32px; gap:16px; animation:tdRise 200ms ease both">
+              <span style="font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:rgba(255,255,255,0.62)">Reading your material</span>
+              <span style="font-size:30px; font-weight:800; letter-spacing:-0.02em; line-height:1.08; color:#FFFFFF">Writing 15<br>questions…</span>
+              <div style="height:6px; background:rgba(255,255,255,0.22)">
+                <div style="height:100%; background:#E31B23; animation:tdBar 1500ms linear both"></div>
+              </div>
+              <span style="font-size:12px; color:rgba(255,255,255,0.62); font-family:ui-monospace,monospace">Chapter 1 — Introduction · 24 pages</span>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ quizOpenA }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; inset:0; background:#FFFFFF; display:flex; flex-direction:column; animation:tdRise 220ms ease both">
+              <div style="background:#0B0F5B; padding:18px 20px; display:flex; align-items:center; justify-content:space-between">
+                <div style="display:flex; flex-direction:column; gap:3px">
+                  <span style="font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:rgba(255,255,255,0.62)">Learning mode · first quiz</span>
+                  <span style="font-size:18px; font-weight:800; color:#FFFFFF">Question 1 of 15</span>
+                </div>
+                <button type="button" onClick="{{ closeQuizA }}" style="appearance:none; border:2px solid rgba(255,255,255,0.45); background:transparent; cursor:pointer; width:36px; height:36px; font-size:15px; font-weight:800; color:#FFFFFF; font-family:Archivo,system-ui,sans-serif">&times;</button>
+              </div>
+              <div style="height:6px; background:rgba(11,15,91,0.12)"><div style="width:7%; height:100%; background:#E31B23"></div></div>
+              <div style="padding:24px 20px; display:flex; flex-direction:column; gap:22px; flex:1">
+                <h3 style="margin:0; font-size:25px; font-weight:800; line-height:1.16; letter-spacing:-0.02em; text-wrap:pretty">Which diagram shows the flow of data between external entities and processes?</h3>
+                <div style="display:flex; flex-direction:column; gap:2px">
+                  <sc-for list="{{ answersA }}" as="a" hint-placeholder-count="4">
+                    <button type="button" onClick="{{ a.pick }}" style="appearance:none; cursor:pointer; text-align:left; display:flex; align-items:center; gap:14px; background:{{ a.bg }}; color:{{ a.fg }}; border:2px solid {{ a.border }}; padding:16px 14px; font-family:Archivo,system-ui,sans-serif; transition:background 140ms ease, border-color 140ms ease">
+                      <span style="font-size:13px; font-weight:800; letter-spacing:0.08em; width:18px">{{ a.key }}</span>
+                      <span style="font-size:15px; font-weight:600; line-height:1.35; flex:1">{{ a.text }}</span>
+                      <span style="font-size:13px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase">{{ a.mark }}</span>
+                    </button>
+                  </sc-for>
+                </div>
+                <sc-if value="{{ answeredA }}" hint-placeholder-val="{{ false }}">
+                  <div style="border-top:2px solid rgba(11,15,91,0.4); padding-top:16px; display:flex; flex-direction:column; gap:10px; animation:tdRise 200ms ease both">
+                    <span style="font-size:13px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:{{ verdictColorA }}">{{ verdictA }}</span>
+                    <p style="margin:0; font-size:14px; line-height:1.5; color:#3A3F6B; text-wrap:pretty">A data flow diagram maps data moving between external entities, processes and stores. An ERD maps relationships between entities instead.</p>
+                    <button type="button" onClick="{{ nextQA }}" style="appearance:none; border:0; cursor:pointer; background:#0B0F5B; color:#FFFFFF; height:52px; padding:0 16px; display:flex; align-items:center; justify-content:space-between; font-family:Archivo,system-ui,sans-serif; font-size:14px; font-weight:800; letter-spacing:0.02em; text-transform:uppercase" style-hover="background:#070A3E">
+                      <span>Next question</span>
+                      <span style="font-size:18px">&rarr;</span>
+                    </button>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ sheetOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; inset:0; background:rgba(11,15,91,0.55); display:flex; flex-direction:column; justify-content:flex-end">
+              <div onClick="{{ closeSheet }}" style="flex:1; cursor:pointer"></div>
+              <div style="background:#FFFFFF; border-top:2px solid #E31B23; padding:22px 20px 24px; display:flex; flex-direction:column; gap:18px; animation:tdSheet 220ms cubic-bezier(0.2,0.8,0.2,1) both">
+                <div style="display:flex; align-items:flex-start; justify-content:space-between">
+                  <div style="display:flex; flex-direction:column; gap:2px">
+                    <span style="font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:#6B7080">Step 01</span>
+                    <span style="font-size:24px; font-weight:800; letter-spacing:-0.02em">New course</span>
+                  </div>
+                  <button type="button" onClick="{{ closeSheet }}" style="appearance:none; border:2px solid rgba(11,15,91,0.3); background:transparent; cursor:pointer; width:36px; height:36px; font-size:15px; font-weight:800; color:#0B0F5B; font-family:Archivo,system-ui,sans-serif">&times;</button>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:8px">
+                  <span style="font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:#6B7080">Course name</span>
+                  <input value="{{ courseName }}" onChange="{{ onName }}" placeholder="e.g. IS230 — Systems Analysis" style="width:100%; height:52px; padding:0 14px; border:2px solid #0B0F5B; background:#FFFFFF; font-family:Archivo,system-ui,sans-serif; font-size:15px; font-weight:600; color:#0B0F5B; outline:none">
+                </div>
+                <div style="display:flex; flex-direction:column; gap:8px">
+                  <span style="font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:#6B7080">Or pick a recent code</span>
+                  <div style="display:flex; flex-wrap:wrap; gap:8px">
+                    <sc-for list="{{ presets }}" as="p" hint-placeholder-count="3">
+                      <button type="button" onClick="{{ p.pick }}" style="appearance:none; cursor:pointer; background:{{ p.bg }}; color:{{ p.fg }}; border:2px solid #0B0F5B; padding:9px 12px; font-family:Archivo,system-ui,sans-serif; font-size:13px; font-weight:800; letter-spacing:0.02em">{{ p.label }}</button>
+                    </sc-for>
+                  </div>
+                </div>
+                <button type="button" onClick="{{ createCourse }}" style="appearance:none; border:0; cursor:pointer; background:#E31B23; color:#FFFFFF; height:56px; padding:0 18px; display:flex; align-items:center; justify-content:space-between; font-family:Archivo,system-ui,sans-serif; font-size:15px; font-weight:800; letter-spacing:0.02em; text-transform:uppercase" style-hover="background:#B8141B">
+                  <span>Create course</span>
+                  <span style="font-size:18px">&rarr;</span>
+                </button>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </x-import>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:16px">
+      <div style="display:flex; align-items:center; gap:12px">
+        <span style="font-size:13px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Screen 2 — Active home</span>
+        <span style="font-size:12px; font-weight:600; color:#E31B23; text-transform:uppercase; letter-spacing:0.06em">interactive</span>
+      </div>
+      <x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" hint-size="412px,892px">
+        <div style="position:relative; height:100%; display:flex; flex-direction:column; background:#FFFFFF; overflow:hidden">
+
+          <div style="background:#0B0F5B; padding:20px 20px 0">
+            <div style="display:flex; align-items:flex-end; justify-content:space-between">
+              <div style="display:flex; flex-direction:column; gap:4px">
+                <span style="font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:rgba(255,255,255,0.62)">Good evening</span>
+                <span style="font-size:32px; font-weight:800; letter-spacing:-0.02em; line-height:1; color:#FFFFFF">Ghaida</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px">
+                <div style="width:2px; height:26px; background:#E31B23"></div>
+                <span style="font-size:12px; font-weight:800; letter-spacing:0.14em; color:#FFFFFF">TADARAB</span>
+              </div>
+            </div>
+            <sc-if value="{{ showStreak }}" hint-placeholder-val="{{ true }}">
+              <div style="margin-top:18px; padding:12px 0 14px; border-top:2px solid rgba(255,255,255,0.2); display:flex; align-items:center; justify-content:space-between">
+                <span style="font-size:11px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:#FFFFFF">12-day streak</span>
+                <div style="display:flex; gap:4px">
+                  <div style="width:16px; height:16px; background:#E31B23"></div>
+                  <div style="width:16px; height:16px; background:#E31B23"></div>
+                  <div style="width:16px; height:16px; background:#E31B23"></div>
+                  <div style="width:16px; height:16px; background:#E31B23"></div>
+                  <div style="width:16px; height:16px; background:#E31B23"></div>
+                  <div style="width:16px; height:16px; background:#E31B23"></div>
+                  <div style="width:16px; height:16px; border:2px solid rgba(255,255,255,0.45)"></div>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+
+          <div style="flex:1; overflow:auto">
+            <div style="display:flex; border-bottom:2px solid rgba(11,15,91,0.4)">
+              <div style="flex:1; padding:18px 16px; border-right:2px solid rgba(11,15,91,0.12)">
+                <div style="font-size:38px; font-weight:800; line-height:1; letter-spacing:-0.03em">40</div>
+                <div style="font-size:10px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:#6B7080; margin-top:6px">Questions</div>
+              </div>
+              <div style="flex:1; padding:18px 16px; border-right:2px solid rgba(11,15,91,0.12)">
+                <div style="font-size:38px; font-weight:800; line-height:1; letter-spacing:-0.03em">10</div>
+                <div style="font-size:10px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:#6B7080; margin-top:6px">Flashcards</div>
+              </div>
+              <div style="flex:1; padding:18px 16px">
+                <div style="font-size:38px; font-weight:800; line-height:1; letter-spacing:-0.03em; color:#E31B23">32</div>
+                <div style="font-size:10px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:#6B7080; margin-top:6px">Minutes</div>
+              </div>
+            </div>
+
+            <div style="background:#0B0F5B; padding:20px; display:flex; flex-direction:column; gap:14px">
+              <div style="display:flex; align-items:center; justify-content:space-between">
+                <span style="font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:rgba(255,255,255,0.62)">Unfinished session</span>
+                <span style="font-size:11px; font-weight:800; letter-spacing:0.08em; color:#FFFFFF">6 / 15</span>
+              </div>
+              <span style="font-size:24px; font-weight:800; letter-spacing:-0.02em; line-height:1.12; color:#FFFFFF">IS230 — Chapter 4<br>Learning quiz</span>
+              <div style="height:6px; background:rgba(255,255,255,0.22)">
+                <div style="width:40%; height:100%; background:#E31B23"></div>
+              </div>
+              <button type="button" onClick="{{ openQuiz }}" style="appearance:none; border:0; cursor:pointer; background:#E31B23; color:#FFFFFF; height:52px; padding:0 16px; display:flex; align-items:center; justify-content:space-between; font-family:Archivo,system-ui,sans-serif; font-size:14px; font-weight:800; letter-spacing:0.02em; text-transform:uppercase; transition:background 140ms ease" style-hover="background:#B8141B">
+                <span>Resume session</span>
+                <span style="font-size:18px">&rarr;</span>
+              </button>
+            </div>
+
+            <div style="padding:20px 20px 0; display:flex; flex-direction:column; gap:10px">
+              <div style="display:flex; align-items:baseline; justify-content:space-between">
+                <span style="font-size:13px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Active learner</span>
+                <span style="font-size:12px; font-weight:600; color:#6B7080; letter-spacing:0.04em">108 / 150 pts</span>
+              </div>
+              <div style="height:8px; background:rgba(11,15,91,0.12)">
+                <div style="width:72%; height:100%; background:#0B0F5B"></div>
+              </div>
+              <span style="font-size:12px; color:#6B7080">42 points to <strong style="font-weight:800">Sharp Learner</strong>.</span>
+            </div>
+
+            <div style="padding:22px 20px 0">
+              <div style="display:flex; align-items:baseline; justify-content:space-between; padding-bottom:8px">
+                <span style="font-size:13px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Up next</span>
+                <span style="font-size:12px; font-weight:800; color:#E31B23; letter-spacing:0.04em; text-transform:uppercase">See all</span>
+              </div>
+              <div style="height:2px; background:rgba(11,15,91,0.4)"></div>
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; padding:14px 0; border-bottom:2px solid rgba(11,15,91,0.12)">
+                <div style="display:flex; flex-direction:column; gap:2px">
+                  <span style="font-size:15px; font-weight:800">Midterm</span>
+                  <span style="font-size:12px; color:#6B7080; font-family:ui-monospace,monospace">IS230</span>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:2px; text-align:right">
+                  <span style="font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:0.06em; color:#E31B23">Today</span>
+                  <span style="font-size:12px; color:#6B7080">11:59 PM</span>
+                </div>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; padding:14px 0; border-bottom:2px solid rgba(11,15,91,0.12)">
+                <div style="display:flex; flex-direction:column; gap:2px">
+                  <span style="font-size:15px; font-weight:800">GP1 report submission</span>
+                  <span style="font-size:12px; color:#6B7080; font-family:ui-monospace,monospace">GP1</span>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:2px; text-align:right">
+                  <span style="font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:0.06em">In 9 days</span>
+                  <span style="font-size:12px; color:#6B7080">11:59 PM</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="padding:22px 20px 28px">
+              <div style="display:flex; align-items:baseline; justify-content:space-between; padding-bottom:8px">
+                <span style="font-size:13px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Your courses</span>
+                <span style="font-size:12px; font-weight:600; color:#6B7080">3</span>
+              </div>
+              <div style="height:2px; background:rgba(11,15,91,0.4)"></div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:2px; background:rgba(11,15,91,0.12); margin-top:2px">
+                <div style="background:#FFFFFF; padding:16px 14px; display:flex; flex-direction:column; gap:10px">
+                  <span style="font-size:11px; font-family:ui-monospace,monospace; color:#6B7080">IS230</span>
+                  <span style="font-size:16px; font-weight:800; line-height:1.15">Systems Analysis</span>
+                  <div style="height:4px; background:rgba(11,15,91,0.12)"><div style="width:64%; height:100%; background:#E31B23"></div></div>
+                  <span style="font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#6B7080">64% mastered</span>
+                </div>
+                <div style="background:#FFFFFF; padding:16px 14px; display:flex; flex-direction:column; gap:10px">
+                  <span style="font-size:11px; font-family:ui-monospace,monospace; color:#6B7080">CS310</span>
+                  <span style="font-size:16px; font-weight:800; line-height:1.15">Data Structures</span>
+                  <div style="height:4px; background:rgba(11,15,91,0.12)"><div style="width:28%; height:100%; background:#E31B23"></div></div>
+                  <span style="font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#6B7080">28% mastered</span>
+                </div>
+                <div style="background:#FFFFFF; padding:16px 14px; display:flex; flex-direction:column; gap:10px">
+                  <span style="font-size:11px; font-family:ui-monospace,monospace; color:#6B7080">MKT101</span>
+                  <span style="font-size:16px; font-weight:800; line-height:1.15">Marketing</span>
+                  <div style="height:4px; background:rgba(11,15,91,0.12)"><div style="width:12%; height:100%; background:#E31B23"></div></div>
+                  <span style="font-size:11px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#6B7080">12% mastered</span>
+                </div>
+                <div style="background:#0B0F5B; padding:16px 14px; display:flex; flex-direction:column; justify-content:space-between; gap:10px; cursor:pointer">
+                  <span style="font-size:16px; font-weight:800; line-height:1.15; color:#FFFFFF">Add a<br>course</span>
+                  <span style="font-size:22px; font-weight:800; color:#E31B23">+</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex; background:#0B0F5B">
+            <div style="flex:1; padding:12px 0 14px; text-align:center; border-top:3px solid #E31B23; background:rgba(255,255,255,0.08)">
+              <span style="font-size:11px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:#FFFFFF">Home</span>
+            </div>
+            <div style="flex:1; padding:12px 0 14px; text-align:center; border-top:3px solid transparent">
+              <span style="font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Courses</span>
+            </div>
+            <div style="flex:1; padding:12px 0 14px; text-align:center; border-top:3px solid transparent">
+              <span style="font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Calendar</span>
+            </div>
+            <div style="flex:1; padding:12px 0 14px; text-align:center; border-top:3px solid transparent">
+              <span style="font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgba(255,255,255,0.6)">Profile</span>
+            </div>
+          </div>
+
+          <sc-if value="{{ quizOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; inset:0; background:#FFFFFF; display:flex; flex-direction:column; animation:tdRise 220ms ease both">
+              <div style="background:#0B0F5B; padding:18px 20px; display:flex; align-items:center; justify-content:space-between">
+                <div style="display:flex; flex-direction:column; gap:3px">
+                  <span style="font-size:11px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:rgba(255,255,255,0.62)">Learning mode · IS230</span>
+                  <span style="font-size:18px; font-weight:800; color:#FFFFFF">Question 7 of 15</span>
+                </div>
+                <button type="button" onClick="{{ closeQuiz }}" style="appearance:none; border:2px solid rgba(255,255,255,0.45); background:transparent; cursor:pointer; width:36px; height:36px; font-size:15px; font-weight:800; color:#FFFFFF; font-family:Archivo,system-ui,sans-serif">&times;</button>
+              </div>
+              <div style="height:6px; background:rgba(11,15,91,0.12)"><div style="width:47%; height:100%; background:#E31B23"></div></div>
+              <div style="padding:24px 20px; display:flex; flex-direction:column; gap:22px; flex:1">
+                <h3 style="margin:0; font-size:25px; font-weight:800; line-height:1.16; letter-spacing:-0.02em; text-wrap:pretty">Which diagram shows the flow of data between external entities and processes?</h3>
+                <div style="display:flex; flex-direction:column; gap:2px">
+                  <sc-for list="{{ answers }}" as="a" hint-placeholder-count="4">
+                    <button type="button" onClick="{{ a.pick }}" style="appearance:none; cursor:pointer; text-align:left; display:flex; align-items:center; gap:14px; background:{{ a.bg }}; color:{{ a.fg }}; border:2px solid {{ a.border }}; padding:16px 14px; font-family:Archivo,system-ui,sans-serif; transition:background 140ms ease, border-color 140ms ease">
+                      <span style="font-size:13px; font-weight:800; letter-spacing:0.08em; width:18px">{{ a.key }}</span>
+                      <span style="font-size:15px; font-weight:600; line-height:1.35; flex:1">{{ a.text }}</span>
+                      <span style="font-size:13px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase">{{ a.mark }}</span>
+                    </button>
+                  </sc-for>
+                </div>
+                <sc-if value="{{ answered }}" hint-placeholder-val="{{ false }}">
+                  <div style="border-top:2px solid rgba(11,15,91,0.4); padding-top:16px; display:flex; flex-direction:column; gap:10px; animation:tdRise 200ms ease both">
+                    <span style="font-size:13px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:{{ verdictColor }}">{{ verdict }}</span>
+                    <p style="margin:0; font-size:14px; line-height:1.5; color:#3A3F6B; text-wrap:pretty">A data flow diagram maps data moving between external entities, processes and stores. An ERD maps relationships between entities instead.</p>
+                    <button type="button" onClick="{{ nextQ }}" style="appearance:none; border:0; cursor:pointer; background:#0B0F5B; color:#FFFFFF; height:52px; padding:0 16px; display:flex; align-items:center; justify-content:space-between; font-family:Archivo,system-ui,sans-serif; font-size:14px; font-weight:800; letter-spacing:0.02em; text-transform:uppercase" style-hover="background:#070A3E">
+                      <span>Next question</span>
+                      <span style="font-size:18px">&rarr;</span>
+                    </button>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </x-import>
+    </div>
+
+    <div style="width:320px; display:flex; flex-direction:column; gap:18px">
+      <span style="font-size:13px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">Color usage</span>
+      <div style="height:2px; background:rgba(11,15,91,0.4)"></div>
+      <div style="display:flex; flex-direction:column; gap:20px">
+        <div style="display:flex; gap:14px">
+          <div style="width:44px; height:44px; background:#0B0F5B; flex:none"></div>
+          <div style="display:flex; flex-direction:column; gap:4px">
+            <span style="font-size:13px; font-weight:800">#0B0F5B — Deep blue</span>
+            <span style="font-size:13px; line-height:1.45; color:#6B7080">Header field, bottom nav, the resume block, poster statements, all headings and body text, secondary buttons, rank bar fill.</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:14px">
+          <div style="width:44px; height:44px; background:#E31B23; flex:none"></div>
+          <div style="display:flex; flex-direction:column; gap:4px">
+            <span style="font-size:13px; font-weight:800">#E31B23 — Red</span>
+            <span style="font-size:13px; line-height:1.45; color:#6B7080">Primary action only, plus small emphasis: active nav bar, step numbers, streak squares, progress fills, "today" and "see all", point badges. Never for paragraph text.</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:14px">
+          <div style="width:44px; height:44px; background:#FFFFFF; border:2px solid rgba(11,15,91,0.4); flex:none"></div>
+          <div style="display:flex; flex-direction:column; gap:4px">
+            <span style="font-size:13px; font-weight:800">#FFFFFF — White</span>
+            <span style="font-size:13px; line-height:1.45; color:#6B7080">The whole content ground and the sheet — no gray cards, no shadows. Type on the navy fields.</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:14px">
+          <div style="width:44px; height:44px; background:#9CA3AF; flex:none"></div>
+          <div style="display:flex; flex-direction:column; gap:4px">
+            <span style="font-size:13px; font-weight:800">#9CA3AF — Gray</span>
+            <span style="font-size:13px; line-height:1.45; color:#6B7080">Kept for decoration only — inactive streak marks and unfilled tracks. All small metadata (overlines, timestamps, course codes, file hints) is set in muted navy #6B7080 so 10–12px type stays readable.</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:14px">
+          <div style="width:44px; height:44px; background:rgba(11,15,91,0.4); flex:none"></div>
+          <div style="display:flex; flex-direction:column; gap:4px">
+            <span style="font-size:13px; font-weight:800">Navy 40% / 12% — Rules</span>
+            <span style="font-size:13px; line-height:1.45; color:#6B7080">2px rules do the organising: 40% under section heads, 12% between rows and grid cells. These replace every card, border-radius and shadow in the old screens.</span>
+          </div>
+        </div>
+      </div>
+      <div style="height:2px; background:rgba(11,15,91,0.4)"></div>
+      <div style="display:flex; flex-direction:column; gap:8px">
+        <span style="font-size:13px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase">What changed</span>
+        <ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.6; color:#6B7080">
+          <li>The empty state now welcomes and guides: poster statement, a numbered 3-step setup, one obvious red action.</li>
+          <li>Today's progress became a modular 3-cell grid — bigger numbers, no floating card.</li>
+          <li>Streak, rank progress and mastery bars carry the gamification without badges or mascots.</li>
+          <li>Resume-session block puts the unfinished quiz above events — one tap back into studying.</li>
+          <li>Nav labels are set in Archivo instead of icons, so the chrome matches the type system.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showStreak&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Gamification&quot;},&quot;quizMode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;learning&quot;,&quot;exam&quot;],&quot;default&quot;:&quot;learning&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Study&quot;}}">
+class Component extends DCLogic {
+  state = { aStage: 'empty', sheet: false, name: '', picked: null };
+
+  renderVals() {
+    const presetLabels = ['IS230', 'CS310', 'MKT101'];
+    const name = this.state.name;
+    const presets = presetLabels.map((label) => ({
+      label,
+      bg: name === label ? '#0B0F5B' : 'transparent',
+      fg: name === label ? '#FFFFFF' : '#0B0F5B',
+      pick: () => this.setState({ name: label }),
+    }));
+
+    const correct = 1;
+    const opts = [
+      { key: 'A', text: 'Entity relationship diagram' },
+      { key: 'B', text: 'Data flow diagram' },
+      { key: 'C', text: 'Class diagram' },
+      { key: 'D', text: 'Use case diagram' },
+    ];
+    const build = (picked, key) => opts.map((o, i) => {
+      let bg = '#FFFFFF', fg = '#0B0F5B', border = 'rgba(11,15,91,0.25)', mark = '';
+      if (picked !== null && picked !== undefined) {
+        if (i === correct) { bg = '#0B0F5B'; fg = '#FFFFFF'; border = '#0B0F5B'; mark = 'Correct'; }
+        else if (i === picked) { bg = '#FFFFFF'; fg = '#E31B23'; border = '#E31B23'; mark = 'Your pick'; }
+        else { fg = '#6B7080'; border = 'rgba(11,15,91,0.12)'; }
+      }
+      return { ...o, bg, fg, border, mark, pick: () => this.setState({ [key]: i }) };
+    });
+    const picked = this.state.picked;
+    const pickedA = this.state.pickedA ?? null;
+    const answers = build(picked, 'picked');
+    const answersA = build(pickedA, 'pickedA');
+
+    return {
+      aEmpty: this.state.aStage === 'empty',
+      aStarted: this.state.aStage === 'started',
+      aUploaded: this.state.aStage === 'uploaded',
+      uploadMaterial: () => this.setState({ aStage: 'uploaded' }),
+      genOpen: this.state.gen === true,
+      quizOpenA: this.state.quizA === true,
+      answersA,
+      answeredA: pickedA !== null,
+      verdictA: pickedA === correct ? 'Correct — nice' : 'Not quite',
+      verdictColorA: pickedA === correct ? '#0B0F5B' : '#E31B23',
+      generateA: () => {
+        this.setState({ gen: true, pickedA: null });
+        clearTimeout(this._genT);
+        this._genT = setTimeout(() => this.setState({ gen: false, quizA: true }), 1500);
+      },
+      closeQuizA: () => this.setState({ quizA: false }),
+      nextQA: () => this.setState({ pickedA: null }),
+      sheetOpen: this.state.sheet,
+      quizOpen: this.state.quiz === true,
+      showStreak: this.props.showStreak ?? true,
+      courseName: name,
+      courseTitle: name ? name : 'New course',
+      presets,
+      answers,
+      answered: picked !== null,
+      verdict: picked === correct ? 'Correct — nice' : 'Not quite',
+      verdictColor: picked === correct ? '#0B0F5B' : '#E31B23',
+      onName: (e) => this.setState({ name: e.target.value }),
+      openSheet: () => this.setState({ sheet: true }),
+      closeSheet: () => this.setState({ sheet: false }),
+      createCourse: () => this.setState({ sheet: false, aStage: 'started' }),
+      createSample: () => this.setState({ name: 'IS230 — Systems Analysis', aStage: 'started' }),
+      resetA: () => this.setState({ aStage: 'empty', name: '' }),
+      openQuiz: () => this.setState({ quiz: true, picked: null }),
+      closeQuiz: () => this.setState({ quiz: false }),
+      nextQ: () => this.setState({ picked: null }),
+    };
+  }
+}
+</script>
+</body>
+</html>

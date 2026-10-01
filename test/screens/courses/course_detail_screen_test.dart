@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tadarab_app/features/flashcards/screens/flashcard_sessions_screen.dart';
 import 'package:tadarab_app/models/course.dart';
 import 'package:tadarab_app/models/study_material.dart';
 import 'package:tadarab_app/screens/courses/course_detail_screen.dart';
 import 'package:tadarab_app/services/courses_service.dart';
 
 import '../../helpers/fake_courses_service.dart';
+import '../../helpers/fake_flashcard_service.dart';
 
 void main() {
   final course = Course(
@@ -15,13 +17,18 @@ void main() {
     email: 'e',
   );
 
-  Future<void> pump(WidgetTester tester, FakeCoursesService service) async {
+  Future<void> pump(
+    WidgetTester tester,
+    FakeCoursesService service, {
+    FakeFlashcardService? flashcardService,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         home: CourseDetailScreen(
           uid: 'uid-1',
           course: course,
           coursesService: service,
+          flashcardService: flashcardService,
         ),
       ),
     );
@@ -84,6 +91,31 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Quiz sessions'), findsOneWidget);
     });
+
+    testWidgets(
+      'Flashcards tile opens the real Flashcard sessions screen, not a '
+      'placeholder',
+      (tester) async {
+        await pump(
+          tester,
+          FakeCoursesService(materialsByCourse: {'c1': materials}),
+          // Unlike QuizSessionService's fetchSessions (an async method,
+          // so a no-Firebase-app error gets wrapped into its returned
+          // Future rather than thrown), FlashcardService.watchSessions is
+          // a plain synchronous function called directly from build(), so
+          // it throws immediately without a fake backing it here.
+          flashcardService: FakeFlashcardService(),
+        );
+
+        await tester.tap(find.text('Flashcards'));
+        await tester.pumpAndSettle();
+        // Asserting by widget type (rather than the header's own
+        // "Flashcards" text, which would collide with the tile's
+        // identical label still in the tree underneath) is unambiguous.
+        expect(find.byType(FlashcardSessionsScreen), findsOneWidget);
+        expect(find.text('Flashcard setup screen'), findsNothing);
+      },
+    );
 
     testWidgets('the type filter tabs narrow the visible materials list', (
       tester,

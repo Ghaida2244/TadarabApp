@@ -23,7 +23,7 @@ abstract class Session {
     required this.materialIds,
   }) : assert(
          difficultyLevels.isNotEmpty,
-         'A session must request at least one difficulty level',
+         'difficultyLevels must have at least one entry',
        );
 
   /// Firestore document ID.
@@ -41,11 +41,7 @@ abstract class Session {
   /// Whether the session has been completed.
   final bool isSessionCompleted;
 
-  /// Difficulty level(s) requested for this session's generated content.
-  /// Multi-select (at least one) — an approved deviation from the Attributes
-  /// Dictionary Table, which lists this as a single, non-multivalued ENUM:
-  /// the Quiz/Flashcard setup screens let a student pick more than one
-  /// level (e.g. Easy + Hard together) in the same request.
+  /// Difficulty/difficulties requested for this session's generated content.
   final List<DifficultyLevel> difficultyLevels;
 
   /// Optional custom prompt supplied by the student for generation.
@@ -70,7 +66,7 @@ abstract class Session {
           : Timestamp.fromDate(completedAt!),
       'earnedPoints': earnedPoints,
       'isSessionCompleted': isSessionCompleted,
-      'difficultyLevels': difficultyLevels.map((l) => l.toJson()).toList(),
+      'difficultyLevels': difficultyLevels.map((d) => d.toJson()).toList(),
       'customPrompt': customPrompt,
       'email': email,
       'courseId': courseId,

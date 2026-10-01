@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../features/flashcards/screens/flashcard_sessions_screen.dart';
 import '../../models/course.dart';
 import '../../models/study_material.dart';
 import '../../services/courses_service.dart';
+import '../../services/flashcard_service.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
-import '../placeholder_screen.dart';
 import '../quiz/quiz_navigation.dart';
 import '../quiz/quiz_sessions_screen.dart';
 import 'widgets/delete_course_dialog.dart';
@@ -25,12 +26,16 @@ class CourseDetailScreen extends StatefulWidget {
     required this.uid,
     required this.course,
     this.coursesService,
+    this.flashcardService,
     this.pickFile,
   });
 
   final String uid;
   final Course course;
   final CoursesService? coursesService;
+
+  /// Overridable for tests; defaults to the real Firebase-backed service.
+  final FlashcardService? flashcardService;
 
   /// Overridable for tests — see [showUploadMaterialSheet]'s `pickFile`.
   final Future<PickedFile?> Function()? pickFile;
@@ -89,12 +94,15 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     );
   }
 
-  // Deemah's Flashcards feature (feature/flashcards) isn't built yet — see
-  // PlaceholderScreen's own doc comment.
   void _openFlashcards() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => const PlaceholderScreen(label: 'Flashcard setup screen'),
+        builder: (_) => FlashcardSessionsScreen(
+          uid: widget.uid,
+          courseId: widget.course.courseId,
+          email: widget.course.email,
+          service: widget.flashcardService,
+        ),
       ),
     );
   }

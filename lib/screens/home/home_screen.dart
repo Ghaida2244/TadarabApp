@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../features/flashcards/screens/flashcard_flip_deck_screen.dart';
+import '../../features/flashcards/screens/flashcard_sessions_screen.dart';
 import '../../models/course.dart';
 import '../../models/student.dart';
 import '../../services/courses_service.dart';
+import '../../services/flashcard_service.dart';
 import '../../services/home_data_service.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
@@ -27,6 +30,7 @@ class HomeScreen extends StatefulWidget {
     required this.uid,
     this.homeDataService,
     this.coursesService,
+    this.flashcardServiceBuilder,
     this.now,
     this.onSignOut,
   });
@@ -40,6 +44,14 @@ class HomeScreen extends StatefulWidget {
   /// Used both by the onboarding "Create my first course" button and by
   /// the embedded Courses tab, so a single override covers both.
   final CoursesService? coursesService;
+
+  /// Overridable for tests; defaults to the real Firebase-backed
+  /// FlashcardService. A builder (not a single instance) because, unlike
+  /// [coursesService], the course it's scoped to isn't known until the
+  /// student picks one from the course picker or has an in-progress
+  /// session to resume.
+  final FlashcardService Function({required String uid, required String courseId})?
+  flashcardServiceBuilder;
 
   /// Overridable for tests, so "today"/greeting/streak-row highlighting is deterministic.
   final DateTime? now;
@@ -55,6 +67,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late final _dataService = widget.homeDataService ?? HomeDataService();
   late final _coursesService = widget.coursesService ?? CoursesService();
+  late final _flashcardServiceBuilder =
+      widget.flashcardServiceBuilder ??
+      ({required String uid, required String courseId}) =>
+          FlashcardService(uid: uid, courseId: courseId);
   int _tabIndex = 0;
 
   DateTime get _now => widget.now ?? DateTime.now();
@@ -70,6 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
             uid: widget.uid,
             dataService: _dataService,
             coursesService: _coursesService,
+            flashcardServiceBuilder: _flashcardServiceBuilder,
             now: _now,
             active: _tabIndex == 0,
           ),
@@ -105,6 +122,7 @@ class _HomeTab extends StatefulWidget {
     required this.uid,
     required this.dataService,
     required this.coursesService,
+    required this.flashcardServiceBuilder,
     required this.now,
     required this.active,
   });
@@ -112,6 +130,8 @@ class _HomeTab extends StatefulWidget {
   final String uid;
   final HomeDataService dataService;
   final CoursesService coursesService;
+  final FlashcardService Function({required String uid, required String courseId})
+  flashcardServiceBuilder;
   final DateTime now;
 
   /// Whether this is the currently-selected bottom-nav tab. Home lives in a
@@ -181,12 +201,23 @@ class _HomeTabState extends State<_HomeTab> {
     if (created == true) _reload();
   }
 
-  void _openFlashcardSetupPlaceholder() {
+  void _openFlashcardSessions(Course course, String? email) {
+    // Guards against the rare case where the student doc hasn't loaded yet
+    // when this is tapped (FlashcardSessionsScreen needs a real email) —
+    // same defensive-no-op spirit as _resumeSession's inProgress == null arm.
+    if (email == null) return;
     Navigator.of(context)
         .push(
           MaterialPageRoute(
-            builder: (_) =>
-                const PlaceholderScreen(label: 'Flashcard setup screen'),
+            builder: (_) => FlashcardSessionsScreen(
+              uid: widget.uid,
+              courseId: course.courseId,
+              email: email,
+              service: widget.flashcardServiceBuilder(
+                uid: widget.uid,
+                courseId: course.courseId,
+              ),
+            ),
           ),
         )
         .then((_) => _reload());
@@ -207,7 +238,7 @@ class _HomeTabState extends State<_HomeTab> {
         .then((_) => _reload());
   }
 
-  void _openCoursePicker(SessionKind kind) {
+  void _openCoursePicker(SessionKind kind, {String? email}) {
     showCoursePickerSheet(
       context: context,
       dataService: widget.dataService,
@@ -218,7 +249,7 @@ class _HomeTabState extends State<_HomeTab> {
         if (kind == SessionKind.quiz) {
           _openQuizSessions(course);
         } else {
-          _openFlashcardSetupPlaceholder();
+          _openFlashcardSessions(course, email);
         }
       },
     );
@@ -238,11 +269,35 @@ class _HomeTabState extends State<_HomeTab> {
           .then((_) => _reload());
       return;
     }
+    _resumeFlashcardSession(session);
+  }
+
+  // Unlike QuizPlayScreen (which loads its own session by id),
+  // FlashcardFlipDeckScreen takes already-fetched data — it's also used to
+  // start a fresh Retake with in-memory values, so it can't fetch for
+  // itself. Mirrors FlashcardSessionsScreen._resume's same two-step fetch.
+  Future<void> _resumeFlashcardSession(InProgressSession info) async {
+    final service = widget.flashcardServiceBuilder(
+      uid: widget.uid,
+      courseId: info.courseId,
+    );
+    final sessions = await service.watchSessions().first;
+    final session = sessions.firstWhere((s) => s.sessionId == info.sessionId);
+    final flashcards = await service.fetchFlashcards(info.sessionId);
+    if (!mounted) return;
     Navigator.of(context)
         .push(
           MaterialPageRoute(
-            builder: (_) =>
-                const PlaceholderScreen(label: 'Flashcard session screen'),
+            builder: (_) => FlashcardFlipDeckScreen(
+              uid: widget.uid,
+              courseId: info.courseId,
+              sessionId: info.sessionId,
+              initialFlashcards: flashcards,
+              initialIndex: session.currentFlashcardIndex,
+              initialKnownCount: session.knownCount,
+              initialNeedsReviewCount: session.needsReviewCount,
+              service: service,
+            ),
           ),
         )
         .then((_) => _reload());
@@ -329,8 +384,10 @@ class _HomeTabState extends State<_HomeTab> {
                                       : () => _resumeSession(inProgress),
                                   onNewQuiz: () =>
                                       _openCoursePicker(SessionKind.quiz),
-                                  onNewFlashcards: () =>
-                                      _openCoursePicker(SessionKind.flashcard),
+                                  onNewFlashcards: () => _openCoursePicker(
+                                    SessionKind.flashcard,
+                                    email: student?.email,
+                                  ),
                                 ),
                                 const SizedBox(height: 16),
                                 UpcomingSection(

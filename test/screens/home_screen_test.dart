@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/models/calendar_event.dart';
 import 'package:tadarab_app/models/course.dart';
+import 'package:tadarab_app/models/enums.dart';
+import 'package:tadarab_app/models/flashcard.dart';
+import 'package:tadarab_app/models/flashcard_session.dart';
 import 'package:tadarab_app/models/student.dart';
 import 'package:tadarab_app/screens/home/home_screen.dart';
 import 'package:tadarab_app/services/home_data_service.dart';
 
 import '../helpers/fake_courses_service.dart';
+import '../helpers/fake_flashcard_service.dart';
 import '../helpers/fake_home_data_service.dart';
 
 void main() {
@@ -20,6 +24,7 @@ void main() {
     WidgetTester tester, {
     FakeHomeDataService? dataService,
     FakeCoursesService? coursesService,
+    FakeFlashcardService? flashcardService,
     VoidCallback? onSignOut,
   }) async {
     await tester.pumpWidget(
@@ -28,6 +33,12 @@ void main() {
           uid: 'uid-1',
           homeDataService: dataService ?? FakeHomeDataService(),
           coursesService: coursesService ?? FakeCoursesService(),
+          // A single fake covers every courseId a test uses — scoping by
+          // the real uid/courseId the screen asks for isn't needed here,
+          // since each test only ever deals with one course.
+          flashcardServiceBuilder: flashcardService == null
+              ? null
+              : ({required uid, required courseId}) => flashcardService,
           now: now,
           onSignOut: onSignOut,
         ),
@@ -350,7 +361,9 @@ void main() {
     });
 
     testWidgets(
-      'tapping Resume opens the (currently unreachable-in-production) session placeholder',
+      'tapping Resume opens the real Flashcard Flip Deck screen at the '
+      'stored position — regression test for a bug where this opened a '
+      'placeholder instead',
       (tester) async {
         final inProgress = InProgressSession(
           sessionId: 's1',
@@ -361,18 +374,66 @@ void main() {
           total: 20,
           resumePosition: 3,
         );
+        final session = FlashcardSession(
+          sessionId: 's1',
+          createdAt: DateTime(2026, 3, 1),
+          difficultyLevels: const [DifficultyLevel.medium],
+          email: 'e@x.com',
+          courseId: 'c1',
+          materialIds: const ['m1'],
+          materialTitles: const ['Lecture 1'],
+          numberOfFlashcards: 3,
+          currentFlashcardIndex: 2,
+          knownCount: 1,
+          needsReviewCount: 1,
+        );
+        final cards = [
+          Flashcard(
+            flashcardId: 'f1',
+            frontText: 'front-1',
+            backText: 'back-1',
+            reviewStatus: ReviewStatus.knowIt,
+            sourceLocation: 'Slide 1',
+            sessionId: 's1',
+            cardIndex: 0,
+          ),
+          Flashcard(
+            flashcardId: 'f2',
+            frontText: 'front-2',
+            backText: 'back-2',
+            reviewStatus: ReviewStatus.needsReview,
+            sourceLocation: 'Slide 2',
+            sessionId: 's1',
+            cardIndex: 1,
+          ),
+          Flashcard(
+            flashcardId: 'f3',
+            frontText: 'front-3',
+            backText: 'back-3',
+            reviewStatus: null,
+            sourceLocation: 'Slide 3',
+            sessionId: 's1',
+            cardIndex: 2,
+          ),
+        ];
         await pumpHome(
           tester,
           dataService: FakeHomeDataService(
             courses: [aCourse],
             inProgress: inProgress,
           ),
+          flashcardService: FakeFlashcardService(
+            sessions: [session],
+            flashcardsBySessionId: {'s1': cards},
+          ),
         );
 
         await tester.tap(find.text('Resume at card 3'));
         await tester.pumpAndSettle();
 
-        expect(find.text('Flashcard session screen'), findsOneWidget);
+        expect(find.text('Flashcard session screen'), findsNothing);
+        expect(find.text('Card 3 of 3'), findsOneWidget);
+        expect(find.text('front-3'), findsOneWidget);
       },
     );
   });
