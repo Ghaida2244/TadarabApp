@@ -17,6 +17,7 @@ final _material = StudyMaterial(
   type: 'pptx',
   document: 'materials/m1.pptx',
   courseId: 'course-1',
+  extractedText: '[Slide 1: Introduction]\nSample extracted text for tests.',
 );
 
 Widget _wrap(FakeFlashcardService service) {

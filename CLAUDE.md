@@ -531,9 +531,10 @@ mark it done, note decisions made, note what starts next.)*
   Remaining for Phase B: none. The Courses tab is out of scope for Phase B —
   it's Manar's Courses & Material upload feature (`feature/courses`, see
   Feature split) in Phase C, for her to define once she starts it.
-<<<<<<< HEAD
-- **Phase C — Feature split:** Deemah's Flashcards & Sessions
-  (`feature/flashcards`, rebased onto latest `main` — picked up the Phase B
+- **Phase C — Feature split:** in progress.
+
+  **Flashcards & Sessions** (Deemah, `feature/flashcards`, rebased onto
+  latest `main` — picked up the Phase B
   Home work and the AI generation Worker) is done except the live Worker
   call. No Phase B UI existed for this feature yet (checked the working
   tree, `main`, and the pre-existing `feature/flashcards` branch — none had
@@ -889,8 +890,6 @@ mark it done, note decisions made, note what starts next.)*
   future change to the front's style would be caught here too if the two
   drift apart again. 64 flashcards tests now (1 new), 0 failures. Full
   project suite: 153 tests, 0 failures; `flutter analyze` clean.
-=======
-- **Phase C — Feature split:** in progress.
 
   **Courses & Material upload** (Manar, `feature/courses`) — starting, per
   `courses_material_upload_spec.md` at the project root. Model deviation
@@ -1177,7 +1176,47 @@ mark it done, note decisions made, note what starts next.)*
   `FakeCoursesService.deleteMaterial` override. 146 tests total, 0
   failures. Not yet re-verified live on the emulator for this specific
   feature.
->>>>>>> origin/main
+
+  **Merge fallout, fixed.** `main`'s merge into `feature/flashcards`
+  (`d52cbc5`) landed with this Progress Log's own merge left unresolved —
+  literal `<<<<<<<`/`=======`/`>>>>>>>` markers committed into this file,
+  splitting the Phase C narrative between the Flashcards and Courses work
+  with no `- **Phase C — Feature split:**` heading surviving on either
+  side. Fixed directly in this file: restored the heading, and cleaned up
+  stray/missing blank lines left at the former conflict boundaries.
+  Verified clean via `grep` for all three marker strings (none found) and
+  for `^## ` (exactly one of each top-level heading).
+
+  That merge also pulled in Manar's new required `StudyMaterial
+  .extractedText` field (see her entry above), which broke 3 call sites
+  that predate it — real `missing_required_argument` compile errors, not
+  anything to do with Flashcards' own logic (confirmed: nothing in
+  `flashcard_service.dart` or elsewhere in this feature reads
+  `.extractedText`, it's referenced only in a forward-looking doc comment).
+  Fixed by adding a placeholder `extractedText` argument at each site:
+  both dev-only sample materials in `lib/features/flashcards/
+  dev_preview.dart`, and the shared `_material` fixture in `test/features/
+  flashcards/screens/flashcard_setup_screen_test.dart`. Re-ran `flutter
+  analyze` on the whole project afterward: down to the same 2 pre-existing,
+  unrelated infos as before (`session.dart`'s `prefer_is_empty`,
+  `auth_service.dart`'s doc-comment HTML lint) — all 3 real errors gone.
+
+  Ran `flutter test` on the full project for the first time with Flashcards
+  and Courses code coexisting on the same branch: **209 passed, 1 failed**.
+  The one failure is pre-existing and unrelated to this fallout fix —
+  `test/services/text_extraction_service_test.dart`'s "a real lecture deck
+  extracts with the exact tag format and real known content" throws
+  `PathNotFoundException` for `docs/Lecture1.pptx`. Confirmed via `git log
+  --all -- docs/Lecture1.pptx` (no history at all, on any branch) and
+  `.gitignore` (no `*.pptx`/`docs/` rule) that this fixture file was never
+  actually committed — Manar's on-device verification pass (see her entry
+  above) used a real local copy pushed straight to an emulator's Downloads
+  folder, not a file checked into the repo, so this test only ever passed
+  on a machine that happened to have that file sitting in `docs/` already.
+  Not fixed here — it's Manar's test fixture, not this feature's, and the
+  fix is either committing a real (small) sample `.pptx` to `docs/` or
+  skipping/guarding the test when the file is absent; flagging for the
+  team rather than guessing which the Courses feature would prefer.
 
 ## Design handoffs
 
