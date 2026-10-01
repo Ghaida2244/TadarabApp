@@ -95,6 +95,12 @@ class AppColors {
 
   /// Card corner radius used throughout Home (course cards, progress card, etc).
   static const Color cardTint = Color(0xFFEEF0FF);
+
+  // Quiz (Phase 2 handoff).
+  /// A disabled red action's own fill (e.g. Next/Generate before it's
+  /// ready) — stays visibly red-tinted rather than going grey, per the
+  /// design's "disabled buttons stay visible" rule.
+  static const Color disabledRedFill = Color(0xFFF3A8AC);
 }
 
 /// Parses a "#RRGGBB" or "#AARRGGBB" hex string (as stored on Course/

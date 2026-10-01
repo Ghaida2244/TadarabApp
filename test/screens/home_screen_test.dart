@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/models/calendar_event.dart';
 import 'package:tadarab_app/models/course.dart';
+import 'package:tadarab_app/models/enums.dart';
+import 'package:tadarab_app/models/flashcard.dart';
+import 'package:tadarab_app/models/flashcard_session.dart';
 import 'package:tadarab_app/models/student.dart';
 import 'package:tadarab_app/screens/home/home_screen.dart';
 import 'package:tadarab_app/services/home_data_service.dart';
 
 import '../helpers/fake_courses_service.dart';
+import '../helpers/fake_flashcard_service.dart';
 import '../helpers/fake_home_data_service.dart';
 
 void main() {
@@ -20,6 +24,7 @@ void main() {
     WidgetTester tester, {
     FakeHomeDataService? dataService,
     FakeCoursesService? coursesService,
+    FakeFlashcardService? flashcardService,
     VoidCallback? onSignOut,
   }) async {
     await tester.pumpWidget(
@@ -28,6 +33,12 @@ void main() {
           uid: 'uid-1',
           homeDataService: dataService ?? FakeHomeDataService(),
           coursesService: coursesService ?? FakeCoursesService(),
+          // A single fake covers every courseId a test uses — scoping by
+          // the real uid/courseId the screen asks for isn't needed here,
+          // since each test only ever deals with one course.
+          flashcardServiceBuilder: flashcardService == null
+              ? null
+              : ({required uid, required courseId}) => flashcardService,
           now: now,
           onSignOut: onSignOut,
         ),
@@ -114,6 +125,49 @@ void main() {
         // zero-courses onboarding state.
         expect(find.text('Create my first course'), findsNothing);
         expect(find.text("Today's progress"), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'returning from a pushed screen re-fetches Home data instead of staying stale',
+      (tester) async {
+        // HomeScreen keeps every bottom-nav tab alive (IndexedStack), so
+        // this State is never recreated by navigating away and back — the
+        // real bug this guards against was a `late final` Future computed
+        // once and never refreshed (e.g. finishing a quiz updates points/
+        // streak in Firestore, but Home kept showing the pre-quiz snapshot).
+        //
+        // The real Add Course screen (feature/courses) only reports back
+        // to Home (`created == true`) once a course is actually saved —
+        // unlike the old placeholder, a bare pop doesn't trigger a reload —
+        // so this drives the real save flow rather than just popping.
+        final sharedCourses = <Course>[];
+        final dataService = FakeHomeDataService(courses: sharedCourses);
+        final coursesService = FakeCoursesService(courses: sharedCourses);
+        await pumpHome(
+          tester,
+          dataService: dataService,
+          coursesService: coursesService,
+        );
+        expect(dataService.fetchCoursesCalls, 1);
+
+        final button = find.text('Create my first course');
+        await tester.ensureVisible(button);
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.byType(TextField), 'IS230');
+        await tester.pump();
+        await tester.tap(
+          find
+              .byWidgetPredicate((w) => w.runtimeType.toString() == '_Swatch')
+              .first,
+        );
+        await tester.pump();
+        await tester.tap(find.text('Save course'));
+        await tester.pumpAndSettle();
+
+        expect(dataService.fetchCoursesCalls, 2);
       },
     );
 
@@ -228,6 +282,54 @@ void main() {
         ); // today's filled white cell (1 question + 1 flashcard)
       },
     );
+
+    testWidgets(
+      'a streak still alive as of today (studied yesterday) shows its real '
+      'stored value',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(
+            courses: [aCourse],
+            student: Student(
+              uid: 'uid-1',
+              email: 'student@example.com',
+              name: 'Ghaida',
+              currentStreak: 4,
+              lastStudyDate: DateTime(2026, 3, 10), // yesterday (now: Wed 3/11)
+            ),
+          ),
+        );
+
+        expect(find.text('4-day streak'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'bug repro: a stale stored streak (real gap since last activity) '
+      'shows as broken (0) immediately, not the stale stored count',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(
+            courses: [aCourse],
+            student: Student(
+              uid: 'uid-1',
+              email: 'student@example.com',
+              name: 'Ghaida',
+              currentStreak: 4,
+              // 3 days before `now` (Wed 3/11) — nothing has re-run
+              // computeNextStreak since it broke, but it's shown as broken
+              // right now regardless.
+              lastStudyDate: DateTime(2026, 3, 8),
+            ),
+          ),
+        );
+
+        expect(find.text('0-day streak'), findsOneWidget);
+        expect(find.text('4-day streak'), findsNothing);
+      },
+    );
   });
 
   group('in-progress session', () {
@@ -241,6 +343,7 @@ void main() {
         courseName: 'IS230',
         currentIndex: 6,
         total: 15,
+        resumePosition: 7,
       );
       await pumpHome(
         tester,
@@ -252,13 +355,15 @@ void main() {
 
       expect(find.text('Pick up where you left off'), findsOneWidget);
       expect(find.text('IS230 — Quiz'), findsOneWidget);
-      expect(find.text('6/15'), findsOneWidget);
-      expect(find.text('Resume'), findsOneWidget);
+      expect(find.text('6 of 15 answered'), findsOneWidget);
+      expect(find.text('Resume at question 7'), findsOneWidget);
       expect(find.text('Nothing in progress'), findsNothing);
     });
 
     testWidgets(
-      'tapping Resume opens the (currently unreachable-in-production) session placeholder',
+      'tapping Resume opens the real Flashcard Flip Deck screen at the '
+      'stored position — regression test for a bug where this opened a '
+      'placeholder instead',
       (tester) async {
         final inProgress = InProgressSession(
           sessionId: 's1',
@@ -267,19 +372,68 @@ void main() {
           courseName: 'IS230',
           currentIndex: 2,
           total: 20,
+          resumePosition: 3,
         );
+        final session = FlashcardSession(
+          sessionId: 's1',
+          createdAt: DateTime(2026, 3, 1),
+          difficultyLevels: const [DifficultyLevel.medium],
+          email: 'e@x.com',
+          courseId: 'c1',
+          materialIds: const ['m1'],
+          materialTitles: const ['Lecture 1'],
+          numberOfFlashcards: 3,
+          currentFlashcardIndex: 2,
+          knownCount: 1,
+          needsReviewCount: 1,
+        );
+        final cards = [
+          Flashcard(
+            flashcardId: 'f1',
+            frontText: 'front-1',
+            backText: 'back-1',
+            reviewStatus: ReviewStatus.knowIt,
+            sourceLocation: 'Slide 1',
+            sessionId: 's1',
+            cardIndex: 0,
+          ),
+          Flashcard(
+            flashcardId: 'f2',
+            frontText: 'front-2',
+            backText: 'back-2',
+            reviewStatus: ReviewStatus.needsReview,
+            sourceLocation: 'Slide 2',
+            sessionId: 's1',
+            cardIndex: 1,
+          ),
+          Flashcard(
+            flashcardId: 'f3',
+            frontText: 'front-3',
+            backText: 'back-3',
+            reviewStatus: null,
+            sourceLocation: 'Slide 3',
+            sessionId: 's1',
+            cardIndex: 2,
+          ),
+        ];
         await pumpHome(
           tester,
           dataService: FakeHomeDataService(
             courses: [aCourse],
             inProgress: inProgress,
           ),
+          flashcardService: FakeFlashcardService(
+            sessions: [session],
+            flashcardsBySessionId: {'s1': cards},
+          ),
         );
 
-        await tester.tap(find.text('Resume'));
+        await tester.tap(find.text('Resume at card 3'));
         await tester.pumpAndSettle();
 
-        expect(find.text('Flashcard session screen'), findsOneWidget);
+        expect(find.text('Flashcard session screen'), findsNothing);
+        expect(find.text('Card 3 of 3'), findsOneWidget);
+        expect(find.text('front-3'), findsOneWidget);
       },
     );
   });
@@ -331,7 +485,7 @@ void main() {
     'course picker (reachable only once the student has at least one course)',
     () {
       testWidgets(
-        'picking a real course closes the sheet and opens the quiz setup placeholder',
+        'picking a real course closes the sheet and opens the real Quiz sessions screen',
         (tester) async {
           await pumpHome(
             tester,
@@ -343,9 +497,19 @@ void main() {
           expect(find.text('IS230'), findsOneWidget);
 
           await tester.tap(find.text('IS230'));
-          await tester.pumpAndSettle();
+          // Not pumpAndSettle: QuizSessionsScreen shows a CircularProgress-
+          // Indicator while its Firestore fetch is pending (no real Firebase
+          // app in this test, so it never resolves) — an indeterminate
+          // spinner animates forever, which would make pumpAndSettle hang.
+          // Two pumps (one for the sheet closing, one for the route's push
+          // transition) are enough to prove navigation happened; the header
+          // renders synchronously, independent of that fetch.
+          // QuizSessionsScreen's own states are covered by
+          // test/screens/quiz_sessions_screen_test.dart.
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
 
-          expect(find.text('Quiz setup screen'), findsOneWidget);
+          expect(find.text('Quiz sessions'), findsOneWidget);
         },
       );
 

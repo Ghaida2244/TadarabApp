@@ -22,8 +22,8 @@ abstract class Session {
     required this.courseId,
     required this.materialIds,
   }) : assert(
-         difficultyLevels.length > 0,
-         'A session must request at least one difficulty level',
+         difficultyLevels.isNotEmpty,
+         'difficultyLevels must have at least one entry',
        );
 
   /// Firestore document ID.
@@ -41,7 +41,7 @@ abstract class Session {
   /// Whether the session has been completed.
   final bool isSessionCompleted;
 
-  /// Difficulty level(s) requested for this session's generated content.
+  /// Difficulty/difficulties requested for this session's generated content.
   final List<DifficultyLevel> difficultyLevels;
 
   /// Optional custom prompt supplied by the student for generation.
@@ -105,13 +105,38 @@ class SessionFields {
       completedAt: (data['completedAt'] as Timestamp?)?.toDate(),
       earnedPoints: (data['earnedPoints'] as num?)?.toInt() ?? 0,
       isSessionCompleted: data['isSessionCompleted'] as bool? ?? false,
-      difficultyLevels: List<String>.from(
-        data['difficultyLevels'] as List? ?? const [],
-      ).map(DifficultyLevelJson.fromJson).toList(),
+      difficultyLevels: _readDifficultyLevels(data),
       customPrompt: data['customPrompt'] as String?,
       email: data['email'] as String,
       courseId: data['courseId'] as String,
       materialIds: List<String>.from(data['materialIds'] as List? ?? const []),
     );
+  }
+}
+
+/// A safe stand-in for a session whose stored difficulty can't be read —
+/// picked because it's the Setup screen's own default selection.
+const List<DifficultyLevel> _fallbackDifficultyLevels = [DifficultyLevel.medium];
+
+/// Reads `difficultyLevels` (current shape: a list) from a session document.
+///
+/// Never throws: an old document that predates this field (e.g. one
+/// hand-created directly in the Firebase console before the
+/// difficultyLevel -> difficultyLevels rename) may have it missing, empty,
+/// or holding a value that no longer matches a [DifficultyLevel] — any of
+/// those fall back to [_fallbackDifficultyLevels] instead of crashing the
+/// whole screen that's reading this session. This is a display fallback,
+/// not a fix for the document itself — a stored session showing "Medium"
+/// this way should still be corrected or deleted at the data level.
+List<DifficultyLevel> _readDifficultyLevels(Map<String, dynamic> data) {
+  final raw = data['difficultyLevels'] as List?;
+  if (raw == null || raw.isEmpty) return _fallbackDifficultyLevels;
+  try {
+    final parsed = raw
+        .map((v) => DifficultyLevelJson.fromJson(v as String))
+        .toList();
+    return parsed.isEmpty ? _fallbackDifficultyLevels : parsed;
+  } catch (_) {
+    return _fallbackDifficultyLevels;
   }
 }

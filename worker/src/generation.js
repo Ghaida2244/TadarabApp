@@ -120,7 +120,7 @@ export function buildPrompt({ type, count, difficulties, customPrompt, materials
     [
       'CONTENT RULE (most important — overrides everything else):',
       '- The concept, term, or formula each item tests must genuinely appear in the source text.',
-      '- Never use knowledge from outside the source text.',
+      '- Never use knowledge from outside the source text.',// never use new concepts/ terms / concepts not present in the source text
     ].join('\n'),
     [
       'WORDING & LANGUAGE RULE:',
@@ -277,4 +277,41 @@ export function shuffleArray(array) {
 /// options.
 export function shuffleQuizOptions(items) {
   return items.map((item) => (item.options ? { ...item, options: shuffleArray(item.options) } : item));
+}
+
+/// Extracts every bracketed location tag's inner text from a built source
+/// text — e.g. "Slide 2", "Material: Title", "Heading: Name", "Paragraph 5"
+/// — so a generated item's sourceLocation can be checked against real tags
+/// instead of trusting Claude's output blindly. De-duplicated; order is not
+/// meaningful.
+export function extractLocationTags(sourceText) {
+  const matches = sourceText.matchAll(/\[([^\]]+)\]/g);
+  return Array.from(new Set(Array.from(matches, (m) => m[1].trim())));
+}
+
+/// CLAUDE.md's grounding requirement, as corrected: the check is that
+/// sourceLocation names a real location tag that exists in the source text
+/// — not a literal text match of the generated content itself (the team
+/// has since agreed on allowing free phrasing there). Claude is asked to
+/// render a tag into readable prose ("Chapter 2 - Database Basics, Slide
+/// 5"), not to quote a tag verbatim, so this is a case-insensitive
+/// substring match against each known tag rather than an exact match.
+export function isLocationGrounded(sourceLocation, tags) {
+  if (!sourceLocation || typeof sourceLocation !== 'string') return false;
+  const haystack = sourceLocation.toLowerCase();
+  return tags.some((tag) => haystack.includes(tag.toLowerCase()));
+}
+
+/// Splits generated `items` into { grounded, discarded } based on
+/// [isLocationGrounded]. Does not itself re-call Claude to regenerate a
+/// discarded item's replacement — see index.js for how a non-empty
+/// `discarded` list is surfaced to the caller via `note`.
+export function filterGroundedItems(items, sourceText) {
+  const tags = extractLocationTags(sourceText);
+  const grounded = [];
+  const discarded = [];
+  for (const item of items) {
+    (isLocationGrounded(item.sourceLocation, tags) ? grounded : discarded).push(item);
+  }
+  return { grounded, discarded };
 }

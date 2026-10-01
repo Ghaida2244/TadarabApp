@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../services/home_data_service.dart';
-import '../../../services/streak_service.dart' show dateOnly;
+import '../../../services/streak_service.dart' show dateOnly, effectiveStreak;
 import '../../../theme/app_theme.dart';
 import '../../../widgets/dashed_border.dart';
 
@@ -9,24 +9,34 @@ const _dayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 /// The dark "Today's progress" card: today's question/flashcard split at
 /// top, then a 7-day (Sun-Sat) row of combined counts below. [currentStreak]
-/// is the real, week-independent streak (Student.currentStreak) — the row
-/// itself only ever shows the current calendar week, per the design.
+/// is [Student.currentStreak] (real, week-independent) as last written on a
+/// session commit — [lastStudyDate] lets this re-derive whether it's still
+/// actually alive as of [now] (see [effectiveStreak]) rather than trusting
+/// a value that can go stale for days after a streak quietly breaks. The
+/// row itself only ever shows the current calendar week, per the design.
 class TodayProgressCard extends StatelessWidget {
   const TodayProgressCard({
     super.key,
     required this.weeklyProgress,
     required this.currentStreak,
+    required this.lastStudyDate,
     required this.now,
   });
 
   final WeeklyProgress weeklyProgress;
   final int currentStreak;
+  final DateTime? lastStudyDate;
   final DateTime now;
 
   @override
   Widget build(BuildContext context) {
     final today = dateOnly(now);
     final todayCount = weeklyProgress.dayForDate(today);
+    final displayedStreak = effectiveStreak(
+      storedStreak: currentStreak,
+      lastStudyDate: lastStudyDate,
+      now: now,
+    );
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -78,7 +88,7 @@ class TodayProgressCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      '$currentStreak-day streak',
+                      '$displayedStreak-day streak',
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w900,

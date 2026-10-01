@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../../features/flashcards/screens/flashcard_sessions_screen.dart';
 import '../../models/course.dart';
 import '../../models/study_material.dart';
 import '../../services/courses_service.dart';
+import '../../services/flashcard_service.dart';
+import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
-import '../placeholder_screen.dart';
+import '../quiz/quiz_navigation.dart';
+import '../quiz/quiz_sessions_screen.dart';
 import 'widgets/delete_course_dialog.dart';
 import 'widgets/delete_material_dialog.dart';
 import 'widgets/upload_material_sheet.dart';
@@ -22,12 +26,16 @@ class CourseDetailScreen extends StatefulWidget {
     required this.uid,
     required this.course,
     this.coursesService,
+    this.flashcardService,
     this.pickFile,
   });
 
   final String uid;
   final Course course;
   final CoursesService? coursesService;
+
+  /// Overridable for tests; defaults to the real Firebase-backed service.
+  final FlashcardService? flashcardService;
 
   /// Overridable for tests — see [showUploadMaterialSheet]'s `pickFile`.
   final Future<PickedFile?> Function()? pickFile;
@@ -73,10 +81,30 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     }
   }
 
-  void _openStudyTool() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const PlaceholderScreen(label: 'Study tools screen')));
+  void _openQuiz() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => QuizSessionsScreen(
+          courseId: widget.course.courseId,
+          courseName: widget.course.courseName,
+          service: QuizSessionService(),
+        ),
+        settings: const RouteSettings(name: quizSessionsRouteName),
+      ),
+    );
+  }
+
+  void _openFlashcards() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FlashcardSessionsScreen(
+          uid: widget.uid,
+          courseId: widget.course.courseId,
+          email: widget.course.email,
+          service: widget.flashcardService,
+        ),
+      ),
+    );
   }
 
   Future<void> _confirmDelete() async {
@@ -179,7 +207,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                               children: [
                                 _StudyTools(
                                   unlocked: hasMaterials,
-                                  onTap: _openStudyTool,
+                                  onQuizTap: _openQuiz,
+                                  onFlashcardsTap: _openFlashcards,
                                 ),
                                 const SizedBox(height: 18),
                                 _MaterialsSection(
@@ -316,10 +345,15 @@ class _ErrorState extends StatelessWidget {
 }
 
 class _StudyTools extends StatelessWidget {
-  const _StudyTools({required this.unlocked, required this.onTap});
+  const _StudyTools({
+    required this.unlocked,
+    required this.onQuizTap,
+    required this.onFlashcardsTap,
+  });
 
   final bool unlocked;
-  final VoidCallback onTap;
+  final VoidCallback onQuizTap;
+  final VoidCallback onFlashcardsTap;
 
   @override
   Widget build(BuildContext context) {
@@ -342,7 +376,7 @@ class _StudyTools extends StatelessWidget {
                   background: AppColors.cardTint,
                   iconColor: AppColors.navy,
                   labelColor: AppColors.navy,
-                  onTap: unlocked ? onTap : null,
+                  onTap: unlocked ? onQuizTap : null,
                 ),
               ),
               const SizedBox(width: 12),
@@ -353,7 +387,7 @@ class _StudyTools extends StatelessWidget {
                   background: AppColors.errorBannerBackground,
                   iconColor: AppColors.red,
                   labelColor: AppColors.errorBannerHeading,
-                  onTap: unlocked ? onTap : null,
+                  onTap: unlocked ? onFlashcardsTap : null,
                 ),
               ),
             ],

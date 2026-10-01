@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="design_doc_mode" content="canvas">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800;900&amp;display=swap" rel="stylesheet">
+  <style>
+    body { margin:0; background:#F0F1F7; font-family:Nunito, system-ui, sans-serif; color:#0B0F5B; }
+    a { color:#E31B23; }
+    a:hover { color:#A8141B; }
+    @keyframes popIn { from { opacity:0; transform:translateY(10px) scale(0.985); } to { opacity:1; transform:none; } }
+    @keyframes sheetUp { from { transform:translateY(100%); } to { transform:none; } }
+  </style>
+</helmet>
+
+<div style="padding:48px 40px 80px; display:flex; flex-direction:column; gap:44px">
+
+  <div style="display:flex; flex-direction:column; gap:14px; max-width:820px">
+    <span style="font-size:13px; font-weight:900; letter-spacing:0.08em; color:#E31B23">TADARAB · PHASE 3</span>
+    <h1 style="margin:0; font-size:38px; font-weight:900; letter-spacing:-0.02em; line-height:1.1">Calendar &amp; Add Event</h1>
+    <p style="margin:0; font-size:15px; line-height:1.6; font-weight:700; color:#5B618F">One live prototype. Move between months, tap a dotted day to open its sheet, delete an event through the confirm, and build a new one — Save stays dead until name, date and time are set, and the reminder is checked against the event time as you change it.</p>
+  </div>
+
+  <div style="display:flex; flex-wrap:wrap; gap:36px; align-items:flex-start">
+
+    <div style="display:flex; flex-direction:column; gap:14px">
+      <div style="display:flex; align-items:center; gap:10px">
+        <span style="font-size:13px; font-weight:900">Calendar — live</span>
+        <span style="font-size:12px; font-weight:800; color:#E31B23">{{ stateLabel }}</span>
+      </div>
+      <x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" hint-size="412px,892px">
+        <div style="position:relative; height:100%; box-sizing:border-box; display:flex; flex-direction:column; background:#FFFFFF; overflow:hidden">
+
+          <sc-if value="{{ onCalendar }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex; flex-direction:column; height:100%">
+              <div style="padding:18px 22px 20px; background:#0B0F5B; border-radius:0 0 28px 28px; display:flex; flex-direction:column; gap:16px">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px">
+                  <span style="font-size:24px; font-weight:900; letter-spacing:-0.02em; color:#FFFFFF">Calendar</span>
+                  <div style="display:flex; align-items:center; gap:9px">
+                  <button type="button" onClick="{{ toggleYear }}" aria-label="Toggle year view" style="appearance:none; border:0; cursor:pointer; width:40px; height:40px; border-radius:999px; background:{{ yearBtnBg }}; color:#FFFFFF; display:flex; align-items:center; justify-content:center; flex:none" style-active="transform:scale(0.94)">
+                    <svg viewBox="0 0 24 24" style="width:18px; height:18px" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="{{ yearBtnPath }}"></path></svg>
+                  </button>
+                  <button type="button" onClick="{{ goAdd }}" style="appearance:none; border:0; cursor:pointer; height:40px; padding:0 15px; border-radius:999px; background:#E31B23; color:#FFFFFF; box-shadow:0 3px 0 #A8141B99; display:flex; align-items:center; gap:7px; font-family:Nunito,system-ui,sans-serif; font-size:14px; font-weight:900; transition:transform 90ms ease, box-shadow 90ms ease" style-active="transform:translateY(2px); box-shadow:0 1px 0 #A8141B99">
+                    <svg viewBox="0 0 24 24" style="width:15px; height:15px" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+                    Add Event
+                  </button>
+                  </div>
+                </div>
+                <sc-if value="{{ monthMode }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px">
+                  <button type="button" onClick="{{ prevMonth }}" aria-label="Previous month" style="appearance:none; border:0; cursor:pointer; width:36px; height:36px; border-radius:999px; background:rgba(255,255,255,0.2); color:#FFFFFF; display:flex; align-items:center; justify-content:center; flex:none" style-active="transform:scale(0.94)">
+                    <svg viewBox="0 0 24 24" style="width:17px; height:17px" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg>
+                  </button>
+                  <span style="font-size:17px; font-weight:900; color:#FFFFFF">{{ monthLabel }}</span>
+                  <button type="button" onClick="{{ nextMonth }}" aria-label="Next month" style="appearance:none; border:0; cursor:pointer; width:36px; height:36px; border-radius:999px; background:rgba(255,255,255,0.2); color:#FFFFFF; display:flex; align-items:center; justify-content:center; flex:none" style-active="transform:scale(0.94)">
+                    <svg viewBox="0 0 24 24" style="width:17px; height:17px" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>
+                  </button>
+                </div>
+                <sc-if value="{{ awayFromToday }}" hint-placeholder-val="{{ false }}">
+                  <button type="button" onClick="{{ goToday }}" style="appearance:none; cursor:pointer; align-self:center; padding:7px 15px; border-radius:999px; border:2px solid rgba(255,255,255,0.35); background:transparent; color:#FFFFFF; font-family:Nunito,system-ui,sans-serif; font-size:12px; font-weight:900; display:flex; align-items:center; gap:7px; animation:popIn 180ms cubic-bezier(0.2,0.8,0.2,1) both" style-hover="background:rgba(255,255,255,0.14)">
+                    <svg viewBox="0 0 24 24" style="width:13px; height:13px" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.5V12l3 2"></path></svg>
+                    Back to today
+                  </button>
+                </sc-if>
+                </sc-if>
+                <sc-if value="{{ yearMode }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px">
+                    <button type="button" onClick="{{ prevYearView }}" aria-label="Previous year" style="appearance:none; border:0; cursor:pointer; width:36px; height:36px; border-radius:999px; background:rgba(255,255,255,0.2); color:#FFFFFF; display:flex; align-items:center; justify-content:center; flex:none" style-active="transform:scale(0.94)">
+                      <svg viewBox="0 0 24 24" style="width:17px; height:17px" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg>
+                    </button>
+                    <span style="font-size:17px; font-weight:900; color:#FFFFFF">{{ viewYear }}</span>
+                    <button type="button" onClick="{{ nextYearView }}" aria-label="Next year" style="appearance:none; border:0; cursor:pointer; width:36px; height:36px; border-radius:999px; background:rgba(255,255,255,0.2); color:#FFFFFF; display:flex; align-items:center; justify-content:center; flex:none" style-active="transform:scale(0.94)">
+                      <svg viewBox="0 0 24 24" style="width:17px; height:17px" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>
+                    </button>
+                  </div>
+                </sc-if>
+              </div>
+
+              <div style="flex:1; min-height:0; overflow:auto; padding:16px 18px 14px; display:flex; flex-direction:column; gap:14px">
+                <sc-if value="{{ yearMode }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; align-content:start">
+                    <sc-for list="{{ miniMonths }}" as="mm" hint-placeholder-count="12">
+                      <button type="button" onClick="{{ mm.open }}" style="appearance:none; cursor:pointer; text-align:left; padding:11px 4px 12px; border-radius:16px; border:2px solid {{ mm.edge }}; background:#FFFFFF; box-shadow:0 2px 0 rgba(11,15,91,0.06); display:flex; flex-direction:column; gap:7px; font-family:Nunito,system-ui,sans-serif; transition:transform 90ms ease" style-active="transform:translateY(2px)">
+                        <span style="font-size: 13px; font-weight: 900; color: {{ mm.ink }}; padding-left: 2px">{{ mm.label }}</span>
+                        <div style="display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); column-gap:3px; row-gap:4px">
+                          <sc-for list="{{ mm.cells }}" as="mc" hint-placeholder-count="35">
+                            <span style="position:relative; aspect-ratio:1 / 1; display:flex; align-items:center; justify-content:center">
+                              <span style="width:{{ mc.pillW }}; height:{{ mc.pillH }}; margin:{{ mc.pillM }}; flex:none; position:relative; z-index:{{ mc.z }}; transform:{{ mc.scale }}; display:flex; align-items:center; justify-content:center; border-radius:999px; background:{{ mc.bg }}; box-shadow:{{ mc.ring }}">
+                                <span style="font-size:{{ mc.size }}; font-weight:{{ mc.weight }}; -webkit-text-stroke:{{ mc.stroke }}; color:{{ mc.ink }}; line-height:1">{{ mc.label }}</span>
+                              </span>
+                              <span style="position:absolute; top:100%; left:50%; transform:translateX(-50%); margin-top:0.5px; height:3px; display:flex; gap:1px; align-items:center">
+                                <sc-for list="{{ mc.dots }}" as="md" hint-placeholder-count="0">
+                                  <span style="width:3px; height:3px; border-radius:999px; background:{{ md.hue }}"></span>
+                                </sc-for>
+                                <sc-if value="{{ mc.more }}" hint-placeholder-val="{{ false }}">
+                                  <span style="font-size:5px; font-weight:900; line-height:3px; color:#7A80A6; letter-spacing:-0.02em">{{ mc.moreLabel }}</span>
+                                </sc-if>
+                              </span>
+                            </span>
+                          </sc-for>
+                        </div>
+                      </button>
+                    </sc-for>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ monthMode }}" hint-placeholder-val="{{ true }}">
+                <div style="width: 100%; box-sizing: border-box; border-radius: 26px; background: #FFFFFF; box-shadow: 0 0 0 2px #EEF0FF, 0 3px 0 rgba(11,15,91,0.08); display: flex; flex-direction: column; gap: 12px; padding: 20px 14px 22px; flex: 1; min-height: 0; max-height: 100%">
+                  <div style="display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; flex:none">
+                    <sc-for list="{{ weekdays }}" as="w" hint-placeholder-count="7">
+                      <span style="display: block; text-align: center; font-size: 14px; font-weight: 900; letter-spacing: 0.03em; color: #9AA0C4; padding-top: 6px">{{ w.label }}</span>
+                    </sc-for>
+                  </div>
+                  <div style="flex:1; min-height:0; display:grid; grid-template-columns:repeat(7, 1fr); grid-auto-rows:minmax(0, 1fr); gap:6px; align-content:stretch">
+                    <sc-for list="{{ cells }}" as="c" hint-placeholder-count="35">
+                      <button type="button" onClick="{{ c.open }}" style="appearance: none; cursor: {{ c.cursor }}; box-sizing: border-box; width: 100%; height: 100%; min-height: 0; border: 2px solid {{ c.edge }}; background: {{ c.bg }}; border-radius: 14px; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; font-family: Nunito,system-ui,sans-serif; transition: transform 90ms ease" style-active="transform:scale(0.95)">
+                        <span style="font-size:18px; font-weight:800; color:{{ c.ink }}; line-height:1; text-align:center; margin-top:6px">{{ c.label }}</span>
+                        <span style="display:flex; height:6px; gap:{{ c.dotGap }}; align-items:center; justify-content:center; pointer-events:none">
+                          <sc-for list="{{ c.dots }}" as="d" hint-placeholder-count="0">
+                            <span style="width:{{ c.dotSize }}; height:{{ c.dotSize }}; border-radius:999px; background:{{ d.hue }}; flex:none"></span>
+                          </sc-for>
+                          <sc-if value="{{ c.hasOverflow }}" hint-placeholder-val="{{ false }}">
+                            <span style="font-size:9px; font-weight:900; color:#7A80A6; line-height:1; flex:none">{{ c.overflowLabel }}</span>
+                          </sc-if>
+                        </span>
+                      </button>
+                    </sc-for>
+                  </div>
+                </div>
+                </sc-if>
+
+                <sc-if value="{{ monthEmpty }}" hint-placeholder-val="{{ false }}">
+                  
+                </sc-if>
+              </div>
+
+              <div style="padding:0 18px 22px">
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:7px; border-radius:999px; background:#0B0F5B">
+                  <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
+                    <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; padding:8px 0; border-radius:999px; background:{{ t.bg }}">
+                      <svg viewBox="0 0 24 24" style="width:19px; height:19px" fill="none" stroke="{{ t.ink }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{ t.path }}"></path></svg>
+                      <span style="font-size:10px; font-weight:900; color:{{ t.ink }}">{{ t.label }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ onAdd }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; height:100%">
+              <div style="padding:18px 22px 22px; background:#0B0F5B; border-radius:0 0 28px 28px; display:flex; align-items:center; gap:13px">
+                <button type="button" onClick="{{ goCalendar }}" aria-label="Back" style="appearance:none; border:0; cursor:pointer; width:38px; height:38px; border-radius:999px; background:rgba(255,255,255,0.2); color:#FFFFFF; display:flex; align-items:center; justify-content:center; flex:none">
+                  <svg viewBox="0 0 24 24" style="width:19px; height:19px" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg>
+                </button>
+                <span style="font-size:24px; font-weight:900; letter-spacing:-0.02em; color:#FFFFFF">Add Event</span>
+              </div>
+
+              <div style="flex:1; overflow:auto; padding:22px; display:flex; flex-direction:column; gap:24px">
+                <div style="display:flex; flex-direction:column; gap:8px">
+                  <span style="font-size:12px; font-weight:900; letter-spacing:0.06em; color:#9AA0C4">EVENT NAME</span>
+                  <input type="text" value="{{ name }}" onChange="{{ onName }}" placeholder="e.g. Midterm exam, Assignment 1" style="width:100%; box-sizing:border-box; appearance:none; height:54px; padding:0 14px; border-radius:16px; border:2px solid #DDE1F0; background:#FFFFFF; font-family:Nunito,system-ui,sans-serif; font-size:15px; font-weight:800; color:#0B0F5B; outline:none" style-focus="border-color:#0B0F5B">
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:8px">
+                  <span style="font-size:12px; font-weight:900; letter-spacing:0.06em; color:#9AA0C4">COURSE <span style="color:#C9CEE8">· OPTIONAL</span></span>
+                  <button type="button" onClick="{{ toggleCourses }}" style="appearance:none; cursor:pointer; text-align:left; display:flex; align-items:center; gap:12px; height:54px; padding:0 14px; border-radius:16px; background:#FFFFFF; border:2px solid {{ courseEdge }}; font-family:Nunito,system-ui,sans-serif" style-hover="border-color:#0B0F5B">
+                    <span style="flex:1; font-size:15px; font-weight:900; color:{{ courseInk }}">{{ courseLabel }}</span>
+                    <span style="font-size:15px; font-weight:900; color:#7A80A6; transform:{{ courseCaret }}; transition:transform 160ms ease">▾</span>
+                  </button>
+                  <sc-if value="{{ coursesOpen }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex; flex-direction:column; gap:6px; padding:10px; border-radius:18px; background:#FFFFFF; box-shadow:0 0 0 2px #EEF0FF, 0 3px 0 rgba(11,15,91,0.06); animation:popIn 180ms cubic-bezier(0.2,0.8,0.2,1) both">
+                      <sc-for list="{{ courseOptions }}" as="c" hint-placeholder-count="4">
+                        <button type="button" onClick="{{ c.pick }}" style="appearance:none; cursor:pointer; text-align:left; display:flex; align-items:center; gap:11px; padding:11px 12px; border-radius:14px; border:0; background:{{ c.bg }}; font-family:Nunito,system-ui,sans-serif" style-hover="background:#F4F6FF">
+                          <span style="width:18px; height:18px; border-radius:999px; background:{{ c.hue }}; flex:none"></span>
+                          <span style="flex:1; font-size:14px; font-weight:900; color:#0B0F5B">{{ c.label }}</span>
+                        </button>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ hasCourse }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex; align-items:center; gap:12px; padding:13px 14px; border-radius:16px; background:#F7F8FD; box-shadow:0 0 0 2px #EEF0FF; animation:popIn 180ms cubic-bezier(0.2,0.8,0.2,1) both">
+                      <span style="width:30px; height:30px; border-radius:999px; background:{{ courseHue }}; flex:none"></span>
+                      <div style="display:flex; flex-direction:column; gap:1px">
+                        <span style="font-size:14px; font-weight:900; color:#0B0F5B">{{ courseName }}</span>
+                        <span style="font-size:12px; font-weight:800; color:#7A80A6">Event will use this course colour</span>
+                      </div>
+                    </div>
+                  </sc-if>
+                </div>
+
+                <sc-if value="{{ showColours }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex; flex-direction:column; gap:10px">
+                    <span style="font-size:12px; font-weight:900; letter-spacing:0.06em; color:#9AA0C4">EVENT COLOUR</span>
+                    <div style="display:flex; gap:10px; align-items:center">
+                      <sc-for list="{{ swatches }}" as="s" hint-placeholder-count="4">
+                        <button type="button" onClick="{{ s.pick }}" aria-label="Pick colour" style="appearance:none; cursor:pointer; width:52px; height:52px; border-radius:16px; border:0; background:{{ s.hue }}; box-shadow:{{ s.shadow }}; display:flex; align-items:center; justify-content:center; color:#FFFFFF; transition:transform 90ms ease" style-active="transform:translateY(2px)">
+                          <svg viewBox="0 0 24 24" style="width:22px; height:22px; opacity:{{ s.tick }}" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
+                        </button>
+                      </sc-for>
+                      <label style="cursor:pointer; width:52px; height:52px; border-radius:16px; border:2px dashed #C9CEE8; display:flex; align-items:center; justify-content:center; background:{{ customBg }}; color:{{ customInk }}; position:relative">
+                        <svg viewBox="0 0 24 24" style="width:20px; height:20px" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+                        <input type="color" value="{{ customColour }}" onChange="{{ onCustomColour }}" style="position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%">
+                      </label>
+                    </div>
+                  </div>
+                </sc-if>
+
+                <div style="display:flex; flex-direction:column; gap:8px">
+                  <span style="font-size:12px; font-weight:900; letter-spacing:0.06em; color:#9AA0C4">DATE</span>
+                  <input type="date" value="{{ date }}" onChange="{{ onDate }}" style="width:100%; box-sizing:border-box; appearance:none; height:54px; padding:0 14px; border-radius:16px; border:2px solid {{ dateEdge }}; background:#FFFFFF; font-family:Nunito,system-ui,sans-serif; font-size:15px; font-weight:800; color:{{ dateInk }}; outline:none" style-focus="border-color:#0B0F5B">
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:8px">
+                  <span style="font-size:12px; font-weight:900; letter-spacing:0.06em; color:#9AA0C4">TIME</span>
+                  <input type="time" value="{{ time }}" onChange="{{ onTime }}" style="width:100%; box-sizing:border-box; appearance:none; height:54px; padding:0 14px; border-radius:16px; border:2px solid {{ timeEdge }}; background:#FFFFFF; font-family:Nunito,system-ui,sans-serif; font-size:15px; font-weight:800; color:{{ timeInk }}; outline:none" style-focus="border-color:#0B0F5B">
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:14px; padding:16px; border-radius:20px; background:#FFFFFF; box-shadow:0 0 0 2px #EEF0FF, 0 3px 0 rgba(11,15,91,0.06)">
+                  <button type="button" onClick="{{ toggleReminder }}" style="appearance:none; cursor:pointer; border:0; background:transparent; padding:0; display:flex; align-items:center; gap:12px; font-family:Nunito,system-ui,sans-serif">
+                    <svg viewBox="0 0 24 24" style="width:19px; height:19px; flex:none" fill="none" stroke="{{ bellInk }}" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z"></path><path d="M10 20a2 2 0 0 0 4 0"></path></svg>
+                    <span style="flex:1; text-align:left; font-size:15px; font-weight:900; color:#0B0F5B">Enable reminder</span>
+                    <span style="width:52px; height:30px; border-radius:999px; background:{{ switchBg }}; padding:3px; display:flex; justify-content:{{ switchAlign }}; transition:background 160ms ease; flex:none">
+                      <span style="width:24px; height:24px; border-radius:999px; background:#FFFFFF; box-shadow:0 1px 3px rgba(11,15,91,0.3)"></span>
+                    </span>
+                  </button>
+
+                  <sc-if value="{{ reminderOn }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex; flex-direction:column; gap:11px; animation:popIn 180ms cubic-bezier(0.2,0.8,0.2,1) both">
+                      <span style="font-size:12px; font-weight:800; color:#7A80A6; line-height:1.5">Set when you want to be notified before this event.</span>
+                      <div style="display:flex; gap:10px">
+                        <div style="flex:1; display:flex; align-items:center; gap:6px; height:50px; padding:0 6px; border-radius:14px; border:2px solid {{ remEdge }}; background:#FFFFFF">
+                          <button type="button" onClick="{{ remDec }}" aria-label="Fewer" style="appearance:none; border:0; cursor:{{ remDecCursor }}; width:36px; height:36px; border-radius:999px; background:{{ remDecBg }}; color:{{ remDecInk }}; font-family:Nunito,system-ui,sans-serif; font-size:22px; font-weight:900; line-height:1; flex:none">−</button>
+                          <span style="flex:1; text-align:center; font-size:17px; font-weight:900; color:#0B0F5B">{{ remValue }}</span>
+                          <button type="button" onClick="{{ remInc }}" aria-label="More" style="appearance:none; border:0; cursor:{{ remIncCursor }}; width:36px; height:36px; border-radius:999px; background:{{ remIncBg }}; color:{{ remIncInk }}; font-family:Nunito,system-ui,sans-serif; font-size:22px; font-weight:900; line-height:1; flex:none">+</button>
+                        </div>
+                        <div style="width:118px; display:flex; flex-direction:column; gap:6px">
+                          <button type="button" onClick="{{ toggleUnits }}" style="appearance:none; cursor:pointer; display:flex; align-items:center; gap:8px; height:50px; padding:0 12px; border-radius:14px; border:2px solid {{ unitEdge }}; background:#FFFFFF; font-family:Nunito,system-ui,sans-serif" style-hover="border-color:#0B0F5B">
+                            <span style="flex:1; text-align:left; font-size:14px; font-weight:900; color:#0B0F5B">{{ remUnit }}</span>
+                            <span style="font-size:13px; font-weight:900; color:#7A80A6; transform:{{ unitCaret }}; transition:transform 160ms ease">▾</span>
+                          </button>
+                        </div>
+                      </div>
+                      <sc-if value="{{ unitsOpen }}" hint-placeholder-val="{{ false }}">
+                        <div style="display:flex; gap:7px; flex-wrap:wrap; animation:popIn 150ms cubic-bezier(0.2,0.8,0.2,1) both">
+                          <sc-for list="{{ units }}" as="u" hint-placeholder-count="4">
+                            <button type="button" onClick="{{ u.pick }}" style="appearance:none; cursor:{{ u.cursor }}; padding:9px 13px; border-radius:999px; border:2px solid {{ u.edge }}; background:{{ u.bg }}; color:{{ u.ink }}; font-family:Nunito,system-ui,sans-serif; font-size:12px; font-weight:900">{{ u.label }}</button>
+                          </sc-for>
+                        </div>
+                      </sc-if>
+                      <div style="display:flex; align-items:flex-start; gap:8px; padding:11px 12px; border-radius:14px; background:{{ remNoteBg }}">
+                        <svg viewBox="0 0 24 24" style="width:15px; height:15px; flex:none; margin-top:2px" fill="none" stroke="{{ remNoteInk }}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="{{ remNotePath }}"></path></svg>
+                        <span style="flex:1; font-size:12px; font-weight:800; color:{{ remNoteInk }}; line-height:1.5">{{ remNote }}</span>
+                      </div>
+                    </div>
+                  </sc-if>
+                </div>
+              </div>
+
+              <div style="padding:14px 22px 26px; display:flex; flex-direction:column; gap:9px">
+                <button type="button" onClick="{{ save }}" disabled="{{ saveOff }}" style="appearance:none; border:0; cursor:{{ saveCursor }}; width:100%; height:56px; border-radius:18px; background:{{ saveBg }}; color:#FFFFFF; box-shadow:{{ saveShadow }}; font-family:Nunito,system-ui,sans-serif; font-size:16px; font-weight:900; transition:transform 90ms ease, background 140ms ease" style-active="transform:translateY(2px)">Save Event</button>
+                <sc-if value="{{ saveOff }}" hint-placeholder-val="{{ true }}">
+                  <span style="font-size:11px; font-weight:800; color:#A8141B; text-align:center">{{ saveReason }}</span>
+                </sc-if>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ sheetOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; inset:0; background:rgba(11,15,91,0.5); display:flex; flex-direction:column; justify-content:flex-end">
+              <div onClick="{{ closeSheet }}" style="flex:1; cursor:pointer"></div>
+              <div style="background:#FFFFFF; border-radius:28px 28px 0 0; padding:20px 20px 26px; display:flex; flex-direction:column; gap:14px; max-height:62%; animation:sheetUp 240ms cubic-bezier(0.2,0.8,0.2,1) both">
+                <div style="display:flex; align-items:center; gap:12px">
+                  <div style="flex:1; display:flex; flex-direction:column; gap:2px">
+                    <span style="font-size:19px; font-weight:900; letter-spacing:-0.01em">{{ sheetDate }}</span>
+                    <span style="font-size:12px; font-weight:800; color:#7A80A6">{{ sheetCount }}</span>
+                  </div>
+                  <button type="button" onClick="{{ closeSheet }}" aria-label="Close" style="appearance:none; border:0; cursor:pointer; width:34px; height:34px; border-radius:999px; background:#EEF0FF; color:#0B0F5B; display:flex; align-items:center; justify-content:center; flex:none">
+                    <svg viewBox="0 0 24 24" style="width:15px; height:15px" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+                  </button>
+                </div>
+
+                <div style="overflow:auto; display:flex; flex-direction:column; gap:10px; padding-bottom:2px">
+                  <sc-if value="{{ sheetEmpty }}" hint-placeholder-val="{{ false }}">
+                    <div style="padding:26px 18px; border:2px dashed #C9CEE8; border-radius:20px; display:flex; flex-direction:column; align-items:center; gap:9px">
+                      <span style="font-size:15px; font-weight:900">No events on this day</span>
+                      <span style="font-size:12px; font-weight:800; color:#7A80A6; text-align:center; line-height:1.5">Add one and it will appear here with its colour.</span>
+                    </div>
+                  </sc-if>
+                  <sc-for list="{{ sheetEvents }}" as="e" hint-placeholder-count="2">
+                    <div style="display:flex; align-items:stretch; gap:10px; padding-left:12px; box-sizing:border-box; border:2px solid #EEF0FF; border-radius:18px; background:#FFFFFF">
+                      <span style="width:6px; margin:13px 0; border-radius:999px; background:{{ e.hue }}; flex:none"></span>
+                      <div style="flex:1; padding:13px 13px 15px 12px; display:flex; align-items:center; gap:12px; min-width:0">
+                        <div style="flex:1; display:flex; flex-direction:column; gap:3px; min-width:0">
+                          <span style="font-size:15px; font-weight:900; line-height:1.3">{{ e.name }}</span>
+                          <sc-if value="{{ e.hasCourse }}" hint-placeholder-val="{{ true }}">
+                            <span style="font-size:12px; font-weight:900; color:{{ e.hue }}">{{ e.course }}</span>
+                          </sc-if>
+                          <span style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:800; color:#7A80A6">
+                            <svg viewBox="0 0 24 24" style="width:13px; height:13px; flex:none" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.5V12l3 2"></path></svg>
+                            {{ e.time }}{{ e.reminder }}
+                          </span>
+                        </div>
+                        <button type="button" onClick="{{ e.askRemove }}" aria-label="Delete event" style="appearance:none; border:0; cursor:pointer; width:34px; height:34px; border-radius:12px; background:#FFE9EA; color:#E31B23; display:flex; align-items:center; justify-content:center; flex:none" style-hover="background:#FFD3D5">
+                          <svg viewBox="0 0 24 24" style="width:16px; height:16px" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 14h10l1-14"></path><path d="M10 10v7M14 10v7"></path></svg>
+                        </button>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ deleteOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; inset:0; background:rgba(11,15,91,0.5); display:flex; align-items:center; justify-content:center; padding:26px">
+              <div style="width:100%; background:#FFFFFF; border-radius:26px; padding:24px 22px 22px; display:flex; flex-direction:column; align-items:center; gap:13px; animation:popIn 220ms cubic-bezier(0.2,0.8,0.2,1) both">
+                <span style="width:52px; height:52px; border-radius:17px; background:#FFE9EA; color:#E31B23; display:flex; align-items:center; justify-content:center">
+                  <svg viewBox="0 0 24 24" style="width:24px; height:24px" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 14h10l1-14"></path><path d="M10 10v7M14 10v7"></path></svg>
+                </span>
+                <span style="font-size:19px; font-weight:900; text-align:center">Delete this event?</span>
+                <span style="font-size:14px; font-weight:700; color:#7A80A6; text-align:center; line-height:1.6">{{ deleteBody }} This can't be undone.</span>
+                <button type="button" onClick="{{ confirmDelete }}" style="appearance:none; border:0; cursor:pointer; width:100%; height:52px; border-radius:16px; background:#E31B23; color:#FFFFFF; box-shadow:0 3px 0 #A8141B99; font-family:Nunito,system-ui,sans-serif; font-size:15px; font-weight:900; transition:transform 90ms ease" style-active="transform:translateY(2px)">Delete event</button>
+                <button type="button" onClick="{{ cancelDelete }}" style="appearance:none; cursor:pointer; width:100%; height:46px; border-radius:16px; background:#FFFFFF; border:2px solid #E2E6F5; color:#7A80A6; font-family:Nunito,system-ui,sans-serif; font-size:14px; font-weight:900">Keep it</button>
+              </div>
+            </div>
+          </sc-if>
+
+        </div>
+      </x-import>
+    </div>
+
+    <div style="width:330px; display:flex; flex-direction:column; gap:22px">
+      <div style="display:flex; flex-direction:column; gap:10px">
+        <span style="font-size:13px; font-weight:900">Try these paths</span>
+        <div style="display:flex; flex-direction:column; gap:7px; font-size:13px; font-weight:700; color:#5B618F; line-height:1.6">
+          <span>Step forward a month — no dots, and the empty state appears under the grid; today's ring only shows on the real month.</span>
+          <span>Hit the grid icon in the header for the year view — twelve mini-months, today ringed in red, and each event day filled with its event's colour right on its date. Tap any month to open it in the detailed view.</span>
+          <span>The grid button in the header is the only way to jump freely; "Back to today" appears whenever you are off the current month.</span>
+          <span>Past months work exactly like future ones — pick a date that has already been and the event saves and lists normally. Only the <em>reminder</em> is time-checked.</span>
+          <span>Tap a dotted day → its sheet lists each event with the course colour; delete goes through the confirm and the dot disappears with it.</span>
+          <span>Add Event: Save is dead with a stated reason until name, date and time are all filled.</span>
+          <span>Pick a course — the swatch row disappears and the event inherits that course's colour.</span>
+          <span>Set the date to today and push the reminder to weeks: the value is refused and the field turns red, because that moment has already passed.</span>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:10px">
+        <span style="font-size:13px; font-weight:900">Rules</span>
+        <div style="display:flex; flex-direction:column; gap:7px; font-size:13px; font-weight:700; color:#5B618F; line-height:1.6">
+          <span><strong style="color:#0B0F5B; font-weight:900">Colour</strong> — a linked course owns it; the manual picker only exists when no course is linked.</span>
+          <span><strong style="color:#0B0F5B; font-weight:900">Reminder</strong> — validated live against date + time on every change; an invalid value is rejected, not accepted-then-warned.</span>
+          <span><strong style="color:#0B0F5B; font-weight:900">Delete</strong> — removes the event and cancels its scheduled notification.</span>
+        </div>
+      </div>
+      <button type="button" onClick="{{ reset }}" style="appearance:none; cursor:pointer; align-self:flex-start; padding:11px 16px; border-radius:14px; background:#FFFFFF; border:2px solid #DDE1F0; color:#0B0F5B; font-family:Nunito,system-ui,sans-serif; font-size:13px; font-weight:900" style-hover="border-color:#E31B23; color:#E31B23">Reset the prototype</button>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1200,&quot;height&quot;:980},&quot;yearMarkers&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dots&quot;,&quot;fill&quot;],&quot;default&quot;:&quot;fill&quot;,&quot;tsType&quot;:&quot;'dots' | 'fill'&quot;,&quot;section&quot;:&quot;Year view&quot;},&quot;todayStyle&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;apple&quot;,&quot;ring&quot;],&quot;default&quot;:&quot;ring&quot;,&quot;tsType&quot;:&quot;'apple' | 'ring'&quot;,&quot;section&quot;:&quot;Year view&quot;}}">
+const NAVY = '#0B0F5B', RED = '#E31B23';
+const COURSES = [
+  { id: 1, name: 'IS230', hue: '#16A34A' },
+  { id: 2, name: 'CS140', hue: '#2563EB' },
+  { id: 3, name: 'MATH201', hue: '#F5A524' }
+];
+const SWATCH_POOL = ['#16A34A', '#2563EB', '#F5A524', '#E31B23', '#7C3AED', '#0D9488', '#DB2777', '#EA580C',
+  '#0EA5E9', '#65A30D', '#C026D3', '#B45309', '#4F46E5', '#BE123C', '#0F766E', '#0B0F5B'];
+const COURSE_HUES = COURSES.map((c) => c.hue.toUpperCase());
+const SWATCHES = SWATCH_POOL.filter((h) => COURSE_HUES.indexOf(h.toUpperCase()) === -1).slice(0, 4);
+const UNITS = [['Minutes', 60000], ['Hours', 3600000], ['Days', 86400000], ['Weeks', 604800000]];
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const TABS = [
+  ['Home', 'M4 11l8-7 8 7v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z'],
+  ['Courses', 'M3 5.5A1.5 1.5 0 0 1 4.5 4H10a2 2 0 0 1 2 2v13a2 2 0 0 0-2-2H3zM21 5.5A1.5 1.5 0 0 0 19.5 4H14a2 2 0 0 0-2 2v13a2 2 0 0 1 2-2h7z'],
+  ['Calendar', 'M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 10h18M8 3v4M16 3v4'],
+  ['Profile', 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 20c0-3.9 3.6-6 8-6s8 2.1 8 6']
+];
+
+function pad(n) { return n < 10 ? '0' + n : String(n); }
+function iso(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function pretty(key) {
+  const p = key.split('-');
+  return MONTHS[Number(p[1]) - 1] + ' ' + Number(p[2]) + ', ' + p[0];
+}
+function plural(v, u) { return v === 1 ? u.slice(0, -1) : u; }
+function clock(t) {
+  if (!t) return '';
+  const p = t.split(':'); let h = Number(p[0]);
+  const ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  return h + ':' + p[1] + ' ' + ap;
+}
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    const now = new Date();
+    const mk = (offset) => { const d = new Date(now); d.setDate(d.getDate() + offset); return iso(d); };
+    this.state = {
+      screen: 'calendar',
+      today: iso(now),
+      viewY: now.getFullYear(), viewM: now.getMonth(),
+      events: [
+        { id: 1, name: 'Midterm exam', courseId: 1, hue: '#16A34A', date: mk(2), time: '12:00', remind: { v: 1, u: 'Days' } },
+        { id: 2, name: 'Assignment 1 due', courseId: 2, hue: '#2563EB', date: mk(9), time: '23:59', remind: { v: 3, u: 'Hours' } },
+        { id: 3, name: 'Study block', courseId: null, hue: '#F5A524', date: mk(9), time: '18:00', remind: null }
+      ],
+      mode: 'month',
+      sheetDay: null, pendingDelete: null,
+      todayY: now.getFullYear(), todayM: now.getMonth(),
+      name: '', courseId: null, coursesOpen: false, colour: SWATCHES[0], customColour: '#7C3AED',
+      date: '', time: '',
+      reminderOn: false, remValue: 1, remUnit: 'Days', unitsOpen: false, remError: ''
+    };
+  }
+
+  unitMs(u) { const f = UNITS.filter((x) => x[0] === u)[0]; return f ? f[1] : 86400000; }
+
+  eventMs() {
+    const s = this.state;
+    if (!s.date || !s.time) return null;
+    const p = s.date.split('-'), t = s.time.split(':');
+    return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]), Number(t[0]), Number(t[1])).getTime();
+  }
+
+  // returns '' when the reminder lands in the future, else the reason
+  checkRemind(v, u) {
+    const ms = this.eventMs();
+    if (ms === null) return '';
+    const at = ms - v * this.unitMs(u);
+    if (at <= Date.now()) return v + ' ' + plural(v, u).toLowerCase() + ' before this event has already passed.';
+    return '';
+  }
+
+  applyRemind(v, u) {
+    const bad = this.checkRemind(v, u);
+    if (bad) { this.setState({ remError: bad }); return false; }
+    this.setState({ remValue: v, remUnit: u, remError: '' });
+    return true;
+  }
+
+  save = () => {
+    const s = this.state;
+    const course = COURSES.filter((c) => c.id === s.courseId)[0];
+    const ev = {
+      id: Date.now(), name: s.name.trim(), courseId: s.courseId,
+      hue: course ? course.hue : s.colour, date: s.date, time: s.time,
+      remind: s.reminderOn ? { v: s.remValue, u: s.remUnit } : null
+    };
+    const p = s.date.split('-');
+    this.setState((st) => ({
+      events: st.events.concat([ev]),
+      screen: 'calendar', viewY: Number(p[0]), viewM: Number(p[1]) - 1, sheetDay: ev.date,
+      name: '', courseId: null, coursesOpen: false, colour: SWATCHES[0],
+      date: '', time: '', reminderOn: false, remValue: 1, remUnit: 'Days', unitsOpen: false, remError: ''
+    }));
+  };
+
+  renderVals() {
+    const s = this.state;
+    const first = new Date(s.viewY, s.viewM, 1);
+    const lead = first.getDay();
+    const days = new Date(s.viewY, s.viewM + 1, 0).getDate();
+    const byDay = {};
+    s.events.forEach((e) => { (byDay[e.date] = byDay[e.date] || []).push(e); });
+
+    const cells = [];
+    for (let i = 0; i < lead; i++) cells.push({ label: '', cursor: 'default', bg: 'transparent', edge: 'transparent', ink: 'transparent', dots: [], dotSize: '6px', dotGap: '4px', overflowLabel: '', hasOverflow: false, open: () => {} });
+    for (let d = 1; d <= days; d++) {
+      const key = s.viewY + '-' + pad(s.viewM + 1) + '-' + pad(d);
+      const list = byDay[key] || [];
+      const isToday = key === s.today;
+      cells.push({
+        label: String(d),
+        cursor: list.length ? 'pointer' : 'default',
+        bg: isToday ? '#FFE9EA' : 'transparent',
+        edge: isToday ? RED : 'transparent',
+        ink: isToday ? RED : NAVY,
+        dots: list.slice(0, 2).map((e) => ({ hue: e.hue })),
+        dotSize: '6px',
+        dotGap: '4px',
+        overflowLabel: list.length > 2 ? '+' + (list.length - 2) : '',
+        hasOverflow: list.length > 2,
+        open: () => { if (list.length) this.setState({ sheetDay: key }); }
+      });
+    }
+
+    const monthKey = s.viewY + '-' + pad(s.viewM + 1);
+    const monthEvents = s.events.filter((e) => e.date.indexOf(monthKey) === 0);
+    const sheetList = s.sheetDay ? (byDay[s.sheetDay] || []).slice().sort((a, b) => a.time.localeCompare(b.time)) : [];
+    const course = COURSES.filter((c) => c.id === s.courseId)[0];
+    const nameOk = s.name.trim().length > 0;
+    const remBad = s.reminderOn && !!this.checkRemind(s.remValue, s.remUnit);
+    const saveOff = !nameOk || !s.date || !s.time || remBad;
+    const reason = !nameOk ? 'Add an event name to continue.'
+      : (!s.date ? 'Pick a date to continue.'
+      : (!s.time ? 'Pick a time to continue.'
+      : 'Fix the reminder to continue.'));
+
+    return {
+      stateLabel: { calendar: s.mode === 'year' ? 'year view' : (s.sheetDay ? 'day sheet open' : (monthEvents.length ? 'month with events' : 'empty month')), add: 'add event' }[s.screen],
+      onCalendar: s.screen === 'calendar', onAdd: s.screen === 'add',
+      goAdd: () => this.setState({ screen: 'add', sheetDay: null }),
+      goCalendar: () => this.setState({ screen: 'calendar' }),
+      reset: () => this.setState({ screen: 'calendar', mode: 'month', sheetDay: null, pendingDelete: null, coursesOpen: false, unitsOpen: false }),
+
+      monthLabel: MONTHS[s.viewM] + ' ' + s.viewY,
+      prevMonth: () => this.setState((p) => ({ viewM: p.viewM === 0 ? 11 : p.viewM - 1, viewY: p.viewM === 0 ? p.viewY - 1 : p.viewY, sheetDay: null })),
+      nextMonth: () => this.setState((p) => ({ viewM: p.viewM === 11 ? 0 : p.viewM + 1, viewY: p.viewM === 11 ? p.viewY + 1 : p.viewY, sheetDay: null })),
+      monthMode: s.mode === 'month', yearMode: s.mode === 'year',
+      viewYear: s.viewY,
+      toggleYear: () => this.setState((p) => ({ mode: p.mode === 'year' ? 'month' : 'year', sheetDay: null })),
+      yearBtnBg: s.mode === 'year' ? '#E31B23' : 'rgba(255,255,255,0.2)',
+      yearBtnPath: s.mode === 'year'
+        ? 'M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 10h18M8 3v4M16 3v4'
+        : 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
+      prevYearView: () => this.setState((p) => ({ viewY: p.viewY - 1 })),
+      nextYearView: () => this.setState((p) => ({ viewY: p.viewY + 1 })),
+      miniMonths: MONTHS.map((mLabel, mi) => {
+        const lead2 = new Date(s.viewY, mi, 1).getDay();
+        const days2 = new Date(s.viewY, mi + 1, 0).getDate();
+        const mCells = [];
+        for (let i = 0; i < lead2; i++) mCells.push({ label: '', bg: 'transparent', ink: 'transparent', ring: 'none', size: '9px', weight: '900', stroke: '0', pillW: '100%', pillH: (this.props.todayStyle ?? 'apple') === 'apple' ? '100%' : '13px', pillM: '0', scale: 'none', z: 'auto', dots: [], more: false });
+        const hues = [];
+        for (let d2 = 1; d2 <= days2; d2++) {
+          const k = s.viewY + '-' + pad(mi + 1) + '-' + pad(d2);
+          const list2 = byDay[k] || [];
+          const isT = k === s.today;
+          const firstHue = list2.length ? list2.slice().sort((a, b) => a.time.localeCompare(b.time))[0].hue : null;
+          const dotMode = (this.props.yearMarkers ?? 'dots') === 'dots';
+          const fillHue = dotMode ? null : firstHue;
+          const dh = dotMode ? list2.slice().sort((a, b) => a.time.localeCompare(b.time)).map((e) => e.hue) : [];
+          const apple = (this.props.todayStyle ?? 'apple') === 'apple';
+          mCells.push(apple ? {
+            label: String(d2),
+            bg: isT ? RED : (fillHue ? fillHue : 'transparent'),
+            ink: isT || fillHue ? '#FFFFFF' : (dotMode && list2.length ? NAVY : '#9AA0C4'),
+            ring: 'none',
+            size: '9px',
+            weight: '900',
+            stroke: '0',
+            pillW: '100%', pillH: '100%', pillM: '0',
+            scale: 'none',
+            z: isT ? '1' : 'auto',
+            dots: dh.slice(0, 2).map((h) => ({ hue: h })),
+            more: dh.length > 2,
+            moreLabel: dh.length > 2 ? '+' + (dh.length - 2) : ''
+          } : {
+            label: String(d2),
+            bg: fillHue ? fillHue : (isT ? '#FFE9EA' : 'transparent'),
+            ink: fillHue ? '#FFFFFF' : (isT ? RED : (dotMode && list2.length ? NAVY : '#9AA0C4')),
+            ring: isT ? '0 0 0 1.5px ' + RED : 'none',
+            size: '9px',
+            weight: '900',
+            stroke: '0',
+            pillW: fillHue ? '14px' : (isT ? '12px' : '100%'),
+            pillH: fillHue ? '14px' : (isT ? '12px' : '13px'),
+            pillM: fillHue ? '-0.5px 0' : (isT ? '0.5px 0' : '0'),
+            scale: isT && !fillHue ? 'scale(1.15)' : 'none',
+            z: isT ? '1' : 'auto',
+            dots: dh.slice(0, 2).map((h) => ({ hue: h })),
+            more: dh.length > 2,
+            moreLabel: dh.length > 2 ? '+' + (dh.length - 2) : ''
+          });
+        }
+        const isCur = mi === s.todayM && s.viewY === s.todayY;
+        return {
+          label: mLabel.slice(0, 3), cells: mCells,
+          edge: isCur ? RED : '#EEF0FF',
+          ink: isCur ? RED : NAVY,
+          open: () => this.setState({ mode: 'month', viewM: mi })
+        };
+      }),
+      awayFromToday: s.viewY !== s.todayY || s.viewM !== s.todayM,
+      goToday: () => this.setState({ viewY: s.todayY, viewM: s.todayM, sheetDay: null, mode: 'month' }),
+      weekdays: WEEKDAYS.map((w) => ({ label: w })),
+      cells,
+      monthEmpty: monthEvents.length === 0 && s.mode === 'month',
+      tabs: TABS.map((t) => ({
+        label: t[0], path: t[1],
+        bg: t[0] === 'Calendar' ? 'rgba(255,255,255,0.18)' : 'transparent',
+        ink: t[0] === 'Calendar' ? '#FFFFFF' : 'rgba(255,255,255,0.55)'
+      })),
+
+      sheetOpen: !!s.sheetDay && s.screen === 'calendar',
+      closeSheet: () => this.setState({ sheetDay: null }),
+      sheetDate: s.sheetDay ? pretty(s.sheetDay) : '',
+      sheetCount: sheetList.length === 1 ? '1 event' : sheetList.length + ' events',
+      sheetEmpty: sheetList.length === 0,
+      sheetEvents: sheetList.map((e) => {
+        const c = COURSES.filter((x) => x.id === e.courseId)[0];
+        return {
+          hue: e.hue, name: e.name, course: c ? c.name : '', hasCourse: !!c,
+          time: clock(e.time),
+          reminder: e.remind ? ' · reminder ' + e.remind.v + ' ' + plural(e.remind.v, e.remind.u).toLowerCase() + ' before' : '',
+          askRemove: () => this.setState({ pendingDelete: e.id })
+        };
+      }),
+
+      deleteOpen: s.pendingDelete !== null,
+      deleteBody: (function (st) {
+        const t = st.events.filter((x) => x.id === st.pendingDelete)[0];
+        if (!t) return '';
+        return t.remind ? 'Its reminder will be cancelled too.' : 'It will be removed from this day.';
+      })(s),
+      confirmDelete: () => this.setState((p) => {
+        const left = p.events.filter((x) => x.id !== p.pendingDelete);
+        const stillThere = left.filter((x) => x.date === p.sheetDay).length > 0;
+        return { events: left, pendingDelete: null, sheetDay: stillThere ? p.sheetDay : null };
+      }),
+      cancelDelete: () => this.setState({ pendingDelete: null }),
+
+      name: s.name, onName: (e) => this.setState({ name: e.target.value }),
+      coursesOpen: s.coursesOpen,
+      toggleCourses: () => this.setState((p) => ({ coursesOpen: !p.coursesOpen })),
+      courseEdge: s.coursesOpen ? NAVY : '#DDE1F0',
+      courseInk: course ? NAVY : '#9AA0C4',
+      courseLabel: course ? course.name : 'No course selected',
+      courseCaret: s.coursesOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+      courseOptions: [{ id: null, name: 'No course selected', hue: '#DDE1F0' }].concat(COURSES).map((c) => ({
+        label: c.name, hue: c.hue,
+        bg: c.id === s.courseId ? '#F4F6FF' : '#FFFFFF',
+        pick: () => this.setState({ courseId: c.id, coursesOpen: false })
+      })),
+      hasCourse: !!course, courseHue: course ? course.hue : '#DDE1F0', courseName: course ? course.name : '',
+      showColours: !course,
+      swatches: SWATCHES.map((h) => ({
+        hue: h, tick: s.colour === h ? '1' : '0',
+        shadow: s.colour === h ? '0 3px 0 rgba(11,15,91,0.22)' : '0 0 0 2px #EEF0FF',
+        pick: () => this.setState({ colour: h })
+      })),
+      customColour: s.customColour,
+      customBg: s.colour === s.customColour ? s.customColour : '#FFFFFF',
+      customInk: s.colour === s.customColour ? '#FFFFFF' : '#7A80A6',
+      onCustomColour: (e) => this.setState({ customColour: e.target.value, colour: e.target.value }),
+
+      date: s.date, time: s.time,
+      onDate: (e) => { this.setState({ date: e.target.value }, () => this.setState({ remError: this.checkRemind(this.state.remValue, this.state.remUnit) })); },
+      onTime: (e) => { this.setState({ time: e.target.value }, () => this.setState({ remError: this.checkRemind(this.state.remValue, this.state.remUnit) })); },
+      dateEdge: s.date ? NAVY : '#DDE1F0', dateInk: s.date ? NAVY : '#9AA0C4',
+      timeEdge: s.time ? NAVY : '#DDE1F0', timeInk: s.time ? NAVY : '#9AA0C4',
+
+      reminderOn: s.reminderOn,
+      toggleReminder: () => this.setState((p) => ({ reminderOn: !p.reminderOn, unitsOpen: false, remError: p.reminderOn ? '' : this.checkRemind(p.remValue, p.remUnit) })),
+      bellInk: s.reminderOn ? NAVY : '#9AA0C4',
+      switchBg: s.reminderOn ? NAVY : '#DDE1F0',
+      switchAlign: s.reminderOn ? 'flex-end' : 'flex-start',
+      remValue: s.remValue, remUnit: plural(s.remValue, s.remUnit),
+      remEdge: s.remError ? RED : '#DDE1F0',
+      remDec: () => { if (s.remValue > 1) this.applyRemind(s.remValue - 1, s.remUnit); },
+      remInc: () => { if (s.remValue < 60) this.applyRemind(s.remValue + 1, s.remUnit); },
+      remDecCursor: s.remValue <= 1 ? 'not-allowed' : 'pointer',
+      remIncCursor: s.remValue >= 60 ? 'not-allowed' : 'pointer',
+      remDecBg: s.remValue <= 1 ? '#EEF0FF' : NAVY, remDecInk: s.remValue <= 1 ? '#C9CEE8' : '#FFFFFF',
+      remIncBg: s.remValue >= 60 ? '#EEF0FF' : NAVY, remIncInk: s.remValue >= 60 ? '#C9CEE8' : '#FFFFFF',
+      unitsOpen: s.unitsOpen,
+      toggleUnits: () => this.setState((p) => ({ unitsOpen: !p.unitsOpen })),
+      unitEdge: s.unitsOpen ? NAVY : '#DDE1F0',
+      unitCaret: s.unitsOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+      units: UNITS.map((u) => {
+        const on = u[0] === s.remUnit;
+        const blocked = !!this.checkRemind(s.remValue, u[0]);
+        return {
+          label: plural(s.remValue, u[0]), cursor: blocked ? 'not-allowed' : 'pointer',
+          bg: on ? NAVY : (blocked ? '#F7F8FD' : '#FFFFFF'),
+          ink: on ? '#FFFFFF' : (blocked ? '#C9CEE8' : '#5B618F'),
+          edge: on ? NAVY : (blocked ? '#EEF0FF' : '#E2E6F5'),
+          pick: () => { if (this.applyRemind(s.remValue, u[0])) this.setState({ unitsOpen: false }); }
+        };
+      }),
+      remNote: s.remError ? s.remError
+        : (!s.date || !s.time ? 'Pick a date and time and we will check this reminder against them.'
+        : 'You will be notified ' + s.remValue + ' ' + plural(s.remValue, s.remUnit).toLowerCase() + ' before this event.'),
+      remNoteBg: s.remError ? '#FFE9EA' : (!s.date || !s.time ? '#F7F8FD' : '#E6F7EC'),
+      remNoteInk: s.remError ? '#A8141B' : (!s.date || !s.time ? '#7A80A6' : '#15803D'),
+      remNotePath: s.remError ? 'M12 7.5v5.5M12 16.3v.2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z' : 'M20 6L9 17l-5-5',
+
+      save: this.save,
+      saveOff, saveCursor: saveOff ? 'not-allowed' : 'pointer',
+      saveBg: saveOff ? '#F3A8AC' : RED,
+      saveShadow: saveOff ? 'none' : '0 3px 0 #A8141B99',
+      saveReason: reason
+    };
+  }
+}
+
+</script>
+</body>
+</html>

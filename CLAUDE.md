@@ -147,12 +147,16 @@ fields added that aren't in the table (with reason). Report this comparison
 *before* fixing mismatches — don't silently correct them.
 
 **Grounding requirement for generated content** — every question/flashcard
-must cite the exact excerpt/location it came from; after generation, verify
-the cited excerpt actually appears in the material's extracted text before
-showing it, discard/regenerate if not; include a "Report this question"
-option in the UI as a fallback; if the material can't support the requested
-count, generate as many good ones as it supports and tell the student —
-never pad with low-quality or off-topic items.
+must cite the location it came from (`sourceLocation`). Free phrasing of the
+question/answer text itself is allowed (superseding this rule's earlier,
+stricter wording) — the check is that `sourceLocation` points to a real
+location tag that actually exists in the source text (e.g. "Slide 5"), not a
+literal text match of the generated content against the source. Verify this
+after generation, discard/regenerate if the tag isn't real; include a
+"Report this question" option in the UI as a fallback (flag + store is
+enough — no admin review flow required); if the material can't support the
+requested count, generate as many good ones as it supports and tell the
+student — never pad with low-quality or off-topic items.
 
 ### Non-functional requirements
 
@@ -1217,6 +1221,144 @@ mark it done, note decisions made, note what starts next.)*
   fix is either committing a real (small) sample `.pptx` to `docs/` or
   skipping/guarding the test when the file is absent; flagging for the
   team rather than guessing which the Courses feature would prefer.
+
+  **Second merge-fallout pass: the manual conflict resolution itself left
+  `session.dart` broken**, found when a later `origin/main` merge (Ghaida's
+  Quiz generation & Sessions feature landing) hit the same
+  `Session.difficultyLevel` → `difficultyLevels` conflict a second time and
+  was resolved by hand rather than re-taken from either side. Two real
+  defects, both in `lib/models/session.dart`:
+  - `Session`'s field declaration (`final DifficultyLevel difficultyLevel;`)
+    and `sharedFieldsToFirestore()`'s serialization
+    (`'difficultyLevel': difficultyLevel.toJson()`) were still singular,
+    while the constructor signature, `QuizSession`/`FlashcardSession`, and
+    `SessionFields` elsewhere in the same file had already moved to the
+    plural `List<DifficultyLevel> difficultyLevels` shape — a straight
+    compile error (undefined field) the moment anything touched
+    `difficultyLevel`.
+  - `SessionFields.fromMap`'s `difficultyLevels:` argument was still
+    parsing a single `data['difficultyLevel']` string via
+    `DifficultyLevelJson.fromJson` under the (also wrong) named parameter
+    `difficultyLevel:`, instead of calling the file's own
+    `_readDifficultyLevels(data)` helper that every other reader in this
+    file already relies on for the real multi-select, never-throws
+    behavior.
+
+  Fixed: field renamed to `difficultyLevels` (`List<DifficultyLevel>`),
+  `sharedFieldsToFirestore()` now writes
+  `'difficultyLevels': difficultyLevels.map((d) => d.toJson()).toList()`,
+  and `SessionFields.fromMap` now calls `_readDifficultyLevels(data)`.
+  Also restored the constructor's non-empty assert
+  (`assert(difficultyLevels.isNotEmpty, ...)`) on `Session` itself, which
+  this Progress Log had already documented as part of the original
+  `difficultyLevel` → `difficultyLevels` migration but which the manual
+  resolution dropped — confirmed missing via `test/models/session_test.dart`'s
+  own "asserts at least one difficulty level is given" test, which was
+  failing (no assert thrown) until this was added back.
+
+  Checked `quiz_session.dart` and `flashcard_session.dart` for the same
+  stale-singular pattern: both were already fully on `difficultyLevels`
+  throughout (constructor, `fromFirestore`, `toFirestore`) — no fix needed
+  there. Also checked `lib/widgets/app_button.dart`, hand-resolved in the
+  same merge (`disabledRemovesShadow` field + the shadow-dropping logic in
+  `build()`): `disabledBackgroundColor` and `disabledRemovesShadow` are
+  each declared exactly once, and `build()`'s `disabledNotLoading` branch
+  applies both correctly — no duplication or breakage found.
+
+  Re-ran `flutter analyze` (clean, same 1 pre-existing unrelated info —
+  `auth_service.dart`'s doc-comment HTML lint; the earlier
+  `session.dart` `prefer_is_empty` info is also gone now, since the new
+  assert was written with `isNotEmpty` directly) and `flutter test` on the
+  full project: **341 passed, 1 failed** — the only failure is the same
+  pre-existing `docs/Lecture1.pptx` missing-fixture issue documented just
+  above, still unrelated and still not this feature's to fix.
+
+  **Home never actually wired to the real Flashcards screens — fixed.**
+  After the merges above, `flutter run` showed a placeholder instead of
+  the real Flashcards UI from the Courses tab's "New Flashcards" flow and
+  from Resume. Root cause: this was never a merge regression — it's the
+  one known gap this feature's very first pass explicitly flagged and
+  deliberately left alone ("Did not touch `home_screen.dart` — it still
+  opens placeholders for flashcard setup/resume... wasn't asked for
+  here"), and nothing in any later pass (including Manar's and Ghaida's
+  merges) ever came back to wire it, unlike Quiz's equivalent flow, which
+  *did* get wired to the real `QuizSessionsScreen`/`QuizPlayScreen` when
+  Ghaida's feature landed. So `_HomeTabState` was still calling
+  `_openFlashcardSetupPlaceholder()` and pushing a literal
+  `PlaceholderScreen` on Resume.
+
+  Fixed in `lib/screens/home/home_screen.dart` (the one frozen-file
+  exception this needed, same as every other Home routing fix logged
+  above): the course-picker's flashcard branch now opens the real
+  `FlashcardSessionsScreen` (Screen 1 — courseId + the signed-in student's
+  email, which `_openCoursePicker` now threads through from the
+  `StreamBuilder<Student?>` already in scope); Resume for a flashcard
+  session now does the same two-step fetch `FlashcardSessionsScreen`
+  itself already does for its own Resume button (`watchSessions().first`
+  to get the session's `currentFlashcardIndex`/`knownCount`/
+  `needsReviewCount`, then `fetchFlashcards()`) before pushing the real
+  `FlashcardFlipDeckScreen` — necessary because, unlike `QuizPlayScreen`,
+  that screen takes already-fetched data rather than loading by id itself
+  (it's also how a fresh Retake starts). `HomeScreen` gained an injectable
+  `flashcardServiceBuilder` (a *builder*, not a single instance like
+  `coursesService`, since the course it's scoped to isn't known until a
+  course is picked or there's a session to resume) — mirrors the existing
+  `homeDataService`/`coursesService` override pattern and is what made
+  this properly testable against a fake rather than a real Firestore call.
+
+  Updated the one test this deliberately changed: "tapping Resume opens
+  the (currently unreachable-in-production) session placeholder" is now
+  "tapping Resume opens the real Flashcard Flip Deck screen at the stored
+  position" — seeded a `FakeFlashcardService` with a real session + cards
+  and asserted the actual Flip Deck content (`Card 3 of 3`, the stored
+  card's front text) renders, not just that the placeholder is gone.
+  Re-ran `flutter analyze` (clean, same single pre-existing info) and
+  `flutter test` on the full project: still **341 passed, 1 failed**
+  (same pre-existing `docs/Lecture1.pptx` fixture gap, unrelated) — one
+  test was rewritten in place rather than added, so the total didn't
+  move. Not yet re-verified live on-device for this specific fix (no
+  Firebase emulator/device session run this pass); the fake-backed
+  widget test is real integration coverage of the navigation and data
+  wiring, but a live run is still worth doing before this merges.
+
+  **Full sweep for any other remaining flashcard placeholder.** Grepped
+  the whole of `lib/` for every `PlaceholderScreen` usage and every
+  case-insensitive "flashcard" mention, not just `home_screen.dart`. Found
+  one more, in Manar's `lib/screens/courses/course_detail_screen.dart`:
+  the Study Tools "Flashcards" tile's `_openFlashcards()` still pushed a
+  literal `PlaceholderScreen(label: 'Flashcard setup screen')`, with a
+  now-stale comment claiming "Deemah's Flashcards feature... isn't built
+  yet" — same root cause as `home_screen.dart`'s gap (this feature's first
+  pass only ever wired its own screens to each other, never to the two
+  external entry points that predate or postdate it) and missed by the
+  home_screen.dart fix since it's a different file in a different
+  teammate's feature. Fixed: now opens the real `FlashcardSessionsScreen`
+  with `widget.course.email` as the session owner's email (the `Course`
+  model already carries the owner's email — no new field or lookup
+  needed). Swept the rest of `lib/` too: every other `PlaceholderScreen`
+  use is Calendar/Profile (Leen's feature, genuinely not built yet,
+  correctly left alone), and every other "flashcard" mention is real
+  button/label text inside the feature's own already-built screens — no
+  further gaps found.
+
+  Gave `CourseDetailScreen` the same injectable-service treatment as
+  `HomeScreen`'s earlier fix (a single `flashcardService` override this
+  time, not a builder, since this screen is already scoped to one course)
+  — needed because `FlashcardService.watchSessions()` is a plain
+  synchronous function called straight from `build()`, unlike
+  `QuizSessionService.fetchSessions()` (an `async` method, so a
+  no-Firebase-app error lands inside its returned Future instead of
+  throwing immediately): without a fake behind it, tapping the real
+  Flashcards tile in a widget test crashes the build immediately with
+  `[core/no-app]`, caught while adding this screen's own regression test.
+  Added one, mirroring the existing Quiz-tile test: taps "Flashcards" and
+  asserts `find.byType(FlashcardSessionsScreen)` (not matching text, since
+  the pushed screen's own "Flashcards" header would otherwise collide
+  with the tile's identical label still in the tree underneath). Re-ran
+  `flutter analyze` (clean, same single pre-existing info) and
+  `flutter test` on the full project: **342 passed, 1 failed** (one test
+  added this time; same pre-existing `docs/Lecture1.pptx` fixture gap,
+  still unrelated and still not this feature's to fix).
 
 ## Design handoffs
 
