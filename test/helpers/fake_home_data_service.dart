@@ -25,7 +25,11 @@ class FakeHomeDataService extends HomeDataService {
   final Student? student;
   final WeeklyProgress weeklyProgress;
   final InProgressSession? inProgress;
-  final List<Course> courses;
+
+  /// Mutable so a test can simulate "a course was created elsewhere" by
+  /// updating this between reloads, rather than being stuck with whatever
+  /// was passed to the constructor for the fake's whole lifetime.
+  List<Course> courses;
   final List<UpcomingEventView> upcomingEvents;
 
   int fetchCoursesCalls = 0;
