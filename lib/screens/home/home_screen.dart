@@ -4,10 +4,14 @@ import '../../models/course.dart';
 import '../../models/student.dart';
 import '../../services/courses_service.dart';
 import '../../services/home_data_service.dart';
+import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../courses/add_course_screen.dart';
 import '../courses/courses_list_screen.dart';
 import '../placeholder_screen.dart';
+import '../quiz/quiz_navigation.dart';
+import '../quiz/quiz_play_screen.dart';
+import '../quiz/quiz_sessions_screen.dart';
 import 'widgets/continue_or_start_card.dart';
 import 'widgets/course_picker_sheet.dart';
 import 'widgets/new_student_onboarding_card.dart';
@@ -122,6 +126,13 @@ class _HomeTab extends StatefulWidget {
 }
 
 class _HomeTabState extends State<_HomeTab> {
+  // Not `late final`: HomeScreen keeps every bottom-nav tab alive via
+  // IndexedStack, so this State is never disposed/recreated when the
+  // student navigates to a pushed screen (Quiz, Add Course, ...) and back
+  // — a `late final` Future computed once at first access would go stale
+  // forever (e.g. completing a quiz and returning would never show the
+  // updated points/streak/Continue-card). _reload() re-fetches everything
+  // and is called whenever a pushed screen is popped back to Home.
   late Future<List<Course>> _courses;
   late Future<WeeklyProgress> _weeklyProgress;
   late Future<InProgressSession?> _inProgress;
@@ -170,13 +181,30 @@ class _HomeTabState extends State<_HomeTab> {
     if (created == true) _reload();
   }
 
-  void _openSetupPlaceholder(SessionKind kind) {
-    final label = kind == SessionKind.quiz
-        ? 'Quiz setup screen'
-        : 'Flashcard setup screen';
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => PlaceholderScreen(label: label)));
+  void _openFlashcardSetupPlaceholder() {
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) =>
+                const PlaceholderScreen(label: 'Flashcard setup screen'),
+          ),
+        )
+        .then((_) => _reload());
+  }
+
+  void _openQuizSessions(Course course) {
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) => QuizSessionsScreen(
+              courseId: course.courseId,
+              courseName: course.courseName,
+              service: QuizSessionService(),
+            ),
+            settings: const RouteSettings(name: quizSessionsRouteName),
+          ),
+        )
+        .then((_) => _reload());
   }
 
   void _openCoursePicker(SessionKind kind) {
@@ -187,29 +215,50 @@ class _HomeTabState extends State<_HomeTab> {
       kind: kind,
       onCourseSelected: (Course course) {
         Navigator.of(context).pop();
-        _openSetupPlaceholder(kind);
+        if (kind == SessionKind.quiz) {
+          _openQuizSessions(course);
+        } else {
+          _openFlashcardSetupPlaceholder();
+        }
       },
     );
   }
 
   void _resumeSession(InProgressSession session) {
-    final label = session.kind == SessionKind.quiz
-        ? 'Quiz session screen'
-        : 'Flashcard session screen';
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => PlaceholderScreen(label: label)));
+    if (session.kind == SessionKind.quiz) {
+      Navigator.of(context)
+          .push(
+            MaterialPageRoute(
+              builder: (_) => QuizPlayScreen(
+                sessionId: session.sessionId,
+                service: QuizSessionService(),
+              ),
+            ),
+          )
+          .then((_) => _reload());
+      return;
+    }
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) =>
+                const PlaceholderScreen(label: 'Flashcard session screen'),
+          ),
+        )
+        .then((_) => _reload());
   }
 
   void _openCalendarTab() {
     // The bottom-nav Calendar tab isn't reachable from here without lifting
     // tab state up; "See all" is a reasonable no-op-with-navigation stand-in
     // until Calendar (Phase C) exists to actually navigate to.
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const PlaceholderScreen(label: 'Calendar screen'),
-      ),
-    );
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) => const PlaceholderScreen(label: 'Calendar screen'),
+          ),
+        )
+        .then((_) => _reload());
   }
 
   @override
@@ -269,6 +318,7 @@ class _HomeTabState extends State<_HomeTab> {
                                 TodayProgressCard(
                                   weeklyProgress: weeklyProgress,
                                   currentStreak: student?.currentStreak ?? 0,
+                                  lastStudyDate: student?.lastStudyDate,
                                   now: widget.now,
                                 ),
                                 const SizedBox(height: 16),

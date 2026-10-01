@@ -42,7 +42,7 @@ void main() {
 
         await tester.tap(find.text('Quiz'));
         await tester.pumpAndSettle();
-        expect(find.text('Study tools screen'), findsNothing);
+        expect(find.text('Quiz sessions'), findsNothing);
       },
     );
   });
@@ -75,8 +75,14 @@ void main() {
       expect(find.text('All 1'), findsOneWidget);
 
       await tester.tap(find.text('Quiz'));
-      await tester.pumpAndSettle();
-      expect(find.text('Study tools screen'), findsOneWidget);
+      // Not pumpAndSettle: QuizSessionsScreen shows a CircularProgress-
+      // Indicator while its Firestore fetch is pending (no real Firebase
+      // app in this test, so it never resolves) — an indeterminate spinner
+      // animates forever, which would make pumpAndSettle hang. See the
+      // identical pattern in home_screen_test.dart's course-picker test.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Quiz sessions'), findsOneWidget);
     });
 
     testWidgets('the type filter tabs narrow the visible materials list', (

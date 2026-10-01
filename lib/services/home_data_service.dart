@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/calendar_event.dart';
 import '../models/course.dart';
 import '../models/flashcard_session.dart';
+import '../models/question.dart';
 import '../models/quiz_session.dart';
 import '../models/student.dart';
 import 'streak_service.dart' show dateOnly;
@@ -84,14 +85,24 @@ class InProgressSession {
     required this.courseName,
     required this.currentIndex,
     required this.total,
+    required this.resumePosition,
   });
 
   final String sessionId;
   final SessionKind kind;
   final String courseId;
   final String courseName;
+  // Real answered/reviewed count (see _countAnsweredQuestions) — drives the
+  // "X of Y answered" label and the progress bar fill. Deliberately *not*
+  // the same value as resumePosition: a student can answer questions out
+  // of the order they'll resume in (Exam mode allows paging back and
+  // forth), so the two numbers can genuinely differ.
   final int currentIndex;
   final int total;
+  // 1-based question/card number the Resume button will actually land on
+  // — mirrors the Quiz Sessions screen's own `currentQuestionIndex + 1`,
+  // not the answered count.
+  final int resumePosition;
 }
 
 /// A calendar event with its course name already resolved (if it has one),
@@ -236,13 +247,23 @@ class HomeDataService {
         (quiz != null && quiz.createdAt.isAfter(flashcard.createdAt));
     if (useQuiz) {
       final courseName = await _courseName(uid, quiz!.courseId);
+      // currentQuestionIndex only advances on "Next" (see the Quiz
+      // Sessions screen's own "X of N answered" fix) — it undercounts a
+      // question the student has answered but not yet moved past. Count
+      // real answers instead, same fix, same reason, just a second
+      // display of the same underlying data. It's still the right value
+      // for resumePosition below, though — that one genuinely means "the
+      // question the student will land on", not "how many they've
+      // answered".
+      final answered = await _countAnsweredQuestions(uid, quiz.sessionId);
       return InProgressSession(
         sessionId: quiz.sessionId,
         kind: SessionKind.quiz,
         courseId: quiz.courseId,
         courseName: courseName,
-        currentIndex: quiz.currentQuestionIndex,
+        currentIndex: answered,
         total: quiz.numberOfQuestions,
+        resumePosition: quiz.currentQuestionIndex + 1,
       );
     }
     final courseName = await _courseName(uid, flashcard.courseId);
@@ -251,9 +272,35 @@ class HomeDataService {
       kind: SessionKind.flashcard,
       courseId: flashcard.courseId,
       courseName: courseName,
+      // Flashcards & Sessions (feature/flashcards) isn't built yet, so
+      // there's no per-card "reviewed" write to count the same way quiz
+      // answers are counted above — currentFlashcardIndex is the best
+      // available number today. Revisit once that feature defines its
+      // own real "reviewed" concept.
       currentIndex: flashcard.currentFlashcardIndex,
       total: flashcard.numberOfFlashcards,
+      resumePosition: flashcard.currentFlashcardIndex + 1,
     );
+  }
+
+  /// Number of questions in [sessionId] that actually have a
+  /// [Question.studentAnswer] set — mirrors
+  /// `QuizSessionService.countAnsweredQuestions`. Kept as its own query
+  /// here (rather than a shared call into QuizSessionService) since
+  /// HomeDataService takes an explicit [uid] and isn't scoped to
+  /// `FirebaseAuth.currentUser` the way QuizSessionService is.
+  Future<int> _countAnsweredQuestions(String uid, String sessionId) async {
+    final snap = await _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('quizSessions')
+        .doc(sessionId)
+        .collection('questions')
+        .get();
+    return snap.docs
+        .map(Question.fromFirestore)
+        .where((q) => q.studentAnswer != null)
+        .length;
   }
 
   Future<String> _courseName(String uid, String courseId) async {

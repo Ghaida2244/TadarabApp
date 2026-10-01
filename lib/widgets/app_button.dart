@@ -24,6 +24,8 @@ class AppButton extends StatefulWidget {
     this.borderRadius,
     this.borderColor,
     this.shadowColor,
+    this.disabledBackgroundColor,
+    this.disabledRemovesShadow = false,
   });
 
   final String label;
@@ -53,6 +55,18 @@ class AppButton extends StatefulWidget {
   /// Overrides the variant's default shadow color.
   final Color? shadowColor;
 
+  /// When [onPressed] is null and the button isn't [loading] (a "disabled,
+  /// not in flight" state — e.g. Next before an answer is picked), swaps
+  /// the background to this color instead of the variant's normal one. Per
+  /// the Quiz design's button rule: a disabled action stays visible in its
+  /// own dimmed hue (pink for a red action), never hidden or greyed to the
+  /// generic loading look.
+  final Color? disabledBackgroundColor;
+
+  /// Paired with [disabledBackgroundColor]: drops the button's shadow
+  /// entirely while disabled-not-loading, per the same design rule.
+  final bool disabledRemovesShadow;
+
   @override
   State<AppButton> createState() => _AppButtonState();
 }
@@ -79,6 +93,13 @@ class _AppButtonState extends State<AppButton> {
     }
     if (widget.shadowColor != null) {
       colors = colors.copyWithShadow(widget.shadowColor);
+    }
+    final bool disabledNotLoading = widget.onPressed == null && !widget.loading;
+    if (disabledNotLoading && widget.disabledBackgroundColor != null) {
+      colors = colors.copyWithBackground(widget.disabledBackgroundColor!);
+    }
+    if (disabledNotLoading && widget.disabledRemovesShadow) {
+      colors = colors.copyWithShadow(null);
     }
     final double shadowOffset = colors.hasShadow ? (_pressed ? 1 : 3) : 0;
 
@@ -211,6 +232,13 @@ class _ButtonColors {
   );
 
   _ButtonColors copyWithShadow(Color? shadow) => _ButtonColors(
+    background: background,
+    border: border,
+    shadow: shadow,
+    text: text,
+  );
+
+  _ButtonColors copyWithBackground(Color background) => _ButtonColors(
     background: background,
     border: border,
     shadow: shadow,
