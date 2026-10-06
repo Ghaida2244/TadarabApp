@@ -1,10 +1,14 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:http/http.dart' as http;
 
 import '../features/flashcards/logic/flashcard_logic.dart';
 import '../models/enums.dart';
 import '../models/flashcard.dart';
 import '../models/flashcard_session.dart';
 import '../models/study_material.dart';
+import 'auth_service.dart';
 
 // TODO: replace these two with the shared public constants from
 // auth_service.dart (kNetworkFailureMessage / kGenericFailureMessage) once
@@ -58,13 +62,29 @@ class FlashcardGenerationItem {
   final String backText;
   final String sourceLocation;
   final DifficultyLevel difficulty;
+
+  factory FlashcardGenerationItem.fromJson(Map<String, dynamic> json) {
+    return FlashcardGenerationItem(
+      frontText: json['frontText'] as String,
+      backText: json['backText'] as String,
+      sourceLocation: json['sourceLocation'] as String,
+      difficulty: DifficultyLevelJson.fromJson(json['difficulty'] as String),
+    );
+  }
 }
 
 /// The Worker's successful `/generate` response for `type: "flashcard"`.
+/// [note] mirrors the Quiz feature's [GenerationResult.note] — the Worker
+/// sends one on every response type (fewer items than requested, or some
+/// grounding-check discards), meant to be shown to the student directly
+/// rather than treated as an error. Not yet wired into the Setup screen's
+/// UI (out of scope for this pass); the field exists so that data isn't
+/// silently dropped on the floor once something does read it.
 class FlashcardGenerationResult {
-  FlashcardGenerationResult({required this.items});
+  FlashcardGenerationResult({required this.items, this.note});
 
   final List<FlashcardGenerationItem> items;
+  final String? note;
 }
 
 /// Firestore- and Worker-backed data/actions for the Flashcards feature,
@@ -77,11 +97,28 @@ class FlashcardService {
     required this.uid,
     required this.courseId,
     FirebaseFirestore? firestore,
-  }) : _firestoreOverride = firestore;
+    http.Client? httpClient,
+    Future<String?> Function()? idTokenProvider,
+    Uri? endpoint,
+  }) : _firestoreOverride = firestore,
+       _httpClient = httpClient ?? http.Client(),
+       _idTokenProvider = idTokenProvider ?? AuthService().getIdToken,
+       _endpoint =
+           endpoint ??
+           Uri.parse('https://tadarab-ai-worker.tadarab.workers.dev/generate');
 
   final String uid;
   final String courseId;
   final FirebaseFirestore? _firestoreOverride;
+  final http.Client _httpClient;
+
+  /// Resolves the caller's Firebase ID token for the Worker's
+  /// Authorization: Bearer header. Defaults to [AuthService.getIdToken] —
+  /// overridable so tests never need a real Firebase app to exercise the
+  /// HTTP layer (same pattern as [QuizGenerationClient]'s
+  /// `idTokenProvider`, in quiz_generation_client.dart).
+  final Future<String?> Function() _idTokenProvider;
+  final Uri _endpoint;
 
   FirebaseFirestore get _firestore =>
       _firestoreOverride ?? FirebaseFirestore.instance;
@@ -126,28 +163,91 @@ class FlashcardService {
         .map((snap) => snap.docs.map(FlashcardSession.fromFirestore).toList());
   }
 
-  /// Calls the Cloudflare Worker's `POST /generate` (type: "flashcard").
+  /// Calls the Cloudflare Worker's `POST /generate` (type: "flashcard") —
+  /// the same deployed Worker and endpoint Quiz's [QuizGenerationClient]
+  /// calls (see quiz_generation_client.dart), which already handles
+  /// `type: "flashcard"` requests identically to `type: "quiz"` ones (same
+  /// generation.js, branches on `type` throughout). Re-fetches this
+  /// course's materials to get each selected one's real `extractedText`,
+  /// rather than requiring the caller to pass full [StudyMaterial] objects
+  /// through — [FlashcardSetupScreen] already calls this with just
+  /// [materialIds], and changing that call site wasn't needed.
   ///
-  /// PENDING: the Worker's live deployed URL hasn't been provided yet, so
-  /// this is a placeholder — see CLAUDE.md's "PENDING: network call, worker
-  /// deployment status unconfirmed" note. Once the URL is confirmed, this is
-  /// the only function that needs a real body: fetch each material's
-  /// title/extractedText from `users/{uid}/courses/{courseId}/materials`,
-  /// build the request per the "Real Worker contract" section, call
-  /// `POST <workerUrl>/generate` with `Authorization: Bearer <idToken>`, and
-  /// parse `items` into [FlashcardGenerationItem]s (throwing
-  /// [WorkerUnreachableException] / [WorkerResponseException] as appropriate
-  /// instead of a raw exception).
+  /// Throws [WorkerUnreachableException] (no response at all — offline,
+  /// timeout, DNS failure, or no signed-in user to get a token from) or
+  /// [WorkerResponseException] (the Worker responded, but not with a
+  /// usable 200) — never a raw exception, so the Setup screen's existing
+  /// `on WorkerUnreachableException` / generic `catch` both work correctly.
   Future<FlashcardGenerationResult> generateFlashcards({
     required List<String> materialIds,
     required List<DifficultyLevel> difficulties,
     required int count,
     String? customPrompt,
   }) async {
-    throw UnimplementedError(
-      'Worker URL pending from the teammate who owns it — contract is '
-      'otherwise final, see CLAUDE.md',
-    );
+    final allMaterials = await fetchMaterials();
+    final materials = allMaterials
+        .where((m) => materialIds.contains(m.materialId))
+        .toList();
+
+    String? token;
+    try {
+      token = await _idTokenProvider();
+    } catch (_) {
+      token = null;
+    }
+    if (token == null) {
+      // No signed-in user to get a token from — can't even attempt the
+      // call. Practically unreachable (the whole app requires sign-in
+      // before this screen exists), but guarded the same way Quiz's
+      // QuizGenerationClient.generateQuiz guards it, for the same reason:
+      // fail locally instead of sending an obviously-invalid request.
+      throw WorkerUnreachableException();
+    }
+
+    http.Response response;
+    try {
+      response = await _httpClient
+          .post(
+            _endpoint,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({
+              'type': 'flashcard',
+              'count': count,
+              'difficulty': difficulties.map((d) => d.toJson()).toList(),
+              if (customPrompt != null && customPrompt.trim().isNotEmpty)
+                'customPrompt': customPrompt.trim(),
+              'materials': [
+                for (final m in materials)
+                  {'title': m.title, 'sourceText': m.extractedText},
+              ],
+            }),
+          )
+          .timeout(const Duration(seconds: 45));
+    } catch (_) {
+      throw WorkerUnreachableException();
+    }
+
+    Map<String, dynamic>? body;
+    try {
+      body = jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (_) {
+      body = null;
+    }
+
+    if (response.statusCode != 200 || body == null || body['items'] is! List) {
+      throw WorkerResponseException(response.statusCode, body);
+    }
+
+    final items = (body['items'] as List)
+        .map(
+          (raw) => FlashcardGenerationItem.fromJson(raw as Map<String, dynamic>),
+        )
+        .toList();
+
+    return FlashcardGenerationResult(items: items, note: body['note'] as String?);
   }
 
   /// Creates the FlashcardSession document and its Flashcard sub-documents,

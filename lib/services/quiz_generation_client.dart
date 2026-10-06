@@ -105,12 +105,17 @@ class QuizGenerationClient {
   /// Requests up to [count] quiz items from [materials] at the requested
   /// [difficulties] (at least one), with an optional [customPrompt] (already
   /// expected to be ≤300 characters — the Flutter field enforces that; the
-  /// Worker re-checks it as a backup).
+  /// Worker re-checks it as a backup). [isRetake] tells the Worker this is a
+  /// retake of a previous attempt with the same settings, so its prompt can
+  /// ask Claude to vary phrasing/examples rather than repeat the same set —
+  /// see [QuizSessionService.retakeSession], its only caller that passes
+  /// `true`.
   Future<GenerationResult> generateQuiz({
     required int count,
     required List<DifficultyLevel> difficulties,
     String? customPrompt,
     required List<GenerationMaterial> materials,
+    bool isRetake = false,
   }) async {
     final String token;
     try {
@@ -141,6 +146,7 @@ class QuizGenerationClient {
               if (customPrompt != null && customPrompt.trim().isNotEmpty)
                 'customPrompt': customPrompt.trim(),
               'materials': materials.map((m) => m.toJson()).toList(),
+              'isRetake': isRetake,
             }),
           )
           .timeout(const Duration(seconds: 45));

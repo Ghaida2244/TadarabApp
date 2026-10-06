@@ -551,6 +551,7 @@ class QuizSessionService {
       difficulties: existing.difficultyLevels,
       customPrompt: existing.customPrompt,
       materials: generationMaterials,
+      isRetake: true,
     );
 
     if (result.items.isEmpty) {
