@@ -5,12 +5,14 @@ import {
   computeMaxTokens,
   buildSourceText,
   buildPrompt,
+  buildSystemPrompt,
   buildToolSchema,
   shuffleArray,
   shuffleQuizOptions,
   extractLocationTags,
   isLocationGrounded,
   filterGroundedItems,
+  normalizeItems,
   MAX_CUSTOM_PROMPT_LENGTH,
   MODEL_MAX_OUTPUT_TOKENS,
 } from '../src/generation.js';
@@ -61,22 +63,20 @@ describe('validateCustomPrompt', () => {
 });
 
 describe('computeMaxTokens', () => {
-  test('normal: quiz formula is 500 + count*350', () => {
-    expect(computeMaxTokens('quiz', 10)).toBe(500 + 10 * 350);
+  test('normal: quiz always returns the flat model cap, regardless of count', () => {
+    expect(computeMaxTokens('quiz', 10)).toBe(MODEL_MAX_OUTPUT_TOKENS);
   });
 
-  test('normal: flashcard formula is 500 + count*200', () => {
-    expect(computeMaxTokens('flashcard', 10)).toBe(500 + 10 * 200);
+  test('normal: flashcard always returns the flat model cap, regardless of count', () => {
+    expect(computeMaxTokens('flashcard', 10)).toBe(MODEL_MAX_OUTPUT_TOKENS);
   });
 
-  test('edge: a count large enough to hit the model cap is clamped, not left uncapped', () => {
-    const uncapped = 500 + 1000 * 350;
-    expect(uncapped).toBeGreaterThan(MODEL_MAX_OUTPUT_TOKENS);
+  test('edge: a large count still just returns the flat model cap, not an uncapped formula', () => {
     expect(computeMaxTokens('quiz', 1000)).toBe(MODEL_MAX_OUTPUT_TOKENS);
   });
 
-  test('failure-adjacent: count=1 still produces a sane positive value', () => {
-    expect(computeMaxTokens('quiz', 1)).toBe(850);
+  test('failure-adjacent: count=1 still returns the flat model cap, not a tiny budget', () => {
+    expect(computeMaxTokens('quiz', 1)).toBe(MODEL_MAX_OUTPUT_TOKENS);
   });
 });
 
@@ -111,10 +111,26 @@ describe('buildPrompt', () => {
     expect(prompt).toContain('WORDING & LANGUAGE RULE:');
     expect(prompt).toContain('DIFFICULTY LEVELS REQUESTED: easy');
     expect(prompt).toContain('DISTRIBUTION RULE:');
-    expect(prompt).toContain('MULTIPLE-MATERIAL RULE');
-    expect(prompt).toContain('STUDENT INSTRUCTION HANDLING:');
+    expect(prompt).toContain('LEARNER INSTRUCTION HANDLING:');
+    expect(prompt).toContain('SOURCE TAGS:');
     expect(prompt).toContain('SOURCE TEXT:');
     expect(prompt).toContain('[Material: Lecture 1]');
+  });
+
+  test('normal: the multi-material sourceLocation line lives in SOURCE TAGS, not DISTRIBUTION RULE', () => {
+    const prompt = buildPrompt(baseArgs);
+    const distributionIndex = prompt.indexOf('DISTRIBUTION RULE:');
+    const sourceTagsIndex = prompt.indexOf('SOURCE TAGS:');
+    const multiMaterialIndex = prompt.indexOf('include the material title with each');
+    const distributionSection = prompt.slice(distributionIndex, sourceTagsIndex);
+    expect(distributionSection).not.toContain('include the material title with each');
+    expect(multiMaterialIndex).toBeGreaterThan(sourceTagsIndex);
+  });
+
+  test('normal: the language-of-the-source sentence appears exactly once', () => {
+    const prompt = buildPrompt(baseArgs);
+    const occurrences = prompt.split('same language as the source text').length - 1;
+    expect(occurrences).toBe(1);
   });
 
   test('normal: quiz gets OPTIONS RULE and the full EXPLANATION RULE, not the flashcard sections', () => {
@@ -125,29 +141,58 @@ describe('buildPrompt', () => {
     expect(prompt).not.toContain('N/A for flashcards');
   });
 
-  test('normal: flashcard gets BACK TEXT SHAPE and the N/A explanation note, not the quiz sections', () => {
+  test('normal: flashcard gets BACK TEXT SHAPE and no EXPLANATION RULE section, not the quiz sections', () => {
     const prompt = buildPrompt({ ...baseArgs, type: 'flashcard' });
     expect(prompt).toContain('BACK TEXT SHAPE (flashcard only):');
-    expect(prompt).toContain('EXPLANATION RULE: N/A for flashcards');
+    expect(prompt).not.toContain('EXPLANATION RULE');
     expect(prompt).not.toContain('OPTIONS RULE');
   });
 
   test('edge: multiple requested difficulty levels each get their own definition line', () => {
     const prompt = buildPrompt({ ...baseArgs, difficulties: ['easy', 'hard'] });
     expect(prompt).toContain('DIFFICULTY LEVELS REQUESTED: easy, hard');
-    expect(prompt).toContain('easy: Directly stated in the source');
-    expect(prompt).toContain('hard: Requires analysis or connecting more than one concept');
+    expect(prompt).toContain('easy: The learner recalls a fact');
+    expect(prompt).toContain('hard: The learner must connect two or more ideas');
     expect(prompt).not.toContain('medium:');
   });
 
   test('edge: a present customPrompt is included verbatim', () => {
     const prompt = buildPrompt({ ...baseArgs, customPrompt: 'Make it exam-style.' });
-    expect(prompt).toContain("STUDENT'S ADDITIONAL INSTRUCTION: Make it exam-style.");
+    expect(prompt).toContain("LEARNER'S ADDITIONAL INSTRUCTION: Make it exam-style.");
   });
 
   test('normal: an absent customPrompt omits that section entirely', () => {
     const prompt = buildPrompt(baseArgs);
-    expect(prompt).not.toContain("STUDENT'S ADDITIONAL INSTRUCTION");
+    expect(prompt).not.toContain("LEARNER'S ADDITIONAL INSTRUCTION");
+  });
+
+  test('normal: isRetake defaulting to false omits the RETAKE RULE section', () => {
+    const prompt = buildPrompt(baseArgs);
+    expect(prompt).not.toContain('RETAKE RULE');
+  });
+
+  test('edge: isRetake: true adds the RETAKE RULE section', () => {
+    const prompt = buildPrompt({ ...baseArgs, isRetake: true });
+    expect(prompt).toContain('RETAKE RULE (this is a retake of a previous attempt with the same settings):');
+    expect(prompt).toContain('vary your phrasing');
+  });
+});
+
+describe('buildSystemPrompt', () => {
+  test('normal: quiz gets the quiz-flavored tutor framing', () => {
+    expect(buildSystemPrompt('quiz')).toContain('quiz them on what they\'ve learned');
+  });
+
+  test('normal: flashcard gets the flashcard-flavored tutor framing', () => {
+    expect(buildSystemPrompt('flashcard')).toContain('create flashcards that reinforce');
+  });
+
+  test('edge: both share the same tutor/misconceptions framing', () => {
+    for (const type of ['quiz', 'flashcard']) {
+      const prompt = buildSystemPrompt(type);
+      expect(prompt).toContain('knowledgeable tutor helping a learner study their course material');
+      expect(prompt).toContain('common misconceptions');
+    }
   });
 });
 
@@ -257,6 +302,29 @@ describe('isLocationGrounded', () => {
   test('failure: missing/empty sourceLocation is not grounded', () => {
     expect(isLocationGrounded(undefined, tags)).toBe(false);
     expect(isLocationGrounded('', tags)).toBe(false);
+  });
+});
+
+describe('normalizeItems', () => {
+  test('normal: an array passes through unchanged', () => {
+    const items = [{ questionText: 'Q1' }];
+    expect(normalizeItems(items)).toBe(items);
+  });
+
+  test('normal: a valid JSON-string array is parsed', () => {
+    const items = [{ questionText: 'Q1' }, { questionText: 'Q2' }];
+    expect(normalizeItems(JSON.stringify(items))).toEqual(items);
+  });
+
+  test('failure: an invalid JSON string returns null', () => {
+    expect(normalizeItems('not valid json')).toBeNull();
+  });
+
+  test('failure: a non-array value (including a JSON-string object) returns null', () => {
+    expect(normalizeItems(42)).toBeNull();
+    expect(normalizeItems(null)).toBeNull();
+    expect(normalizeItems(undefined)).toBeNull();
+    expect(normalizeItems(JSON.stringify({ questionText: 'Q1' }))).toBeNull();
   });
 });
 

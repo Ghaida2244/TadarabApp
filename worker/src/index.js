@@ -5,10 +5,12 @@ import {
   validateCustomPrompt,
   computeMaxTokens,
   buildPrompt,
+  buildSystemPrompt,
   buildSourceText,
   buildToolSchema,
   shuffleQuizOptions,
   filterGroundedItems,
+  normalizeItems,
 } from './generation.js';
 
 // Google's published JWK set for Firebase ID tokens. jose caches this
@@ -73,6 +75,7 @@ function parseGenerateRequest(body) {
 
   const difficulties = parseDifficulty(body.difficulty);
   validateCustomPrompt(body.customPrompt);
+  const isRetake = body.isRetake === true;
 
   return {
     type: body.type,
@@ -80,6 +83,7 @@ function parseGenerateRequest(body) {
     materials: body.materials,
     difficulties,
     customPrompt: typeof body.customPrompt === 'string' ? body.customPrompt : null,
+    isRetake,
   };
 }
 
@@ -111,6 +115,7 @@ async function handleGenerate(request, env) {
   }
 
   const prompt = buildPrompt(req);
+  const system = buildSystemPrompt(req.type);
   const tool = buildToolSchema(req.type);
   const maxTokens = computeMaxTokens(req.type, req.count);
 
@@ -126,6 +131,7 @@ async function handleGenerate(request, env) {
       body: JSON.stringify({
         model: CLAUDE_MODEL,
         max_tokens: maxTokens,
+        system,
         messages: [{ role: 'user', content: prompt }],
         tools: [tool],
         tool_choice: { type: 'tool', name: tool.name },
@@ -141,7 +147,8 @@ async function handleGenerate(request, env) {
   }
 
   const toolUse = (claudeData.content ?? []).find((block) => block.type === 'tool_use' && block.name === tool.name);
-  if (!toolUse || !Array.isArray(toolUse.input?.items)) {
+  const rawItems = normalizeItems(toolUse?.input?.items);
+  if (!toolUse || !rawItems) {
     return jsonResponse(
       { error: 'Claude API error', message: 'Response did not include the expected structured output', details: claudeData },
       502,
@@ -153,7 +160,7 @@ async function handleGenerate(request, env) {
   // as-is. Ungrounded items are discarded rather than shown to the student;
   // this doesn't re-call Claude to regenerate a replacement.
   const sourceText = buildSourceText(req.materials);
-  const { grounded, discarded } = filterGroundedItems(toolUse.input.items, sourceText);
+  const { grounded, discarded } = filterGroundedItems(rawItems, sourceText);
 
   const items = req.type === 'quiz' ? shuffleQuizOptions(grounded) : grounded;
 
