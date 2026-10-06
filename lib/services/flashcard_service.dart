@@ -225,7 +225,7 @@ class FlashcardService {
               ],
             }),
           )
-          .timeout(const Duration(seconds: 45));
+          .timeout(const Duration(seconds: 120));
     } catch (_) {
       throw WorkerUnreachableException();
     }

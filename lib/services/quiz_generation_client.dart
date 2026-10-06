@@ -149,7 +149,7 @@ class QuizGenerationClient {
               'isRetake': isRetake,
             }),
           )
-          .timeout(const Duration(seconds: 45));
+          .timeout(const Duration(seconds: 120));
     } catch (_) {
       throw GenerationFailure(
         'Could not reach the quiz generator. Check your connection and try again.',
