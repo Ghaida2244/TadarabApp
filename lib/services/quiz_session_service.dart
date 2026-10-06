@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import '../dev_tools/fake_quiz_generation.dart';
 import '../models/enums.dart';
 import '../models/question.dart';
 import '../models/quiz_session.dart';
@@ -196,15 +195,7 @@ class QuizSessionService {
     StreakService? streakService,
   }) : _firestoreOverride = firestore,
        _authOverride = auth,
-       // kUseFakeQuizGeneration (lib/dev_tools/fake_quiz_generation.dart) is
-       // a dev-only switch — flip it there, not here, to go back to real
-       // Worker/Claude calls. Only applies when no generationClient is
-       // explicitly passed in (tests always pass their own).
-       _generationClient =
-           generationClient ??
-           (kUseFakeQuizGeneration
-               ? FakeQuizGenerationClient()
-               : QuizGenerationClient()),
+       _generationClient = generationClient ?? QuizGenerationClient(),
        _materialCatalog = materialCatalog ?? CoursesMaterialCatalog(),
        _streakService = streakService ?? StreakService();
 
