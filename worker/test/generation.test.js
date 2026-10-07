@@ -12,6 +12,7 @@ import {
   extractLocationTags,
   isLocationGrounded,
   filterGroundedItems,
+  buildGroundingLogEntry,
   normalizeItems,
   MAX_CUSTOM_PROMPT_LENGTH,
   MODEL_MAX_OUTPUT_TOKENS,
@@ -352,5 +353,50 @@ describe('filterGroundedItems', () => {
     const { grounded, discarded } = filterGroundedItems([], sourceText);
     expect(grounded).toEqual([]);
     expect(discarded).toEqual([]);
+  });
+});
+
+describe('buildGroundingLogEntry', () => {
+  test('normal: reports the ungrounded count, the total count, and each sourceLocation', () => {
+    const discarded = [
+      { questionText: 'Q1', sourceLocation: 'Slide 42' },
+      { questionText: 'Q2', sourceLocation: 'Slide 99' },
+    ];
+    const entry = buildGroundingLogEntry(discarded, 5);
+    expect(entry).toEqual({
+      event: 'ungrounded_source_locations',
+      ungroundedCount: 2,
+      totalCount: 5,
+      sourceLocations: ['Slide 42', 'Slide 99'],
+    });
+  });
+
+  test('normal: never includes question/answer text or anything beyond sourceLocation', () => {
+    const discarded = [{ questionText: 'Q1', explanation: 'Because...', sourceLocation: 'Slide 1' }];
+    const entry = buildGroundingLogEntry(discarded, 1);
+    expect(JSON.stringify(entry)).not.toContain('Q1');
+    expect(JSON.stringify(entry)).not.toContain('Because...');
+  });
+
+  test('edge: only the first 10 sourceLocations are included', () => {
+    const discarded = Array.from({ length: 15 }, (_, i) => ({ sourceLocation: `Slide ${i}` }));
+    const entry = buildGroundingLogEntry(discarded, 20);
+    expect(entry.ungroundedCount).toBe(15);
+    expect(entry.sourceLocations).toHaveLength(10);
+    expect(entry.sourceLocations[0]).toBe('Slide 0');
+    expect(entry.sourceLocations[9]).toBe('Slide 9');
+  });
+
+  test('edge: a sourceLocation longer than 120 characters is truncated', () => {
+    const longLocation = 'x'.repeat(200);
+    const discarded = [{ sourceLocation: longLocation }];
+    const entry = buildGroundingLogEntry(discarded, 1);
+    expect(entry.sourceLocations[0]).toHaveLength(120);
+  });
+
+  test('failure-adjacent: a missing sourceLocation becomes an empty string, not an error', () => {
+    const discarded = [{ questionText: 'Q1' }];
+    const entry = buildGroundingLogEntry(discarded, 1);
+    expect(entry.sourceLocations).toEqual(['']);
   });
 });

@@ -205,15 +205,19 @@ export function buildPrompt({ type, count, difficulties, customPrompt, materials
   sections.push(
     [
       'SOURCE TAGS:',
-      '- The source text below is split into labeled sections (e.g. [Slide 2], [Material: Title],',
-      '  [Heading: Name], [Paragraph 5]). Tags only mark where content came from; never write',
-      '  a question about a tag itself (e.g. "what is mentioned in Slide 5?").',
-      '- Fill sourceLocation with the nearest tag before the content used, copied exactly as',
-      '  written (e.g. "Source page 4"); never translate it.',
-      '- If more than one location applies, list each tag separately (e.g. "Source page 8,',
-      '  Source page 9"); never use ranges or plural forms.',
+      '- The source text below is split into labeled sections (e.g. [Slide 2: Chapter 1],',
+      '  [Heading 3: Business Process Lifecycle], [Paragraph 5]). Tags only mark where',
+      '  content came from; never write a question about a tag itself (e.g. "what is',
+      '  mentioned in Slide 5?").',
+      '- Fill sourceLocation with the nearest tag before the content used, copying the',
+      '  complete text inside the brackets — including everything after the colon —',
+      '  exactly as written (e.g. the tag [Slide 2: Chapter 1] gives sourceLocation',
+      '  "Slide 2: Chapter 1"); never translate it.',
+      '- If more than one location applies, list each tag separately (e.g. "Slide 2:',
+      '  Chapter 1, Heading 3: Business Process Lifecycle"); never use ranges or plural',
+      '  forms.',
       '- When more than one material is involved, include the material title with each',
-      '  location (e.g. "Chapter 2 - Database Basics, Slide 5").',
+      '  location (e.g. "Lecture 1 - Introduction, Slide 5: Processes Everywhere").',
     ].join('\n'),
   );
 
@@ -331,9 +335,11 @@ export function normalizeItems(items) {
 }
 
 /// Splits generated `items` into { grounded, discarded } based on
-/// [isLocationGrounded]. Does not itself re-call Claude to regenerate a
-/// discarded item's replacement — see index.js for how a non-empty
-/// `discarded` list is surfaced to the caller via `note`.
+/// [isLocationGrounded] — monitoring only (CLAUDE.md's grounding rule: a
+/// slightly imprecise sourceLocation shown to the student is acceptable,
+/// losing a valid item is not). index.js never drops `discarded` items from
+/// the response or regenerates them; it only logs how often this happens,
+/// to inform future prompt tuning.
 export function filterGroundedItems(items, sourceText) {
   const tags = extractLocationTags(sourceText);
   const grounded = [];
@@ -342,4 +348,19 @@ export function filterGroundedItems(items, sourceText) {
     (isLocationGrounded(item.sourceLocation, tags) ? grounded : discarded).push(item);
   }
   return { grounded, discarded };
+}
+
+/// Builds the compact monitoring log entry index.js writes (via
+/// `console.log(JSON.stringify(...))`) when [filterGroundedItems] finds
+/// ungrounded items — a count, the request's total item count, and each
+/// ungrounded item's sourceLocation truncated to 120 characters (first 10
+/// only). Deliberately excludes question/answer text, source text, and any
+/// user-identifying data.
+export function buildGroundingLogEntry(discarded, totalCount) {
+  return {
+    event: 'ungrounded_source_locations',
+    ungroundedCount: discarded.length,
+    totalCount,
+    sourceLocations: discarded.slice(0, 10).map((item) => String(item?.sourceLocation ?? '').slice(0, 120)),
+  };
 }

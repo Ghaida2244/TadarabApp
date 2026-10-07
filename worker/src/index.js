@@ -10,6 +10,7 @@ import {
   buildToolSchema,
   shuffleQuizOptions,
   filterGroundedItems,
+  buildGroundingLogEntry,
   normalizeItems,
 } from './generation.js';
 
@@ -155,22 +156,22 @@ async function handleGenerate(request, env) {
     );
   }
 
-  // Grounding check (CLAUDE.md, corrected): sourceLocation must name a real
-  // location tag from the source text sent to Claude, not just be trusted
-  // as-is. Ungrounded items are discarded rather than shown to the student;
-  // this doesn't re-call Claude to regenerate a replacement.
+  // Grounding check (CLAUDE.md, corrected): sourceLocation is checked
+  // against the real location tags from the source text sent to Claude, but
+  // this is monitoring only — a slightly imprecise sourceLocation shown to
+  // the student is acceptable, losing a valid item is not. No item is ever
+  // dropped or regenerated because of this check; when some items don't
+  // check out, it's logged (count + truncated sourceLocation strings, no
+  // question/source text) so the prompt can keep being tuned.
   const sourceText = buildSourceText(req.materials);
-  const { grounded, discarded } = filterGroundedItems(rawItems, sourceText);
+  const { discarded } = filterGroundedItems(rawItems, sourceText);
 
-  const items = req.type === 'quiz' ? shuffleQuizOptions(grounded) : grounded;
+  if (discarded.length > 0) {
+    console.log(JSON.stringify(buildGroundingLogEntry(discarded, rawItems.length)));
+  }
 
-  const claudeNote = toolUse.input.note ?? null;
-  const groundingNote =
-    discarded.length > 0
-      ? `${discarded.length} generated item${discarded.length === 1 ? '' : 's'} could not be verified against ` +
-        `the material's source locations and ${discarded.length === 1 ? 'was' : 'were'} left out.`
-      : null;
-  const note = [claudeNote, groundingNote].filter(Boolean).join(' ') || null;
+  const items = req.type === 'quiz' ? shuffleQuizOptions(rawItems) : rawItems;
+  const note = toolUse.input.note ?? null;
 
   return jsonResponse({
     uid: payload.sub,
