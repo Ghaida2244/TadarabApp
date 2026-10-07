@@ -4,6 +4,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/features/flashcards/logic/flashcard_logic.dart';
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/flashcard.dart';
+import 'package:tadarab_app/models/flashcard_session.dart';
+
+FlashcardSession _session(String id, DateTime createdAt) {
+  return FlashcardSession(
+    sessionId: id,
+    createdAt: createdAt,
+    difficultyLevels: const [DifficultyLevel.medium],
+    email: 'student@example.com',
+    courseId: 'course-1',
+    materialIds: const ['material-1'],
+    materialTitles: const ['Lecture 1'],
+  );
+}
 
 Flashcard _card(String id, {ReviewStatus? status, int cardIndex = 0}) {
   return Flashcard(
@@ -191,6 +204,40 @@ void main() {
         body,
         "Its counts and review list will go with it. This can't be undone.",
       );
+    });
+  });
+
+  group('sortSessionsNewestFirst', () {
+    test('normal: sorts sessions newest-createdAt first', () {
+      final oldest = _session('a', DateTime(2026, 1, 1));
+      final middle = _session('b', DateTime(2026, 2, 1));
+      final newest = _session('c', DateTime(2026, 3, 1));
+
+      final sorted = sortSessionsNewestFirst([middle, oldest, newest]);
+
+      expect(
+        sorted.map((s) => s.sessionId).toList(),
+        ['c', 'b', 'a'],
+      );
+    });
+
+    test('edge: an empty list returns an empty list, not an error', () {
+      expect(sortSessionsNewestFirst(const []), isEmpty);
+    });
+
+    test('edge: a single session is returned unchanged', () {
+      final only = _session('a', DateTime(2026, 1, 1));
+      expect(sortSessionsNewestFirst([only]), [only]);
+    });
+
+    test('failure-adjacent: does not mutate the input list', () {
+      final oldest = _session('a', DateTime(2026, 1, 1));
+      final newest = _session('b', DateTime(2026, 2, 1));
+      final input = [oldest, newest];
+
+      sortSessionsNewestFirst(input);
+
+      expect(input.map((s) => s.sessionId).toList(), ['a', 'b']);
     });
   });
 }

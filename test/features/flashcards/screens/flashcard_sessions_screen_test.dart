@@ -59,6 +59,24 @@ void main() {
     expect(find.text('Start new flashcards'), findsOneWidget);
   });
 
+  testWidgets('a stream error shows the error state, not the empty state', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _wrap(
+        FakeFlashcardService(
+          sessions: const [],
+          watchSessionsError: Exception('failed-precondition'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text("Couldn't load your sessions."), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('No sessions yet'), findsNothing);
+  });
+
   testWidgets('shows a singular session count for exactly one session', (
     tester,
   ) async {

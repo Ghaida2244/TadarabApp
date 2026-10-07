@@ -19,6 +19,7 @@ class FakeFlashcardService extends FlashcardService {
     this.createdSessionId = 'session-new',
     this.writeError,
     this.pendingGeneration,
+    this.watchSessionsError,
   }) : super(uid: 'uid-1', courseId: 'course-1');
 
   List<StudyMaterial> materials;
@@ -36,6 +37,11 @@ class FakeFlashcardService extends FlashcardService {
   /// immediately — lets a test observe the Generating overlay before
   /// completing generation itself.
   Completer<FlashcardGenerationResult>? pendingGeneration;
+
+  /// When set, `watchSessions()` emits this as a stream error instead of
+  /// [sessions] — e.g. to simulate a Firestore `failed-precondition` from a
+  /// missing composite index.
+  Object? watchSessionsError;
 
   int fetchMaterialsCalls = 0;
   int generateFlashcardsCalls = 0;
@@ -58,7 +64,10 @@ class FakeFlashcardService extends FlashcardService {
   }
 
   @override
-  Stream<List<FlashcardSession>> watchSessions() => Stream.value(sessions);
+  Stream<List<FlashcardSession>> watchSessions() {
+    if (watchSessionsError != null) return Stream.error(watchSessionsError!);
+    return Stream.value(sessions);
+  }
 
   @override
   Future<FlashcardGenerationResult> generateFlashcards({

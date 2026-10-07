@@ -48,6 +48,12 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
       widget.service ??
       FlashcardService(uid: widget.uid, courseId: widget.courseId);
 
+  // StreamBuilder's `stream:` argument below calls watchSessions() fresh on
+  // every build, and a Stream has no overridden `==`, so a plain setState
+  // is enough to make it resubscribe — a "Retry" tap for a Stream, the same
+  // way CoursesListScreen's _reload() re-assigns its Future.
+  void _retry() => setState(() {});
+
   void _openSetup() {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -133,6 +139,9 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
       body: StreamBuilder<List<FlashcardSession>>(
         stream: _service.watchSessions(),
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            debugPrint('FlashcardSessionsScreen: watchSessions() error: ${snapshot.error}');
+          }
           final sessions = snapshot.data ?? const <FlashcardSession>[];
           final inProgress = sessions
               .where((s) => !s.isSessionCompleted)
@@ -148,7 +157,9 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
                 onBack: () => Navigator.of(context).maybePop(),
               ),
               Expanded(
-                child: snapshot.connectionState == ConnectionState.waiting
+                child: snapshot.hasError
+                    ? _ErrorState(onRetry: _retry)
+                    : snapshot.connectionState == ConnectionState.waiting
                     ? const Center(child: CircularProgressIndicator())
                     : sessions.isEmpty
                     ? const _EmptyState()
@@ -278,6 +289,42 @@ class _SectionLabel extends StatelessWidget {
           const SizedBox(width: 9),
           Expanded(child: Container(height: 2, color: _kSectionDividerColor)),
         ],
+      ),
+    );
+  }
+}
+
+/// Mirrors CoursesListScreen's `_ErrorState` (courses_list_screen.dart):
+/// a short message plus a Retry button, never silently falling back to the
+/// empty state when the stream actually errored (e.g. a Firestore
+/// `failed-precondition` from a missing composite index).
+class _ErrorState extends StatelessWidget {
+  const _ErrorState({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              "Couldn't load your sessions.",
+              style: AppTypography.subtitle,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            AppButton(
+              label: 'Retry',
+              onPressed: onRetry,
+              variant: AppButtonVariant.outlinedBrand,
+              height: 46,
+            ),
+          ],
+        ),
       ),
     );
   }

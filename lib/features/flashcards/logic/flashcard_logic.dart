@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import '../../../models/flashcard.dart';
+import '../../../models/flashcard_session.dart';
 
 /// Points awarded per flashcard marked "I Know It" at session (or Retake)
 /// completion — see CLAUDE.md's Points system section.
@@ -87,6 +88,18 @@ RetakeResult prepareRetake({
       shuffled[i].copyWith(reviewStatus: () => null, cardIndex: i),
   ];
   return (flashcards: reset, sessionFields: kRetakeSessionFields);
+}
+
+/// Sorts a course's flashcard sessions newest first. Pulled out as a pure
+/// function (rather than a Firestore `orderBy('createdAt')`) so
+/// [FlashcardService.watchSessions] doesn't need a composite index for its
+/// `where('courseId', ...)` + ordering — and so the sort itself is directly
+/// unit-testable without a real or fake Firestore.
+List<FlashcardSession> sortSessionsNewestFirst(
+  List<FlashcardSession> sessions,
+) {
+  return List<FlashcardSession>.from(sessions)
+    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 }
 
 /// The Delete-session dialog's body text, which differs for a completed vs.

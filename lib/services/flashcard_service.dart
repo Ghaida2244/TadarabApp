@@ -155,12 +155,21 @@ class FlashcardService {
   }
 
   /// All flashcard sessions for this course, newest first (Screen 1).
+  ///
+  /// Sorts in Dart rather than via a Firestore `orderBy('createdAt')` —
+  /// combined with the `where('courseId', ...)` filter, that would need a
+  /// composite index that doesn't exist (see `firestore.indexes.json`), and
+  /// the query would fail with `failed-precondition` instead of returning
+  /// results, live updates or not.
   Stream<List<FlashcardSession>> watchSessions() {
     return _sessionsRef
         .where('courseId', isEqualTo: courseId)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snap) => snap.docs.map(FlashcardSession.fromFirestore).toList());
+        .map(
+          (snap) => sortSessionsNewestFirst(
+            snap.docs.map(FlashcardSession.fromFirestore).toList(),
+          ),
+        );
   }
 
   /// Calls the Cloudflare Worker's `POST /generate` (type: "flashcard") —
