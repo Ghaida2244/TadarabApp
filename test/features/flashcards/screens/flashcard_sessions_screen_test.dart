@@ -14,10 +14,13 @@ FlashcardSession _session({
   int needsReviewCount = 0,
   int currentFlashcardIndex = 0,
   List<String> materialTitles = const ['Lecture 1 - Introduction'],
+  DateTime? createdAt,
+  DateTime? completedAt,
 }) {
   return FlashcardSession(
     sessionId: id,
-    createdAt: DateTime(2026, 1, 1),
+    createdAt: createdAt ?? DateTime(2026, 1, 1),
+    completedAt: completedAt,
     difficultyLevels: const [DifficultyLevel.easy],
     email: 'student@example.com',
     courseId: 'course-1',
@@ -76,6 +79,70 @@ void main() {
     expect(find.text('Retry'), findsOneWidget);
     expect(find.text('No sessions yet'), findsNothing);
   });
+
+  testWidgets(
+    'IN PROGRESS rows show newest-created first, and COMPLETED rows show '
+    'most-recently-completed first',
+    (tester) async {
+      // IN PROGRESS: s2 (created later) must render above s1.
+      final s1 = _session(
+        id: 's1',
+        completed: false,
+        createdAt: DateTime(2026, 1, 1),
+        currentFlashcardIndex: 0,
+      );
+      final s2 = _session(
+        id: 's2',
+        completed: false,
+        createdAt: DateTime(2026, 3, 1),
+        currentFlashcardIndex: 4,
+      );
+      // COMPLETED: s4 (completed later, despite an earlier createdAt) must
+      // render above s3.
+      final s3 = _session(
+        id: 's3',
+        completed: true,
+        createdAt: DateTime(2025, 1, 1),
+        completedAt: DateTime(2026, 1, 1),
+        knownCount: 3,
+      );
+      final s4 = _session(
+        id: 's4',
+        completed: true,
+        createdAt: DateTime(2025, 1, 1),
+        completedAt: DateTime(2026, 3, 1),
+        knownCount: 7,
+      );
+
+      await tester.pumpWidget(
+        _wrap(FakeFlashcardService(sessions: [s1, s2, s3, s4])),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final s2Resume = tester.getTopLeft(find.text('Resume at card 5')).dy;
+      final s1Resume = tester.getTopLeft(find.text('Resume at card 1')).dy;
+      expect(
+        s2Resume,
+        lessThan(s1Resume),
+        reason: 'the newer in-progress session (s2) should render above s1',
+      );
+
+      // The COMPLETED rows sit below both IN PROGRESS rows and may be
+      // scrolled out of the default test viewport — bring them into view.
+      await tester.drag(find.byType(ListView), const Offset(0, -600));
+      await tester.pump();
+
+      final s4Known = tester.getTopLeft(find.text('10 cards · 7 known')).dy;
+      final s3Known = tester.getTopLeft(find.text('10 cards · 3 known')).dy;
+      expect(
+        s4Known,
+        lessThan(s3Known),
+        reason:
+            'the more recently completed session (s4) should render above s3',
+      );
+    },
+  );
 
   testWidgets('shows a singular session count for exactly one session', (
     tester,

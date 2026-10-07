@@ -102,6 +102,28 @@ List<FlashcardSession> sortSessionsNewestFirst(
     ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 }
 
+/// Sorts the "IN PROGRESS" section (Screen 1) newest-created first — the
+/// most recently started session leads. Same ordering as
+/// [sortSessionsNewestFirst]; kept as its own named function so each of the
+/// screen's two sections has an explicit, independently-testable sort step,
+/// even though today they happen to share one implementation.
+List<FlashcardSession> sortInProgressSessions(
+  List<FlashcardSession> sessions,
+) => sortSessionsNewestFirst(sessions);
+
+/// Sorts the "COMPLETED" section (Screen 1) most-recently-completed first.
+/// Falls back to [FlashcardSession.createdAt] when
+/// [FlashcardSession.completedAt] is null — shouldn't happen for a
+/// genuinely completed session, but keeps this sortable rather than
+/// crashing or silently pushing it to one end if it ever does.
+List<FlashcardSession> sortCompletedSessions(
+  List<FlashcardSession> sessions,
+) {
+  DateTime effectiveDate(FlashcardSession s) => s.completedAt ?? s.createdAt;
+  return List<FlashcardSession>.from(sessions)
+    ..sort((a, b) => effectiveDate(b).compareTo(effectiveDate(a)));
+}
+
 /// The Delete-session dialog's body text, which differs for a completed vs.
 /// an in-progress session — see CLAUDE.md's Screen 6 section.
 String deleteSessionBody({

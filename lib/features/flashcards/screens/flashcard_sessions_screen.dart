@@ -5,6 +5,7 @@ import '../../../services/flashcard_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/app_button.dart';
 import '../../../widgets/dashed_border.dart';
+import '../logic/flashcard_logic.dart';
 import '../widgets/delete_session_dialog.dart';
 import '../widgets/header_circle_button.dart';
 import 'flashcard_flip_deck_screen.dart';
@@ -143,12 +144,12 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
             debugPrint('FlashcardSessionsScreen: watchSessions() error: ${snapshot.error}');
           }
           final sessions = snapshot.data ?? const <FlashcardSession>[];
-          final inProgress = sessions
-              .where((s) => !s.isSessionCompleted)
-              .toList();
-          final completed = sessions
-              .where((s) => s.isSessionCompleted)
-              .toList();
+          final inProgress = sortInProgressSessions(
+            sessions.where((s) => !s.isSessionCompleted).toList(),
+          );
+          final completed = sortCompletedSessions(
+            sessions.where((s) => s.isSessionCompleted).toList(),
+          );
 
           return Column(
             children: [

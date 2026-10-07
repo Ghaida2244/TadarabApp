@@ -6,10 +6,17 @@ import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/flashcard.dart';
 import 'package:tadarab_app/models/flashcard_session.dart';
 
-FlashcardSession _session(String id, DateTime createdAt) {
+FlashcardSession _session(
+  String id,
+  DateTime createdAt, {
+  DateTime? completedAt,
+  bool isSessionCompleted = false,
+}) {
   return FlashcardSession(
     sessionId: id,
     createdAt: createdAt,
+    completedAt: completedAt,
+    isSessionCompleted: isSessionCompleted,
     difficultyLevels: const [DifficultyLevel.medium],
     email: 'student@example.com',
     courseId: 'course-1',
@@ -236,6 +243,124 @@ void main() {
       final input = [oldest, newest];
 
       sortSessionsNewestFirst(input);
+
+      expect(input.map((s) => s.sessionId).toList(), ['a', 'b']);
+    });
+  });
+
+  group('sortInProgressSessions', () {
+    test('normal: sorts newest-created first', () {
+      final oldest = _session('a', DateTime(2026, 1, 1));
+      final middle = _session('b', DateTime(2026, 2, 1));
+      final newest = _session('c', DateTime(2026, 3, 1));
+
+      final sorted = sortInProgressSessions([middle, oldest, newest]);
+
+      expect(sorted.map((s) => s.sessionId).toList(), ['c', 'b', 'a']);
+    });
+
+    test('edge: a tie in createdAt keeps a stable relative order', () {
+      final same = DateTime(2026, 1, 1);
+      final first = _session('a', same);
+      final second = _session('b', same);
+
+      final sorted = sortInProgressSessions([first, second]);
+
+      expect(sorted.map((s) => s.sessionId).toList(), ['a', 'b']);
+    });
+
+    test('failure-adjacent: does not mutate the input list', () {
+      final oldest = _session('a', DateTime(2026, 1, 1));
+      final newest = _session('b', DateTime(2026, 2, 1));
+      final input = [oldest, newest];
+
+      sortInProgressSessions(input);
+
+      expect(input.map((s) => s.sessionId).toList(), ['a', 'b']);
+    });
+  });
+
+  group('sortCompletedSessions', () {
+    test('normal: sorts most-recently-completed first', () {
+      final oldest = _session(
+        'a',
+        DateTime(2025, 1, 1),
+        isSessionCompleted: true,
+        completedAt: DateTime(2026, 1, 1),
+      );
+      final newest = _session(
+        'b',
+        DateTime(2025, 1, 1),
+        isSessionCompleted: true,
+        completedAt: DateTime(2026, 3, 1),
+      );
+
+      final sorted = sortCompletedSessions([oldest, newest]);
+
+      expect(sorted.map((s) => s.sessionId).toList(), ['b', 'a']);
+    });
+
+    test(
+      'normal: a null completedAt falls back to createdAt for ordering',
+      () {
+        // "a" has no completedAt at all; its createdAt alone should still
+        // place it correctly relative to "b"'s real completedAt.
+        final noCompletedAt = _session(
+          'a',
+          DateTime(2026, 2, 1),
+          isSessionCompleted: true,
+        );
+        final hasCompletedAt = _session(
+          'b',
+          DateTime(2025, 1, 1),
+          isSessionCompleted: true,
+          completedAt: DateTime(2026, 1, 1),
+        );
+
+        final sorted = sortCompletedSessions([hasCompletedAt, noCompletedAt]);
+
+        // "a"'s fallback createdAt (Feb 2026) is later than "b"'s real
+        // completedAt (Jan 2026), so "a" leads.
+        expect(sorted.map((s) => s.sessionId).toList(), ['a', 'b']);
+      },
+    );
+
+    test('edge: a tie in completedAt keeps a stable relative order', () {
+      final same = DateTime(2026, 1, 1);
+      final first = _session(
+        'a',
+        DateTime(2025, 1, 1),
+        isSessionCompleted: true,
+        completedAt: same,
+      );
+      final second = _session(
+        'b',
+        DateTime(2025, 1, 1),
+        isSessionCompleted: true,
+        completedAt: same,
+      );
+
+      final sorted = sortCompletedSessions([first, second]);
+
+      expect(sorted.map((s) => s.sessionId).toList(), ['a', 'b']);
+    });
+
+    test('failure-adjacent: does not mutate the input list', () {
+      final older = _session(
+        'a',
+        DateTime(2025, 1, 1),
+        isSessionCompleted: true,
+        completedAt: DateTime(2026, 1, 1),
+      );
+      final newer = _session(
+        'b',
+        DateTime(2025, 1, 1),
+        isSessionCompleted: true,
+        completedAt: DateTime(2026, 2, 1),
+      );
+      final input = [older, newer];
+
+      sortCompletedSessions(input);
 
       expect(input.map((s) => s.sessionId).toList(), ['a', 'b']);
     });
