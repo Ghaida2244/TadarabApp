@@ -9,8 +9,13 @@ import 'package:tadarab_app/models/study_material.dart';
 import 'package:tadarab_app/screens/quiz/quiz_navigation.dart';
 import 'package:tadarab_app/screens/quiz/quiz_sessions_screen.dart';
 import 'package:tadarab_app/services/quiz_session_service.dart';
+import 'package:tadarab_app/widgets/app_button.dart';
 
 import '../../helpers/fake_quiz_session_service.dart';
+
+AppButton _retakeButton(WidgetTester tester) => tester.widget<AppButton>(
+  find.byWidgetPredicate((w) => w is AppButton && w.label == 'Retake quiz'),
+);
 
 QuizSession _session({
   required String id,
@@ -143,6 +148,275 @@ void main() {
       expect(service.submitExamSessionCalls, 0);
     },
   );
+
+  group('Retake loading state', () {
+    GeneratedSessionResult learningResult(QuizSession original) {
+      return GeneratedSessionResult(
+        session: QuizSession(
+          sessionId: original.sessionId,
+          createdAt: original.createdAt,
+          difficultyLevels: original.difficultyLevels,
+          email: original.email,
+          courseId: original.courseId,
+          materialIds: original.materialIds,
+          numberOfQuestions: 1,
+          mode: Mode.learning,
+        ),
+        note: null,
+        requestedCount: 1,
+        questions: [
+          Question(
+            questionId: 'q1',
+            questionText: 'Fresh question',
+            correctAnswer: 'A',
+            explanation: 'E',
+            sourceLocation: 'Slide 1',
+            options: const ['A', 'B', 'C', 'D'],
+            sessionId: original.sessionId,
+          ),
+        ],
+      );
+    }
+
+    testWidgets(
+      'tapping Retake shows a loading state on the button and disables it',
+      (tester) async {
+        final original = _session(id: 's1', completed: true, mode: Mode.learning);
+        final pending = Completer<GeneratedSessionResult>();
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          pendingRetakeSession: pending,
+        );
+        await _pump(tester, service);
+
+        expect(_retakeButton(tester).loading, isFalse);
+
+        await tester.tap(find.text('Retake quiz'));
+        await tester.pump();
+
+        expect(_retakeButton(tester).loading, isTrue);
+        expect(_retakeButton(tester).onPressed, isNull);
+
+        pending.complete(learningResult(original));
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'a second tap while loading does not trigger a second retake call',
+      (tester) async {
+        final original = _session(id: 's1', completed: true, mode: Mode.learning);
+        final pending = Completer<GeneratedSessionResult>();
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          pendingRetakeSession: pending,
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Retake quiz'));
+        await tester.pump();
+        expect(service.retakeCalls, 1);
+
+        // The button is disabled while loading, but tap it again anyway to
+        // prove the guard in _retake() itself (not just the disabled
+        // button) is what prevents a second call.
+        await tester.tap(find.text('Retake quiz'), warnIfMissed: false);
+        await tester.pump();
+
+        expect(service.retakeCalls, 1);
+
+        pending.complete(learningResult(original));
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'loading clears after a successful retake, once popped back to Sessions',
+      (tester) async {
+        // Exam mode, not Learning: a successful Learning retake flips the
+        // session to in-progress, which removes its Retake button entirely
+        // (correct, unrelated to loading) — Exam's retake leaves the
+        // original completed session in the list untouched (see the
+        // existing Exam-retake regression test above), so its Retake
+        // button is still there to check.
+        final original = _session(id: 's1', completed: true); // mode: Mode.exam
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          retakeSessionResult: GeneratedSessionResult(
+            session: QuizSession(
+              sessionId: original.sessionId,
+              createdAt: original.createdAt,
+              difficultyLevels: original.difficultyLevels,
+              email: original.email,
+              courseId: original.courseId,
+              materialIds: original.materialIds,
+              numberOfQuestions: 1,
+              mode: Mode.exam,
+            ),
+            note: null,
+            requestedCount: 1,
+            questions: [
+              Question(
+                questionId: 'q1',
+                questionText: 'Fresh question',
+                correctAnswer: 'A',
+                explanation: 'E',
+                sourceLocation: 'Slide 1',
+                options: const ['A', 'B', 'C', 'D'],
+                sessionId: original.sessionId,
+              ),
+            ],
+          ),
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Retake quiz'));
+        await tester.pumpAndSettle();
+
+        // The Exam draft is pushed (not a replacement), so Sessions is
+        // still mounted underneath — pop back to check it.
+        final navigatorState = tester.state<NavigatorState>(
+          find.byType(Navigator),
+        );
+        navigatorState.pop();
+        await tester.pumpAndSettle();
+
+        expect(_retakeButton(tester).loading, isFalse);
+        expect(_retakeButton(tester).onPressed, isNotNull);
+      },
+    );
+
+    testWidgets(
+      'loading clears after a failed retake, and shows the error SnackBar',
+      (tester) async {
+        final original = _session(id: 's1', completed: true, mode: Mode.learning);
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          retakeSessionError: Exception('boom'),
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Retake quiz'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text('Retake failed. Please try again.'), findsOneWidget);
+        expect(_retakeButton(tester).loading, isFalse);
+        expect(_retakeButton(tester).onPressed, isNotNull);
+      },
+    );
+
+    testWidgets(
+      "a successful retake that falls short of the requested count shows "
+      "Flashcards' style of message",
+      (tester) async {
+        final original = _session(id: 's1', completed: true, mode: Mode.learning);
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          retakeSessionResult: GeneratedSessionResult(
+            session: QuizSession(
+              sessionId: original.sessionId,
+              createdAt: original.createdAt,
+              difficultyLevels: original.difficultyLevels,
+              email: original.email,
+              courseId: original.courseId,
+              materialIds: original.materialIds,
+              numberOfQuestions: 1,
+              mode: Mode.learning,
+            ),
+            note: null,
+            requestedCount: 5,
+            questions: [
+              Question(
+                questionId: 'q1',
+                questionText: 'Fresh question',
+                correctAnswer: 'A',
+                explanation: 'E',
+                sourceLocation: 'Slide 1',
+                options: const ['A', 'B', 'C', 'D'],
+                sessionId: original.sessionId,
+              ),
+            ],
+          ),
+          questions: {'s1': []},
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Retake quiz'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text('Generated 1 of 5 requested.'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      "a successful retake with the Worker's own note shows that note "
+      'instead of a generic message',
+      (tester) async {
+        final original = _session(id: 's1', completed: true, mode: Mode.learning);
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          retakeSessionResult: GeneratedSessionResult(
+            session: QuizSession(
+              sessionId: original.sessionId,
+              createdAt: original.createdAt,
+              difficultyLevels: original.difficultyLevels,
+              email: original.email,
+              courseId: original.courseId,
+              materialIds: original.materialIds,
+              numberOfQuestions: 1,
+              mode: Mode.learning,
+            ),
+            note: 'Only easy items were generated this time.',
+            requestedCount: 1,
+            questions: [
+              Question(
+                questionId: 'q1',
+                questionText: 'Fresh question',
+                correctAnswer: 'A',
+                explanation: 'E',
+                sourceLocation: 'Slide 1',
+                options: const ['A', 'B', 'C', 'D'],
+                sessionId: original.sessionId,
+              ),
+            ],
+          ),
+          questions: {'s1': []},
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Retake quiz'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          find.text('Only easy items were generated this time.'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'a successful retake at the full requested count with no note shows '
+      'no SnackBar',
+      (tester) async {
+        final original = _session(id: 's1', completed: true, mode: Mode.learning);
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          retakeSessionResult: learningResult(original),
+          questions: {'s1': []},
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Retake quiz'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.byType(SnackBar), findsNothing);
+      },
+    );
+  });
 
   group('materials badge', () {
     testWidgets(

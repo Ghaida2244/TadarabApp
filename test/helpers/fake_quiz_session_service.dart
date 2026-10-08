@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/question.dart';
 import 'package:tadarab_app/models/quiz_session.dart';
@@ -16,6 +18,8 @@ class FakeQuizSessionService extends QuizSessionService {
     this.createSessionResult,
     this.createSessionError,
     this.retakeSessionResult,
+    this.retakeSessionError,
+    this.pendingRetakeSession,
   }) : materials = materials ?? const [],
        sessions = List.of(sessions ?? const []),
        questionsBySession = {
@@ -33,8 +37,15 @@ class FakeQuizSessionService extends QuizSessionService {
   GeneratedSessionResult? createSessionResult;
   Object? createSessionError;
   GeneratedSessionResult? retakeSessionResult;
+  Object? retakeSessionError;
+
+  /// When set, `retakeSession` awaits this instead of resolving
+  /// immediately — lets a test observe the Sessions screen's per-session
+  /// loading state before the (real) Worker call would resolve.
+  Completer<GeneratedSessionResult>? pendingRetakeSession;
 
   int deleteCalls = 0;
+  int retakeCalls = 0;
   int completeCalls = 0;
   int reportCalls = 0;
   int createSessionCalls = 0;
@@ -204,6 +215,9 @@ class FakeQuizSessionService extends QuizSessionService {
 
   @override
   Future<GeneratedSessionResult> retakeSession(String sessionId) async {
+    retakeCalls++;
+    if (pendingRetakeSession != null) return pendingRetakeSession!.future;
+    if (retakeSessionError != null) throw retakeSessionError!;
     final result = retakeSessionResult!;
     // Mirrors the real retakeSession: only Learning writes immediately.
     // An Exam retake stays a pure in-memory draft until its own final

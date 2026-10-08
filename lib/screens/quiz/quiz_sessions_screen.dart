@@ -42,6 +42,11 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
   // materialId -> title lookup, fetched once alongside the sessions.
   late Future<Map<String, String>> _materialTitlesFuture;
 
+  // Per-session, not one screen-wide flag — mirrors Flashcards'
+  // FlashcardSessionsScreen, so retaking one session doesn't freeze every
+  // other row's button while generation is in flight.
+  final Set<String> _retakingSessionIds = {};
+
   @override
   void initState() {
     super.initState();
@@ -146,9 +151,26 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
   }
 
   Future<void> _retake(QuizSession session) async {
+    // Already retaking this session (double tap) — ignore, don't re-enter.
+    if (_retakingSessionIds.contains(session.sessionId)) return;
+    setState(() => _retakingSessionIds.add(session.sessionId));
+
     try {
       final result = await widget.service.retakeSession(session.sessionId);
       if (!mounted) return;
+      setState(() => _retakingSessionIds.remove(session.sessionId));
+
+      final message = result.note ??
+          (result.gotFewerThanRequested
+              ? 'Generated ${result.session.numberOfQuestions} of '
+                  '${result.requestedCount} requested.'
+              : null);
+      if (message != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+      }
+
       if (result.session.mode == Mode.exam) {
         // Nothing was written to Firestore for this retake yet — see
         // QuizSessionService.retakeSession's Exam branch — so there's
@@ -171,6 +193,7 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
       _resume(result.session);
     } on NoQuestionsGeneratedException catch (e) {
       if (!mounted) return;
+      setState(() => _retakingSessionIds.remove(session.sessionId));
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -180,6 +203,7 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
       );
     } catch (_) {
       if (!mounted) return;
+      setState(() => _retakingSessionIds.remove(session.sessionId));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Retake failed. Please try again.')),
       );
@@ -268,6 +292,9 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
                                 ? () => _retake(entry.session)
                                 : null,
                             onDelete: () => _confirmDelete(entry.session),
+                            isRetaking: _retakingSessionIds.contains(
+                              entry.session.sessionId,
+                            ),
                           );
                           if (!entry.showHeader) return card;
                           return Column(
@@ -416,6 +443,7 @@ class _SessionCard extends StatelessWidget {
     required this.onAct,
     required this.onRetake,
     required this.onDelete,
+    this.isRetaking = false,
   });
 
   final QuizSession session;
@@ -429,6 +457,10 @@ class _SessionCard extends StatelessWidget {
   final VoidCallback onAct;
   final VoidCallback? onRetake;
   final VoidCallback onDelete;
+
+  /// True while a Worker call for this session's Retake is in flight —
+  /// disables the button and shows a spinner, prevents double taps.
+  final bool isRetaking;
 
   /// The comma-joined titles of this session's materials, straight from
   /// the design file's own logic (`matsLabel` in Tadarab Phase 2 -
@@ -585,10 +617,13 @@ class _SessionCard extends StatelessWidget {
                       AppButton(
                         label: 'Retake quiz',
                         variant: AppButtonVariant.outlinedBrand,
-                        onPressed: onRetake,
+                        onPressed: isRetaking ? null : onRetake,
+                        loading: isRetaking,
                         height: 46,
                         borderRadius: 14,
-                        shadowColor: AppColors.navy.withValues(alpha: 0.10),
+                        shadowColor: isRetaking
+                            ? null
+                            : AppColors.navy.withValues(alpha: 0.10),
                       ),
                     ],
                   ],
