@@ -49,11 +49,27 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
       widget.service ??
       FlashcardService(uid: widget.uid, courseId: widget.courseId);
 
-  // StreamBuilder's `stream:` argument below calls watchSessions() fresh on
-  // every build, and a Stream has no overridden `==`, so a plain setState
-  // is enough to make it resubscribe — a "Retry" tap for a Stream, the same
-  // way CoursesListScreen's _reload() re-assigns its Future.
-  void _retry() => setState(() {});
+  // Cached, not called fresh inline in the StreamBuilder below: a Stream
+  // has no overridden `==`, so if `stream:` called _service.watchSessions()
+  // directly in build(), ANY setState on this screen (not just _retry) would
+  // hand StreamBuilder a new Stream instance every time, which it treats as
+  // a genuinely different stream — unsubscribing, resubscribing, and
+  // resetting to its "no data yet" state in between. That's harmless for a
+  // deliberate retry, but a real bug for anything else: it was previously
+  // flashing the whole screen back to empty/loading on every retake-loading
+  // toggle. Only _retry() reassigns this, the same way CoursesListScreen's
+  // _reload() reassigns its cached Future instead of creating a new one
+  // inline on every build.
+  late Stream<List<FlashcardSession>> _sessionsStream =
+      _service.watchSessions();
+
+  void _retry() => setState(() => _sessionsStream = _service.watchSessions());
+
+  // Per-session, not one screen-wide flag — mirrors CourseDetailScreen's
+  // per-row in-flight-delete pattern, so retaking one session doesn't
+  // freeze every other row's button while the Worker call (up to 120s) is
+  // in flight.
+  final Set<String> _retakingSessionIds = {};
 
   void _openSetup() {
     Navigator.of(context).push(
@@ -104,23 +120,61 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
   }
 
   Future<void> _retake(FlashcardSession session) async {
-    await _service.retake(sessionId: session.sessionId);
-    final flashcards = await _service.fetchFlashcards(session.sessionId);
-    if (!mounted) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => FlashcardFlipDeckScreen(
-          uid: widget.uid,
-          courseId: widget.courseId,
-          sessionId: session.sessionId,
-          initialFlashcards: flashcards,
-          initialIndex: 0,
-          initialKnownCount: 0,
-          initialNeedsReviewCount: 0,
-          service: _service,
+    // Already retaking this session (double tap) — ignore, don't re-enter.
+    if (_retakingSessionIds.contains(session.sessionId)) return;
+    setState(() => _retakingSessionIds.add(session.sessionId));
+
+    try {
+      final outcome = await _service.retake(
+        sessionId: session.sessionId,
+        materialIds: session.materialIds,
+        difficulties: session.difficultyLevels,
+        count: session.numberOfFlashcards,
+        customPrompt: session.customPrompt,
+      );
+      final flashcards = await _service.fetchFlashcards(session.sessionId);
+      if (!mounted) return;
+      setState(() => _retakingSessionIds.remove(session.sessionId));
+
+      final shortfall = outcome.actualCount < outcome.requestedCount;
+      final message = outcome.note ??
+          (shortfall
+              ? 'Generated ${outcome.actualCount} of '
+                  '${outcome.requestedCount} requested.'
+              : null);
+      if (message != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
+      }
+
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => FlashcardFlipDeckScreen(
+            uid: widget.uid,
+            courseId: widget.courseId,
+            sessionId: session.sessionId,
+            initialFlashcards: flashcards,
+            initialIndex: 0,
+            initialKnownCount: 0,
+            initialNeedsReviewCount: 0,
+            service: _service,
+          ),
         ),
-      ),
-    );
+      );
+    } on FlashcardFailure catch (e) {
+      if (!mounted) return;
+      setState(() => _retakingSessionIds.remove(session.sessionId));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _retakingSessionIds.remove(session.sessionId));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Retake failed. Please try again.')),
+      );
+    }
   }
 
   void _delete(FlashcardSession session) {
@@ -138,7 +192,7 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: StreamBuilder<List<FlashcardSession>>(
-        stream: _service.watchSessions(),
+        stream: _sessionsStream,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             debugPrint('FlashcardSessionsScreen: watchSessions() error: ${snapshot.error}');
@@ -184,6 +238,9 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
                                 onViewSummary: () => _viewSummary(session),
                                 onRetake: () => _retake(session),
                                 onDelete: () => _delete(session),
+                                isRetaking: _retakingSessionIds.contains(
+                                  session.sessionId,
+                                ),
                               ),
                           ],
                         ],
@@ -398,6 +455,7 @@ class _SessionRow extends StatelessWidget {
     this.onViewSummary,
     this.onRetake,
     required this.onDelete,
+    this.isRetaking = false,
   });
 
   final FlashcardSession session;
@@ -405,6 +463,10 @@ class _SessionRow extends StatelessWidget {
   final VoidCallback? onViewSummary;
   final VoidCallback? onRetake;
   final VoidCallback onDelete;
+
+  /// True while a Worker call for this session's Retake is in flight (up to
+  /// 120s) — disables the button and shows a spinner, prevents double taps.
+  final bool isRetaking;
 
   @override
   Widget build(BuildContext context) {
@@ -524,8 +586,11 @@ class _SessionRow extends StatelessWidget {
                         variant: AppButtonVariant.outlinedBrand,
                         height: 46,
                         borderRadius: 14,
-                        shadowColor: AppColors.navy.withValues(alpha: 0.18),
-                        onPressed: onRetake,
+                        shadowColor: isRetaking
+                            ? null
+                            : AppColors.navy.withValues(alpha: 0.18),
+                        loading: isRetaking,
+                        onPressed: isRetaking ? null : onRetake,
                       ),
                     ],
                   ],

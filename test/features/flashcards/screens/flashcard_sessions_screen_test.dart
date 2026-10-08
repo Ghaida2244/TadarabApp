@@ -1,10 +1,36 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tadarab_app/features/flashcards/logic/flashcard_logic.dart';
 import 'package:tadarab_app/features/flashcards/screens/flashcard_sessions_screen.dart';
 import 'package:tadarab_app/models/enums.dart';
+import 'package:tadarab_app/models/flashcard.dart';
 import 'package:tadarab_app/models/flashcard_session.dart';
+import 'package:tadarab_app/services/flashcard_service.dart';
+import 'package:tadarab_app/widgets/app_button.dart';
 
 import '../../../helpers/fake_flashcard_service.dart';
+
+AppButton _retakeButton(WidgetTester tester) => tester.widget<AppButton>(
+  find.byWidgetPredicate(
+    (w) => w is AppButton && w.label == 'Retake flashcards',
+  ),
+);
+
+List<Flashcard> _flashcards(int count, {String sessionId = 's1'}) =>
+    List.generate(
+      count,
+      (i) => Flashcard(
+        flashcardId: 'card-$i',
+        frontText: 'Q$i',
+        backText: 'A$i',
+        reviewStatus: null,
+        sourceLocation: 'Slide $i',
+        sessionId: sessionId,
+        cardIndex: i,
+      ),
+    );
 
 FlashcardSession _session({
   required String id,
@@ -212,6 +238,66 @@ void main() {
     expect(find.text('10 cards · 8 known'), findsOneWidget);
     expect(find.text('View performance summary'), findsOneWidget);
     expect(find.text('Retake flashcards'), findsOneWidget);
+  });
+
+  group('Retake', () {
+    testWidgets(
+      'tapping Retake shows a loading state on the button until the Worker '
+      'call resolves, then navigates',
+      (tester) async {
+        final pending = Completer<RetakeOutcome>();
+        final service = FakeFlashcardService(
+          sessions: [
+            _session(id: 's1', completed: true, knownCount: 8),
+          ],
+          pendingRetake: pending,
+          flashcardsBySessionId: {'s1': _flashcards(10)},
+        );
+        await tester.pumpWidget(_wrap(service));
+        await tester.pump();
+
+        expect(_retakeButton(tester).loading, isFalse);
+
+        await tester.tap(find.text('Retake flashcards'));
+        await tester.pump();
+
+        expect(_retakeButton(tester).loading, isTrue);
+        expect(_retakeButton(tester).onPressed, isNull);
+
+        pending.complete((requestedCount: 10, actualCount: 10, note: null));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byType(FlashcardSessionsScreen),
+          findsNothing,
+          reason: 'a successful retake navigates to the Flip Deck screen',
+        );
+      },
+    );
+
+    testWidgets(
+      'a Retake failure shows a SnackBar, clears the loading state, and '
+      'leaves the session in place',
+      (tester) async {
+        final service = FakeFlashcardService(
+          sessions: [
+            _session(id: 's1', completed: true, knownCount: 8),
+          ],
+          writeError: FlashcardFailure('Could not reach Tadarab.'),
+        );
+        await tester.pumpWidget(_wrap(service));
+        await tester.pump();
+
+        await tester.tap(find.text('Retake flashcards'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text('Could not reach Tadarab.'), findsOneWidget);
+        expect(_retakeButton(tester).loading, isFalse);
+        expect(_retakeButton(tester).onPressed, isNotNull);
+        expect(find.text('Retake flashcards'), findsOneWidget);
+      },
+    );
   });
 
   group('material-title pill sizing', () {

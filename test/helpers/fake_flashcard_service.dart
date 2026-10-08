@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:tadarab_app/features/flashcards/logic/flashcard_logic.dart';
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/flashcard.dart';
 import 'package:tadarab_app/models/flashcard_session.dart';
@@ -20,6 +21,8 @@ class FakeFlashcardService extends FlashcardService {
     this.writeError,
     this.pendingGeneration,
     this.watchSessionsError,
+    this.retakeResult,
+    this.pendingRetake,
   }) : super(uid: 'uid-1', courseId: 'course-1');
 
   List<StudyMaterial> materials;
@@ -43,6 +46,15 @@ class FakeFlashcardService extends FlashcardService {
   /// missing composite index.
   Object? watchSessionsError;
 
+  /// `retake`'s result when it succeeds (and [pendingRetake]/[writeError]
+  /// are both unset) — defaults to a clean, no-shortfall outcome.
+  RetakeOutcome? retakeResult;
+
+  /// When set, `retake` awaits this instead of resolving immediately —
+  /// lets a test observe the Sessions screen's loading state before the
+  /// (real) Worker call would resolve.
+  Completer<RetakeOutcome>? pendingRetake;
+
   int fetchMaterialsCalls = 0;
   int generateFlashcardsCalls = 0;
   int createSessionCalls = 0;
@@ -51,11 +63,21 @@ class FakeFlashcardService extends FlashcardService {
   int retakeCalls = 0;
   int deleteSessionCalls = 0;
 
+  List<String>? lastGenerateMaterialIds;
+  List<DifficultyLevel>? lastGenerateDifficulties;
+  int? lastGenerateCount;
+  String? lastGenerateCustomPrompt;
+  bool? lastGenerateIsRetake;
+
   List<String>? lastCreateSessionMaterialIds;
   List<String>? lastCreateSessionMaterialTitles;
   ReviewStatus? lastMarkedStatus;
   String? lastDeletedSessionId;
   String? lastRetakenSessionId;
+  List<String>? lastRetakeMaterialIds;
+  List<DifficultyLevel>? lastRetakeDifficulties;
+  int? lastRetakeCount;
+  String? lastRetakeCustomPrompt;
 
   @override
   Future<List<StudyMaterial>> fetchMaterials() async {
@@ -75,8 +97,14 @@ class FakeFlashcardService extends FlashcardService {
     required List<DifficultyLevel> difficulties,
     required int count,
     String? customPrompt,
+    bool isRetake = false,
   }) async {
     generateFlashcardsCalls++;
+    lastGenerateMaterialIds = materialIds;
+    lastGenerateDifficulties = difficulties;
+    lastGenerateCount = count;
+    lastGenerateCustomPrompt = customPrompt;
+    lastGenerateIsRetake = isRetake;
     if (pendingGeneration != null) return pendingGeneration!.future;
     if (generationError != null) throw generationError!;
     return generationResult!;
@@ -133,10 +161,22 @@ class FakeFlashcardService extends FlashcardService {
   }
 
   @override
-  Future<void> retake({required String sessionId}) async {
+  Future<RetakeOutcome> retake({
+    required String sessionId,
+    required List<String> materialIds,
+    required List<DifficultyLevel> difficulties,
+    required int count,
+    String? customPrompt,
+  }) async {
     retakeCalls++;
     lastRetakenSessionId = sessionId;
+    lastRetakeMaterialIds = materialIds;
+    lastRetakeDifficulties = difficulties;
+    lastRetakeCount = count;
+    lastRetakeCustomPrompt = customPrompt;
+    if (pendingRetake != null) return pendingRetake!.future;
     if (writeError != null) throw writeError!;
+    return retakeResult ?? (requestedCount: count, actualCount: count, note: null);
   }
 
   @override

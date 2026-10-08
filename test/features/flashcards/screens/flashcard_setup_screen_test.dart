@@ -113,7 +113,9 @@ void main() {
     expect(find.text('Aiming for 10 cards'), findsOneWidget);
     expect(_generateButton(tester).onPressed, isNull);
 
-    pending.complete(FlashcardGenerationResult(items: _items(10)));
+    pending.complete(
+      FlashcardGenerationResult(items: _items(10), requestedCount: 10),
+    );
     await tester.pumpAndSettle();
   });
 
@@ -121,7 +123,10 @@ void main() {
       'dialog with the actual and requested counts', (tester) async {
     final service = FakeFlashcardService(
       materials: [_material],
-      generationResult: FlashcardGenerationResult(items: _items(7)),
+      generationResult: FlashcardGenerationResult(
+        items: _items(7),
+        requestedCount: 10,
+      ),
     );
     await tester.pumpWidget(_wrap(service));
     await tester.pumpAndSettle();
@@ -133,6 +138,57 @@ void main() {
     expect(find.text('Fewer cards than asked'), findsOneWidget);
     expect(find.text('Start with these 7'), findsOneWidget);
   });
+
+  testWidgets(
+    "shows the Worker's note in a SnackBar when generation succeeds with "
+    'one, even at the full requested count',
+    (tester) async {
+      final service = FakeFlashcardService(
+        materials: [_material],
+        flashcardsBySessionId: {'session-new': _flashcards(10)},
+        generationResult: FlashcardGenerationResult(
+          items: _items(10),
+          requestedCount: 10,
+          note: 'An uneven split of difficulty levels was used.',
+        ),
+      );
+      await tester.pumpWidget(_wrap(service));
+      await tester.pumpAndSettle();
+
+      await _selectMaterialAndDifficulty(tester);
+      await tester.tap(find.text('Generate flashcards'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.text('An uneven split of difficulty levels was used.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'shows no SnackBar when the count matches and there is no note',
+    (tester) async {
+      final service = FakeFlashcardService(
+        materials: [_material],
+        flashcardsBySessionId: {'session-new': _flashcards(10)},
+        generationResult: FlashcardGenerationResult(
+          items: _items(10),
+          requestedCount: 10,
+        ),
+      );
+      await tester.pumpWidget(_wrap(service));
+      await tester.pumpAndSettle();
+
+      await _selectMaterialAndDifficulty(tester);
+      await tester.tap(find.text('Generate flashcards'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(SnackBar), findsNothing);
+    },
+  );
 
   testWidgets('a generation failure shows a retry-able generic-failure '
       'message', (tester) async {

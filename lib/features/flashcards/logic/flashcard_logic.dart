@@ -90,6 +90,51 @@ RetakeResult prepareRetake({
   return (flashcards: reset, sessionFields: kRetakeSessionFields);
 }
 
+/// What a Retake-via-Worker outcome gives back to the UI: the fresh card
+/// count, how many were actually requested (so the caller can tell if it
+/// fell short, same as [FlashcardGenerationResult.requestedCount]), and the
+/// Worker's own `note` if it sent one. See [FlashcardService.retake].
+typedef RetakeOutcome = ({int requestedCount, int actualCount, String? note});
+
+/// Retake's card-write plan, given how many cards the session already had
+/// and how many the Worker generated this time: the first
+/// `min(existingCount, newCount)` existing card docs are overwritten in
+/// place with the new content (reusing their ids); if there are more new
+/// cards than old ones, the rest are added as brand-new docs; if there are
+/// fewer, the leftover old ones are deleted. See
+/// [FlashcardService.retake].
+typedef RetakeCardWritePlan = ({int overwriteCount, int addCount, int deleteCount});
+
+RetakeCardWritePlan planRetakeCardWrites({
+  required int existingCount,
+  required int newCount,
+}) {
+  assert(existingCount >= 0, 'existingCount cannot be negative');
+  assert(newCount >= 0, 'newCount cannot be negative');
+  final overwriteCount = existingCount < newCount ? existingCount : newCount;
+  return (
+    overwriteCount: overwriteCount,
+    addCount: newCount - overwriteCount,
+    deleteCount: existingCount - overwriteCount,
+  );
+}
+
+/// Splits [totalOperations] Firestore writes into batches of at most
+/// [maxPerBatch] (Firestore's hard per-batch cap is 500) — returns each
+/// batch's size, e.g. 1042 operations at the default cap -> [500, 500, 42].
+List<int> batchSizes({required int totalOperations, int maxPerBatch = 500}) {
+  assert(totalOperations >= 0, 'totalOperations cannot be negative');
+  assert(maxPerBatch > 0, 'maxPerBatch must be positive');
+  final sizes = <int>[];
+  var remaining = totalOperations;
+  while (remaining > 0) {
+    final size = remaining < maxPerBatch ? remaining : maxPerBatch;
+    sizes.add(size);
+    remaining -= size;
+  }
+  return sizes;
+}
+
 /// Sorts a course's flashcard sessions newest first. Pulled out as a pure
 /// function (rather than a Firestore `orderBy('createdAt')`) so
 /// [FlashcardService.watchSessions] doesn't need a composite index for its

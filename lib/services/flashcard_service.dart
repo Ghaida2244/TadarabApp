@@ -77,13 +77,18 @@ class FlashcardGenerationItem {
 /// [note] mirrors the Quiz feature's [GenerationResult.note] — the Worker
 /// sends one on every response type (fewer items than requested, or some
 /// grounding-check discards), meant to be shown to the student directly
-/// rather than treated as an error. Not yet wired into the Setup screen's
-/// UI (out of scope for this pass); the field exists so that data isn't
-/// silently dropped on the floor once something does read it.
+/// rather than treated as an error. [requestedCount] is the count the
+/// caller asked for, carried alongside [items] so a screen can tell
+/// whether generation fell short without needing to keep its own copy.
 class FlashcardGenerationResult {
-  FlashcardGenerationResult({required this.items, this.note});
+  FlashcardGenerationResult({
+    required this.items,
+    required this.requestedCount,
+    this.note,
+  });
 
   final List<FlashcardGenerationItem> items;
+  final int requestedCount;
   final String? note;
 }
 
@@ -187,11 +192,15 @@ class FlashcardService {
   /// [WorkerResponseException] (the Worker responded, but not with a
   /// usable 200) — never a raw exception, so the Setup screen's existing
   /// `on WorkerUnreachableException` / generic `catch` both work correctly.
+  /// [isRetake] tells the Worker this is a retake of a previous attempt
+  /// with the same settings, same as [QuizGenerationClient.generateQuiz] —
+  /// see [retake], its only caller that passes `true`.
   Future<FlashcardGenerationResult> generateFlashcards({
     required List<String> materialIds,
     required List<DifficultyLevel> difficulties,
     required int count,
     String? customPrompt,
+    bool isRetake = false,
   }) async {
     final allMaterials = await fetchMaterials();
     final materials = allMaterials
@@ -232,6 +241,7 @@ class FlashcardService {
                 for (final m in materials)
                   {'title': m.title, 'sourceText': m.extractedText},
               ],
+              'isRetake': isRetake,
             }),
           )
           .timeout(const Duration(seconds: 120));
@@ -256,7 +266,11 @@ class FlashcardService {
         )
         .toList();
 
-    return FlashcardGenerationResult(items: items, note: body['note'] as String?);
+    return FlashcardGenerationResult(
+      items: items,
+      requestedCount: count,
+      note: body['note'] as String?,
+    );
   }
 
   /// Creates the FlashcardSession document and its Flashcard sub-documents,
@@ -381,36 +395,110 @@ class FlashcardService {
     }
   }
 
-  /// Reshuffles the session's existing flashcards into a new random order
-  /// and resets its counts — see [prepareRetake]. No Worker call, no new
-  /// session document.
-  Future<void> retake({required String sessionId}) async {
-    try {
-      final cards = await fetchFlashcards(sessionId);
-      final result = prepareRetake(flashcards: cards);
+  /// Regenerates this session's cards through the Worker — same settings
+  /// as the original (materials/difficulties/count/customPrompt, all
+  /// supplied by the caller, which already has them from the session doc)
+  /// plus `isRetake: true` — then replaces the old cards in place.
+  ///
+  /// The Worker is called FIRST; Firestore is only touched once it
+  /// succeeds (a non-empty result), so a failure of any kind (network,
+  /// timeout, or zero usable cards) leaves the session and its existing
+  /// cards completely unchanged. [FlashcardFailure] covers all of these —
+  /// zero cards is treated the same as a Firestore failure, not a
+  /// successful-but-empty retake.
+  ///
+  /// The write itself reuses existing card docs where possible (overwritten
+  /// with the new content, at the new index), adds brand-new ones if the
+  /// fresh set is bigger, and deletes the leftover old ones if it's
+  /// smaller — see [planRetakeCardWrites]. Split across batches of at most
+  /// 500 operations via [batchSizes], since a single Firestore batch can't
+  /// exceed that.
+  Future<RetakeOutcome> retake({
+    required String sessionId,
+    required List<String> materialIds,
+    required List<DifficultyLevel> difficulties,
+    required int count,
+    String? customPrompt,
+  }) async {
+    final result = await generateFlashcards(
+      materialIds: materialIds,
+      difficulties: difficulties,
+      count: count,
+      customPrompt: customPrompt,
+      isRetake: true,
+    );
 
-      final batch = _firestore.batch();
-      for (final card in result.flashcards) {
-        batch.update(_cardsRef(sessionId).doc(card.flashcardId), {
-          'reviewStatus': card.reviewStatus?.toJson(),
-          'cardIndex': card.cardIndex,
-        });
+    if (result.items.isEmpty) {
+      throw FlashcardFailure(
+        result.note ??
+            "Your material couldn't support any flashcards. Try adding "
+                'another material.',
+      );
+    }
+
+    final existingCards = await fetchFlashcards(sessionId);
+    final plan = planRetakeCardWrites(
+      existingCount: existingCards.length,
+      newCount: result.items.length,
+    );
+    final cardsCollection = _cardsRef(sessionId);
+
+    // Every write this retake needs, in one flat list — overwrite/add the
+    // new cards, delete any leftover old ones, then reset the session doc
+    // — so it can be sliced into Firestore-sized batches below.
+    final writes = <void Function(WriteBatch batch)>[
+      for (var i = 0; i < result.items.length; i++)
+        (batch) {
+          final item = result.items[i];
+          final docRef = i < plan.overwriteCount
+              ? cardsCollection.doc(existingCards[i].flashcardId)
+              : cardsCollection.doc();
+          batch.set(
+            docRef,
+            Flashcard(
+              flashcardId: docRef.id,
+              frontText: item.frontText,
+              backText: item.backText,
+              reviewStatus: null,
+              sourceLocation: item.sourceLocation,
+              sessionId: sessionId,
+              cardIndex: i,
+            ).toFirestore(),
+          );
+        },
+      for (var i = plan.overwriteCount; i < existingCards.length; i++)
+        (batch) =>
+            batch.delete(cardsCollection.doc(existingCards[i].flashcardId)),
+      (batch) => batch.update(_sessionsRef.doc(sessionId), {
+        'numberOfFlashcards': result.items.length,
+        'knownCount': kRetakeSessionFields.knownCount,
+        'needsReviewCount': kRetakeSessionFields.needsReviewCount,
+        'currentFlashcardIndex': kRetakeSessionFields.currentFlashcardIndex,
+        'isSessionCompleted': kRetakeSessionFields.isSessionCompleted,
+        'completedAt': kRetakeSessionFields.completedAt,
+        'earnedPoints': kRetakeSessionFields.earnedPoints,
+      }),
+    ];
+
+    try {
+      var start = 0;
+      for (final size in batchSizes(totalOperations: writes.length)) {
+        final batch = _firestore.batch();
+        for (final write in writes.skip(start).take(size)) {
+          write(batch);
+        }
+        await batch.commit();
+        start += size;
       }
-      final fields = result.sessionFields;
-      batch.update(_sessionsRef.doc(sessionId), {
-        'knownCount': fields.knownCount,
-        'needsReviewCount': fields.needsReviewCount,
-        'currentFlashcardIndex': fields.currentFlashcardIndex,
-        'isSessionCompleted': fields.isSessionCompleted,
-        'completedAt': fields.completedAt,
-        'earnedPoints': fields.earnedPoints,
-      });
-      await batch.commit();
-    } on FlashcardFailure {
-      rethrow;
     } on FirebaseException catch (e) {
       throw FlashcardFailure(_messageFor(e));
     }
+
+    return (
+      requestedCount: result.requestedCount,
+      actualCount: result.items.length,
+      note: result.note,
+    );
   }
 
   /// Deletes the session document and every one of its flashcard

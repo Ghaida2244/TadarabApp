@@ -110,6 +110,12 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
       if (!mounted) return;
       setState(() => _generating = false);
 
+      if (result.note != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.note!)),
+        );
+      }
+
       if (result.items.length == _count) {
         await _startSession(materials, result.items);
       } else {

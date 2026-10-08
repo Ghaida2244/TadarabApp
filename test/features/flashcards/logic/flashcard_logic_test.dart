@@ -365,4 +365,64 @@ void main() {
       expect(input.map((s) => s.sessionId).toList(), ['a', 'b']);
     });
   });
+
+  group('planRetakeCardWrites', () {
+    test('normal: the new set is the same size as the old — all overwrites, '
+        'no adds or deletes', () {
+      final plan = planRetakeCardWrites(existingCount: 10, newCount: 10);
+      expect(plan.overwriteCount, 10);
+      expect(plan.addCount, 0);
+      expect(plan.deleteCount, 0);
+    });
+
+    test('normal: the new set is larger — overwrite all old ones, add the '
+        'rest', () {
+      final plan = planRetakeCardWrites(existingCount: 8, newCount: 12);
+      expect(plan.overwriteCount, 8);
+      expect(plan.addCount, 4);
+      expect(plan.deleteCount, 0);
+    });
+
+    test('normal: the new set is smaller — overwrite what fits, delete the '
+        'leftover old ones', () {
+      final plan = planRetakeCardWrites(existingCount: 12, newCount: 8);
+      expect(plan.overwriteCount, 8);
+      expect(plan.addCount, 0);
+      expect(plan.deleteCount, 4);
+    });
+
+    test('edge: no existing cards at all — every new card is an add', () {
+      final plan = planRetakeCardWrites(existingCount: 0, newCount: 5);
+      expect(plan.overwriteCount, 0);
+      expect(plan.addCount, 5);
+      expect(plan.deleteCount, 0);
+    });
+  });
+
+  group('batchSizes', () {
+    test('normal: fewer operations than the cap fit in a single batch', () {
+      expect(batchSizes(totalOperations: 42), [42]);
+    });
+
+    test('edge: exactly the cap fits in a single batch', () {
+      expect(batchSizes(totalOperations: 500), [500]);
+    });
+
+    test('normal: one more than the cap splits into two batches', () {
+      expect(batchSizes(totalOperations: 501), [500, 1]);
+    });
+
+    test('normal: a large count splits into as many full batches as needed, '
+        'plus a smaller remainder', () {
+      expect(batchSizes(totalOperations: 1042), [500, 500, 42]);
+    });
+
+    test('edge: zero operations needs no batches at all', () {
+      expect(batchSizes(totalOperations: 0), isEmpty);
+    });
+
+    test('failure-adjacent: a custom maxPerBatch is respected', () {
+      expect(batchSizes(totalOperations: 25, maxPerBatch: 10), [10, 10, 5]);
+    });
+  });
 }
