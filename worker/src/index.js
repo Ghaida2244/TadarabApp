@@ -12,6 +12,9 @@ import {
   filterGroundedItems,
   buildGroundingLogEntry,
   normalizeItems,
+  normalizeCoveredTopics,
+  normalizePreviousTopics,
+  validatePreviousTopics,
 } from './generation.js';
 
 // Google's published JWK set for Firebase ID tokens. jose caches this
@@ -76,7 +79,9 @@ function parseGenerateRequest(body) {
 
   const difficulties = parseDifficulty(body.difficulty);
   validateCustomPrompt(body.customPrompt);
+  validatePreviousTopics(body.previousTopics);
   const isRetake = body.isRetake === true;
+  const previousTopics = normalizePreviousTopics(body.previousTopics);
 
   return {
     type: body.type,
@@ -85,6 +90,7 @@ function parseGenerateRequest(body) {
     difficulties,
     customPrompt: typeof body.customPrompt === 'string' ? body.customPrompt : null,
     isRetake,
+    previousTopics,
   };
 }
 
@@ -92,7 +98,8 @@ function parseGenerateRequest(body) {
 /// the caller, builds the exact prompt from
 /// quiz_flashcard_generation_spec.md, forces structured (Tool Use) output
 /// from Claude, shuffles quiz option order server-side, and returns
-/// { items, note } ready for the app to turn into Question/Flashcard docs.
+/// { items, note, coveredTopics } ready for the app to turn into
+/// Question/Flashcard docs.
 async function handleGenerate(request, env) {
   let payload;
   try {
@@ -172,12 +179,14 @@ async function handleGenerate(request, env) {
 
   const items = req.type === 'quiz' ? shuffleQuizOptions(rawItems) : rawItems;
   const note = toolUse.input.note ?? null;
+  const coveredTopics = normalizeCoveredTopics(toolUse.input.coveredTopics);
 
   return jsonResponse({
     uid: payload.sub,
     type: req.type,
     items,
     note,
+    coveredTopics,
   });
 }
 

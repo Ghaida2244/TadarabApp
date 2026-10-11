@@ -14,8 +14,15 @@ import {
   filterGroundedItems,
   buildGroundingLogEntry,
   normalizeItems,
+  normalizeCoveredTopics,
+  normalizePreviousTopics,
+  validatePreviousTopics,
   MAX_CUSTOM_PROMPT_LENGTH,
   MODEL_MAX_OUTPUT_TOKENS,
+  MAX_COVERED_TOPICS,
+  MAX_COVERED_TOPIC_LENGTH,
+  MAX_PREVIOUS_TOPICS,
+  MAX_PREVIOUS_TOPIC_LENGTH,
 } from '../src/generation.js';
 
 describe('parseDifficulty', () => {
@@ -118,14 +125,14 @@ describe('buildPrompt', () => {
     expect(prompt).toContain('[Material: Lecture 1]');
   });
 
-  test('normal: the multi-material sourceLocation line lives in SOURCE TAGS, not DISTRIBUTION RULE', () => {
+  test('normal: the sourceLocation format rule lives in SOURCE TAGS, not DISTRIBUTION RULE', () => {
     const prompt = buildPrompt(baseArgs);
     const distributionIndex = prompt.indexOf('DISTRIBUTION RULE:');
     const sourceTagsIndex = prompt.indexOf('SOURCE TAGS:');
-    const multiMaterialIndex = prompt.indexOf('include the material title with each');
+    const formatIndex = prompt.indexOf('sourceLocation format: <material title> | <tag text>');
     const distributionSection = prompt.slice(distributionIndex, sourceTagsIndex);
-    expect(distributionSection).not.toContain('include the material title with each');
-    expect(multiMaterialIndex).toBeGreaterThan(sourceTagsIndex);
+    expect(distributionSection).not.toContain('sourceLocation format: <material title> | <tag text>');
+    expect(formatIndex).toBeGreaterThan(sourceTagsIndex);
   });
 
   test('normal: the language-of-the-source sentence appears exactly once', () => {
@@ -177,6 +184,68 @@ describe('buildPrompt', () => {
     expect(prompt).toContain('RETAKE RULE (this is a retake of a previous attempt with the same settings):');
     expect(prompt).toContain('vary your phrasing');
   });
+
+  test('normal: the NO MATERIAL-CITING rule is present for both quiz and flashcard, with the forbidden phrases, the example, and both exceptions', () => {
+    for (const type of ['quiz', 'flashcard']) {
+      const prompt = buildPrompt({ ...baseArgs, type });
+      expect(prompt).toContain('NO MATERIAL-CITING RULE:');
+      expect(prompt).toContain('"the lecture"');
+      expect(prompt).toContain('"according to the lecture"');
+      expect(prompt).toContain('"according to slide N"');
+      expect(prompt).toContain('"the course material"');
+      expect(prompt).toContain('"the document"');
+      expect(prompt).toContain('"the text"');
+      expect(prompt).toContain('المحاضرة');
+      expect(prompt).toContain('حسب المحاضرة');
+      expect(prompt).toContain('وفقًا للشريحة');
+      expect(prompt).toContain('BPM focuses on improving end-to-end processes');
+      expect(prompt).toContain('Applies only to the fields listed above, not to sourceLocation (see SOURCE TAGS) or "note".');
+    }
+  });
+
+  test('normal: a previously-covered-topics bullet never appears when isRetake is false, even with a non-empty previousTopics', () => {
+    const prompt = buildPrompt({ ...baseArgs, isRetake: false, previousTopics: ['BPM lifecycle', 'SLA'] });
+    expect(prompt).not.toContain('RETAKE RULE');
+    expect(prompt).not.toContain('Topics the learner already practised');
+  });
+
+  test('normal: isRetake true with an empty previousTopics shows the retake rule with no topics bullet', () => {
+    const prompt = buildPrompt({ ...baseArgs, isRetake: true, previousTopics: [] });
+    expect(prompt).toContain('RETAKE RULE (this is a retake of a previous attempt with the same settings):');
+    expect(prompt).not.toContain('Topics the learner already practised');
+  });
+
+  test('normal: isRetake true with a non-empty previousTopics appends the topics bullet to the same RETAKE RULE section, listing every topic', () => {
+    const prompt = buildPrompt({ ...baseArgs, isRetake: true, previousTopics: ['BPM lifecycle', 'SLA'] });
+    expect(prompt).toContain('Topics the learner already practised: BPM lifecycle, SLA.');
+    expect(prompt).toContain('Prefer ideas, terms and concepts from the material that are NOT in this');
+    expect(prompt).toContain('Never produce fewer');
+    expect(prompt).toContain('Do not mention this list');
+
+    // Still one single section, not two — the topics bullet is part of the
+    // same joined RETAKE RULE block, not a separate standalone section.
+    const sections = prompt.split('\n\n');
+    const retakeSection = sections.find((s) => s.startsWith('RETAKE RULE'));
+    expect(retakeSection).toContain('Topics the learner already practised');
+  });
+
+  test('normal: sourceLocation format rule names the material title and tag, with the example, for both quiz and flashcard', () => {
+    for (const type of ['quiz', 'flashcard']) {
+      const prompt = buildPrompt({ ...baseArgs, type });
+      expect(prompt).toContain('sourceLocation format: <material title> | <tag text>');
+      expect(prompt).toContain('Always include it, even when only one material was provided.');
+      expect(prompt).toContain('Lecture 1 - Introduction | Slide 5: Processes Everywhere');
+      expect(prompt).toContain('separate them with "; "');
+      expect(prompt).toContain('never invent a title');
+    }
+  });
+
+  test('normal: the SOURCE TAGS multi-location example has no line break inside it', () => {
+    const prompt = buildPrompt(baseArgs);
+    expect(prompt).toContain(
+      'Lecture 1 - Introduction | Slide 5: Processes Everywhere; Lecture 2 | Slide 3: Metrics\n',
+    );
+  });
 });
 
 describe('buildSystemPrompt', () => {
@@ -218,6 +287,17 @@ describe('buildToolSchema', () => {
     for (const type of ['quiz', 'flashcard']) {
       const schema = buildToolSchema(type);
       expect(schema.input_schema.properties.note).toBeDefined();
+      expect(schema.input_schema.required).toEqual(['items']);
+    }
+  });
+
+  test('edge: "coveredTopics" (an array of strings) is present but not required on both schemas', () => {
+    for (const type of ['quiz', 'flashcard']) {
+      const schema = buildToolSchema(type);
+      const coveredTopics = schema.input_schema.properties.coveredTopics;
+      expect(coveredTopics).toBeDefined();
+      expect(coveredTopics.type).toBe('array');
+      expect(coveredTopics.items).toEqual({ type: 'string' });
       expect(schema.input_schema.required).toEqual(['items']);
     }
   });
@@ -303,6 +383,15 @@ describe('isLocationGrounded', () => {
   test('failure: missing/empty sourceLocation is not grounded', () => {
     expect(isLocationGrounded(undefined, tags)).toBe(false);
     expect(isLocationGrounded('', tags)).toBe(false);
+  });
+
+  test('normal: the "Material Title | Tag" prefix format (Part C) still grounds correctly — the tag itself is still a real substring', () => {
+    const realTags = extractLocationTags('[Material: Lecture 1 - Introduction]\n[Slide 5: Processes Everywhere]\nSome text.');
+    expect(isLocationGrounded('Lecture 1 - Introduction | Slide 5: Processes Everywhere', realTags)).toBe(true);
+    // Multi-location, "; "-separated, with a repeated material title per Part C.
+    expect(
+      isLocationGrounded('Lecture 1 - Introduction | Slide 5: Processes Everywhere; Lecture 2 | Slide 3: Metrics', realTags),
+    ).toBe(true);
   });
 });
 
@@ -398,5 +487,78 @@ describe('buildGroundingLogEntry', () => {
     const discarded = [{ questionText: 'Q1' }];
     const entry = buildGroundingLogEntry(discarded, 1);
     expect(entry.sourceLocations).toEqual(['']);
+  });
+});
+
+describe('normalizeCoveredTopics', () => {
+  test('normal: trims whitespace from each entry', () => {
+    expect(normalizeCoveredTopics(['  BPM lifecycle  ', ' SLA '])).toEqual(['BPM lifecycle', 'SLA']);
+  });
+
+  test('normal: drops empty and non-string entries', () => {
+    expect(normalizeCoveredTopics(['BPM', '', '   ', 42, null, undefined, {}])).toEqual(['BPM']);
+  });
+
+  test('normal: removes case-insensitive duplicates, keeping the first casing', () => {
+    expect(normalizeCoveredTopics(['BPM lifecycle', 'bpm lifecycle', 'BPM LIFECYCLE'])).toEqual(['BPM lifecycle']);
+  });
+
+  test('edge: truncates each entry to 60 characters', () => {
+    const long = 'x'.repeat(100);
+    expect(normalizeCoveredTopics([long])[0]).toHaveLength(MAX_COVERED_TOPIC_LENGTH);
+  });
+
+  test('edge: caps the list at 30 entries', () => {
+    const topics = Array.from({ length: 40 }, (_, i) => `Topic ${i}`);
+    expect(normalizeCoveredTopics(topics)).toHaveLength(MAX_COVERED_TOPICS);
+  });
+
+  test('failure-adjacent: a missing/non-array field returns an empty array, not an error', () => {
+    expect(normalizeCoveredTopics(undefined)).toEqual([]);
+    expect(normalizeCoveredTopics(null)).toEqual([]);
+    expect(normalizeCoveredTopics('not an array')).toEqual([]);
+  });
+});
+
+describe('normalizePreviousTopics', () => {
+  test('normal: trims, dedupes case-insensitively, and drops non-string entries', () => {
+    expect(normalizePreviousTopics([' Process modeling ', 'process modeling', 7])).toEqual(['Process modeling']);
+  });
+
+  test('edge: truncates each entry to 80 characters', () => {
+    const long = 'x'.repeat(200);
+    expect(normalizePreviousTopics([long])[0]).toHaveLength(MAX_PREVIOUS_TOPIC_LENGTH);
+  });
+
+  test('edge: caps the list at 100 entries', () => {
+    const topics = Array.from({ length: 150 }, (_, i) => `Topic ${i}`);
+    expect(normalizePreviousTopics(topics)).toHaveLength(MAX_PREVIOUS_TOPICS);
+  });
+
+  test('failure-adjacent: a missing/non-array field returns an empty array, not an error', () => {
+    expect(normalizePreviousTopics(undefined)).toEqual([]);
+    expect(normalizePreviousTopics(null)).toEqual([]);
+  });
+});
+
+describe('validatePreviousTopics', () => {
+  test('normal: absent/null passes (previousTopics is optional)', () => {
+    expect(() => validatePreviousTopics(undefined)).not.toThrow();
+    expect(() => validatePreviousTopics(null)).not.toThrow();
+  });
+
+  test('normal: an array of strings passes, including an empty array', () => {
+    expect(() => validatePreviousTopics(['BPM lifecycle'])).not.toThrow();
+    expect(() => validatePreviousTopics([])).not.toThrow();
+  });
+
+  test('failure: a non-array value is rejected', () => {
+    expect(() => validatePreviousTopics('BPM lifecycle')).toThrow(/must be an array/);
+    expect(() => validatePreviousTopics(42)).toThrow(/must be an array/);
+    expect(() => validatePreviousTopics({})).toThrow(/must be an array/);
+  });
+
+  test('failure-adjacent: non-string entries inside the array do not throw — sanitized, not rejected', () => {
+    expect(() => validatePreviousTopics(['BPM', 42, null])).not.toThrow();
   });
 });

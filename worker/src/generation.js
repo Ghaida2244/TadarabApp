@@ -5,6 +5,10 @@
 export const VALID_DIFFICULTIES = ['easy', 'medium', 'hard'];
 export const VALID_TYPES = ['quiz', 'flashcard'];
 export const MAX_CUSTOM_PROMPT_LENGTH = 300;
+export const MAX_COVERED_TOPICS = 30;
+export const MAX_COVERED_TOPIC_LENGTH = 60;
+export const MAX_PREVIOUS_TOPICS = 100;
+export const MAX_PREVIOUS_TOPIC_LENGTH = 80;
 
 // claude-haiku-4-5-20251001's max output (Messages API, synchronous) —
 // confirmed against Anthropic's docs at implementation time, per the spec.
@@ -59,6 +63,55 @@ export function validateCustomPrompt(customPrompt) {
   }
 }
 
+/// Shared core for [normalizeCoveredTopics]/[normalizePreviousTopics]: trims
+/// each entry, drops empty or non-string ones, removes case-insensitive
+/// duplicates (keeping the first occurrence's casing), truncates each
+/// surviving entry to [maxLength], and caps the list at [maxEntries].
+/// Returns an empty array for anything that isn't an array at all.
+function normalizeTopicList(list, { maxLength, maxEntries }) {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  const result = [];
+  for (const raw of list) {
+    if (typeof raw !== 'string') continue;
+    const trimmed = raw.trim();
+    if (trimmed === '') continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(trimmed.slice(0, maxLength));
+    if (result.length >= maxEntries) break;
+  }
+  return result;
+}
+
+/// Normalizes the model's `coveredTopics` tool-use output (see
+/// [buildToolSchema]) before it's sent back in the Worker's response —
+/// trim/dedupe/truncate/cap, and an empty array when the model omitted the
+/// field entirely (not null/undefined).
+export function normalizeCoveredTopics(topics) {
+  return normalizeTopicList(topics, { maxLength: MAX_COVERED_TOPIC_LENGTH, maxEntries: MAX_COVERED_TOPICS });
+}
+
+/// Sanitizes the request's optional `previousTopics` (see
+/// [parseGenerateRequest] in index.js) the same way, with its own, more
+/// generous limits — this is student-practice history across possibly many
+/// past sessions, not one generation's own output.
+export function normalizePreviousTopics(topics) {
+  return normalizeTopicList(topics, { maxLength: MAX_PREVIOUS_TOPIC_LENGTH, maxEntries: MAX_PREVIOUS_TOPICS });
+}
+
+/// Throws if `previousTopics` is present but not an array — the same
+/// convention as [validateCustomPrompt] for another optional body field.
+/// Doesn't validate individual entries; see [normalizePreviousTopics] for
+/// how those are sanitized (not rejected) instead.
+export function validatePreviousTopics(previousTopics) {
+  if (previousTopics == null) return;
+  if (!Array.isArray(previousTopics)) {
+    throw new Error('"previousTopics" must be an array of strings');
+  }
+}
+
 /// Flat cap at the model's actual max output, regardless of type/count —
 /// no retry-on-max_tokens logic exists (or is needed) elsewhere, so this
 /// always gives Claude the full available budget rather than a per-item
@@ -84,7 +137,15 @@ export function buildSystemPrompt(type) {
 
 /// Builds the exact prompt template from quiz_flashcard_generation_spec.md,
 /// substituting the real request values in for every {{ }} placeholder.
-export function buildPrompt({ type, count, difficulties, customPrompt, materials, isRetake = false }) {
+export function buildPrompt({
+  type,
+  count,
+  difficulties,
+  customPrompt,
+  materials,
+  isRetake = false,
+  previousTopics = [],
+}) {
   const difficultyLines = difficulties.map((level) => `  - ${level}: ${DIFFICULTY_DEFINITIONS[level]}`).join('\n');
 
   const typeRuleBlock =
@@ -140,6 +201,20 @@ export function buildPrompt({ type, count, difficulties, customPrompt, materials
       '  into another language or mix languages within one item.',
     ].join('\n'),
     [
+      'NO MATERIAL-CITING RULE:',
+      '- Never refer to the source material itself in questionText/frontText,',
+      '  options, correctAnswer, explanation, or backText — state facts directly as',
+      '  knowledge, not as something the material says. Forbidden (and equivalents',
+      '  in any language — e.g. Arabic "المحاضرة", "حسب المحاضرة", "وفقًا للشريحة",',
+      '  "المادة", "حسب المادة", "النص"): "the lecture", "according to the lecture",',
+      '  "the lecture explains/defines/states/says", "according to slide N", "on',
+      '  slide N", "the slides", "the course material", "according to the course',
+      '  material", "the material", "the document", "the text", "the author says".',
+      '- Example: write "BPM focuses on improving end-to-end processes", never',
+      '  "According to the lecture, BPM focuses on...".',
+      '- Applies only to the fields listed above, not to sourceLocation (see SOURCE TAGS) or "note".',
+    ].join('\n'),
+    [
       `DIFFICULTY LEVELS REQUESTED: ${difficulties.join(', ')}`,
       difficultyLines,
       '- Determine difficulty by the reasoning required to answer the item.',
@@ -185,17 +260,27 @@ export function buildPrompt({ type, count, difficulties, customPrompt, materials
   ];
 
   if (isRetake) {
-    sections.push(
-      [
-        'RETAKE RULE (this is a retake of a previous attempt with the same settings):',
-        '- The learner has already seen a set of items generated with these same',
-        '  settings. Where the source material allows it, vary your phrasing,',
-        '  specific examples/numbers, and which eligible concepts you choose, so',
-        '  this attempt feels different from a typical generation — without',
-        '  sacrificing quality or breaking any rule above. Some natural overlap is',
-        "  fine; perfect novelty isn't required.",
-      ].join('\n'),
-    );
+    const lines = [
+      'RETAKE RULE (this is a retake of a previous attempt with the same settings):',
+      '- The learner has already seen a set of items generated with these same',
+      '  settings. Where the source material allows it, vary your phrasing,',
+      '  specific examples/numbers, and which eligible concepts you choose, so',
+      '  this attempt feels different from a typical generation — without',
+      '  sacrificing quality or breaking any rule above. Some natural overlap is',
+      "  fine; perfect novelty isn't required.",
+    ];
+    if (previousTopics.length > 0) {
+      lines.push(
+        `- Topics the learner already practised: ${previousTopics.join(', ')}.`,
+        '  Prefer ideas, terms and concepts from the material that are NOT in this',
+        '  list. If nothing new is left, cover them from a different angle (a different',
+        '  aspect, a new example, or a different way of asking). Never produce fewer',
+        '  items than requested, and keep every item grounded in the material, without',
+        '  introducing concepts or facts it does not support. Do not mention this list',
+        '  to the student.',
+      );
+    }
+    sections.push(lines.join('\n'));
   }
 
   if (customPrompt != null && customPrompt.trim() !== '') {
@@ -205,19 +290,24 @@ export function buildPrompt({ type, count, difficulties, customPrompt, materials
   sections.push(
     [
       'SOURCE TAGS:',
-      '- The source text below is split into labeled sections (e.g. [Slide 2: Chapter 1],',
-      '  [Heading 3: Business Process Lifecycle], [Paragraph 5]). Tags only mark where',
+      '- The source text is split into labeled sections, e.g. [Slide 2: Chapter 1],',
+      '  [Heading 3: Business Process Lifecycle], [Paragraph 5]. Tags only mark where',
       '  content came from; never write a question about a tag itself (e.g. "what is',
       '  mentioned in Slide 5?").',
-      '- Fill sourceLocation with the nearest tag before the content used, copying the',
-      '  complete text inside the brackets — including everything after the colon —',
-      '  exactly as written (e.g. the tag [Slide 2: Chapter 1] gives sourceLocation',
-      '  "Slide 2: Chapter 1"); never translate it.',
-      '- If more than one location applies, list each tag separately (e.g. "Slide 2:',
-      '  Chapter 1, Heading 3: Business Process Lifecycle"); never use ranges or plural',
-      '  forms.',
-      '- When more than one material is involved, include the material title with each',
-      '  location (e.g. "Lecture 1 - Introduction, Slide 5: Processes Everywhere").',
+      '- sourceLocation format: <material title> | <tag text>',
+      '  - <material title>: the title in the nearest preceding [Material: ...] header.',
+      '    Always include it, even when only one material was provided.',
+      '  - <tag text>: the nearest tag before the content you used, copied exactly as',
+      '    written: everything inside the brackets (including the text after the',
+      '    colon), without the brackets themselves.',
+      '  - Never translate the title or the tag, and never invent a title.',
+      '  Example: under [Material: Lecture 1 - Introduction], the tag',
+      '  [Slide 5: Processes Everywhere] gives this sourceLocation:',
+      '  Lecture 1 - Introduction | Slide 5: Processes Everywhere',
+      '- If an item uses several locations, separate them with "; " and repeat the',
+      '  material title whenever the material changes. Example:',
+      '  Lecture 1 - Introduction | Slide 5: Processes Everywhere; Lecture 2 | Slide 3: Metrics',
+      '  Never use ranges (e.g. "Slides 3-5") or plural forms.',
     ].join('\n'),
   );
 
@@ -274,6 +364,12 @@ export function buildToolSchema(type) {
           type: 'string',
           description:
             'Only when the result differs from the request (fewer items, zero items, or an uneven difficulty split) — the real reason. Omit in the normal case.',
+        },
+        coveredTopics: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Short strings (2-6 words each) naming the concepts, terms, or topics the generated items cover — unique entries, roughly one per item or fewer, never more than 30.',
         },
       },
       required: ['items'],
