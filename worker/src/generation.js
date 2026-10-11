@@ -182,7 +182,7 @@ export function buildPrompt({
         ].join('\n')
       : null;
   const sections = [
-    `Generate up to ${count} ${type} items total, based only on the source text below.`,
+    `Generate exactly ${count} ${type} items total, based only on the source text below — ${count} is a hard ceiling you must never exceed; generate fewer only for the reason given in DISTRIBUTION RULE.`,
     [
       'CONTENT RULE (most important — overrides everything else):',
       "- Every tested concept, term, or formula must genuinely appear in the source text — never introduce one the source doesn't cover.",

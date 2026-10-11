@@ -114,7 +114,7 @@ describe('buildPrompt', () => {
 
   test('normal: includes the count, type, and every required rule section', () => {
     const prompt = buildPrompt(baseArgs);
-    expect(prompt).toContain('Generate up to 5 quiz items total');
+    expect(prompt).toContain('Generate exactly 5 quiz items total');
     expect(prompt).toContain('CONTENT RULE (most important — overrides everything else):');
     expect(prompt).toContain('WORDING & LANGUAGE RULE:');
     expect(prompt).toContain('DIFFICULTY LEVELS REQUESTED: easy');
@@ -123,6 +123,14 @@ describe('buildPrompt', () => {
     expect(prompt).toContain('SOURCE TAGS:');
     expect(prompt).toContain('SOURCE TEXT:');
     expect(prompt).toContain('[Material: Lecture 1]');
+  });
+
+  test('normal: the opening line states count as an exact target and a hard ceiling, pointing to DISTRIBUTION RULE for the only exception', () => {
+    const prompt = buildPrompt(baseArgs);
+    expect(prompt).toContain('Generate exactly 5 quiz items total');
+    expect(prompt).toContain('based only on the source text below');
+    expect(prompt).toContain('is a hard ceiling you must never exceed');
+    expect(prompt).toContain('generate fewer only for the reason given in DISTRIBUTION RULE');
   });
 
   test('normal: the sourceLocation format rule lives in SOURCE TAGS, not DISTRIBUTION RULE', () => {
