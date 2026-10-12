@@ -179,10 +179,64 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Leave this session?'), findsOneWidget);
+      expect(
+        find.text(
+          'You have answered 0 of 2 so far. We will keep this session so '
+          'you can pick it up where you left off.',
+        ),
+        findsOneWidget,
+      );
+      // Quiz's leave sheet is the shared lib/widgets/save_and_leave_sheet.dart
+      // widget — Flashcards' own equivalent test asserts these exact same
+      // numbers, so the two can't silently drift apart on font size again.
+      expect(
+        tester.widget<Text>(find.text('Leave this session?')).style!.fontSize,
+        19,
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.text(
+                'You have answered 0 of 2 so far. We will keep this '
+                'session so you can pick it up where you left off.',
+              ),
+            )
+            .style!
+            .fontSize,
+        13,
+      );
       await tester.tap(find.text('Keep going'));
       await tester.pumpAndSettle();
       expect(find.text('Leave this session?'), findsNothing);
     });
+
+    testWidgets(
+      'the leave sheet reflects how many of the total have actually been '
+      'answered',
+      (tester) async {
+        final service = FakeQuizSessionService(
+          sessions: [_session(mode: Mode.learning)],
+          questions: {'s1': _questions()},
+        );
+        await _pumpSession(tester, service);
+
+        await tester.tap(find.text('A collection of related data'));
+        await tester.pump();
+        await tester.tap(find.text('Submit answer'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.close));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            'You have answered 1 of 2 so far. We will keep this session '
+            'so you can pick it up where you left off.',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
 
     testWidgets('reporting a question calls through to the service', (tester) async {
       final service = FakeQuizSessionService(

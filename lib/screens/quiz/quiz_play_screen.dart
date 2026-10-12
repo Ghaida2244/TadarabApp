@@ -7,6 +7,7 @@ import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/draggable_overflow_text.dart';
+import '../../widgets/save_and_leave_sheet.dart';
 import 'performance_summary_screen.dart';
 import 'widgets/quiz_icon_button.dart';
 
@@ -273,21 +274,18 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     );
   }
 
-  Future<void> _askExit() async {
+  Future<void> _askExit(_PlayData data) async {
     if (widget.isPractice) {
       Navigator.of(context).maybePop();
       return;
     }
     final answered = _localAnswers.length;
-    final leave = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => _SaveAndLeaveSheet(
-        answered: answered,
-        onLeave: () => Navigator.of(context).pop(true),
-        onKeepGoing: () => Navigator.of(context).pop(false),
-      ),
+    final leave = await showSaveAndLeaveSheetModal<bool>(
+      context,
+      body: 'You have answered $answered of ${data.questions.length} so far. '
+          'We will keep this session so you can pick it up where you left off.',
+      onSaveAndLeave: () => Navigator.of(context).pop(true),
+      onKeepGoing: () => Navigator.of(context).pop(false),
     );
     if (leave == true && mounted) {
       Navigator.of(context).maybePop();
@@ -343,7 +341,7 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
                               icon: Icons.close,
                               size: 34,
                               semanticLabel: 'Leave quiz',
-                              onTap: _askExit,
+                              onTap: () => _askExit(data),
                             ),
                           if (locked)
                             Container(
@@ -657,59 +655,6 @@ class _ExplanationPanel extends StatelessWidget {
   }
 }
 
-class _SaveAndLeaveSheet extends StatelessWidget {
-  const _SaveAndLeaveSheet({
-    required this.answered,
-    required this.onLeave,
-    required this.onKeepGoing,
-  });
-
-  final int answered;
-  final VoidCallback onLeave;
-  final VoidCallback onKeepGoing;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 44,
-              height: 5,
-              decoration: BoxDecoration(color: AppColors.borderLight, borderRadius: BorderRadius.circular(999)),
-            ),
-          ),
-          const SizedBox(height: 13),
-          Text('Leave this session?', style: AppTypography.quizDialogTitle),
-          const SizedBox(height: 8),
-          Text(
-            'You have answered $answered so far. We will keep this session so you can pick it up where you left off.',
-            style: AppTypography.quizEmptyBody,
-          ),
-          const SizedBox(height: 16),
-          AppButton(
-            label: 'Save and leave',
-            onPressed: onLeave,
-            height: 52,
-            shadowColor: AppColors.navy.withValues(alpha: 0.10),
-          ),
-          const SizedBox(height: 10),
-          AppButton(
-            label: 'Keep going',
-            variant: AppButtonVariant.outlinedNeutral,
-            height: 48,
-            onPressed: onKeepGoing,
-          ),
-        ],
-      ),
-    );
-  }
-}
+// The leave-confirmation sheet itself now lives in
+// lib/widgets/save_and_leave_sheet.dart, shared with Flashcards' equivalent
+// (see _askExit above) — no local widget needed here anymore.

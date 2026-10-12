@@ -95,13 +95,33 @@ void main() {
     await tester.tap(find.byIcon(Icons.close));
     await tester.pumpAndSettle();
 
-    expect(find.text('Leave this deck?'), findsOneWidget);
+    expect(find.text('Leave this session?'), findsOneWidget);
     expect(
       find.text(
-        'You have marked 0 of 2 cards. We will keep this session so you '
-        'can pick it up at card 1.',
+        'You have marked 0 of 2 so far. We will keep this session so you '
+        'can pick it up where you left off.',
       ),
       findsOneWidget,
+    );
+    // This sheet is the shared lib/widgets/save_and_leave_sheet.dart widget
+    // — same font sizes Quiz's own leave sheet uses (see
+    // quiz_play_screen_test.dart's equivalent assertion), so the two
+    // screens can't silently drift apart in size again.
+    expect(
+      tester.widget<Text>(find.text('Leave this session?')).style!.fontSize,
+      19,
+    );
+    expect(
+      tester
+          .widget<Text>(
+            find.text(
+              'You have marked 0 of 2 so far. We will keep this session '
+              'so you can pick it up where you left off.',
+            ),
+          )
+          .style!
+          .fontSize,
+      13,
     );
   });
 }
