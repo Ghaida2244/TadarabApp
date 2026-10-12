@@ -37,9 +37,11 @@ AppButton _generateButton(WidgetTester tester) => tester.widget<AppButton>(
   ),
 );
 
+// Easy is selected by default (NOTE 13a), so selecting a material alone
+// already satisfies both requirements for Generate to enable — no
+// separate difficulty tap needed any more.
 Future<void> _selectMaterialAndDifficulty(WidgetTester tester) async {
   await tester.tap(find.byKey(const ValueKey('material-m1')));
-  await tester.tap(find.byKey(const ValueKey('difficulty-easy')));
   await tester.pumpAndSettle();
 }
 
@@ -67,29 +69,52 @@ List<Flashcard> _flashcards(int count) => List.generate(
 );
 
 void main() {
+  testWidgets(
+    'NOTE 13a/13b: starts with Easy selected and the count at 10',
+    (tester) async {
+      await tester.pumpWidget(
+        _wrap(FakeFlashcardService(materials: [_material])),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('10'), findsOneWidget);
+
+      final easyButton = tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('difficulty-easy')),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      final decoration = easyButton.decoration! as BoxDecoration;
+      expect(decoration.color, isNot(Colors.white)); // navy-filled, selected
+    },
+  );
+
   testWidgets('Generate button is disabled until a material and a '
-      'difficulty are both selected — Medium starts pre-selected, so only '
+      'difficulty are both selected — Easy starts pre-selected, so only '
       'a material is needed by default', (tester) async {
     await tester.pumpWidget(
       _wrap(FakeFlashcardService(materials: [_material])),
     );
     await tester.pumpAndSettle();
 
-    // Nothing selected yet: no material, even though Medium defaults on.
+    // Nothing selected yet: no material, even though Easy defaults on.
     expect(_generateButton(tester).onPressed, isNull);
 
     await tester.tap(find.byKey(const ValueKey('material-m1')));
     await tester.pumpAndSettle();
-    // Material now selected, Medium is still selected by default: enabled.
+    // Material now selected, Easy is still selected by default: enabled.
     expect(_generateButton(tester).onPressed, isNotNull);
 
     // Deselecting the only selected difficulty disables it again.
-    await tester.tap(find.byKey(const ValueKey('difficulty-medium')));
+    await tester.tap(find.byKey(const ValueKey('difficulty-easy')));
     await tester.pumpAndSettle();
     expect(_generateButton(tester).onPressed, isNull);
 
     // Picking any difficulty re-enables it.
-    await tester.tap(find.byKey(const ValueKey('difficulty-easy')));
+    await tester.tap(find.byKey(const ValueKey('difficulty-medium')));
     await tester.pumpAndSettle();
     expect(_generateButton(tester).onPressed, isNotNull);
   });
@@ -109,8 +134,10 @@ void main() {
     await tester.tap(find.text('Generate flashcards'));
     await tester.pump();
 
-    expect(find.text('Reading your material...'), findsOneWidget);
-    expect(find.text('Aiming for 10 cards'), findsOneWidget);
+    expect(find.text('Preparing your flashcards...'), findsOneWidget);
+    // Easy is the only selected difficulty here (the default, untouched
+    // by _selectMaterialAndDifficulty) — see buildGenerationFixedLine.
+    expect(find.text('Aiming for 10 flashcards · easy'), findsOneWidget);
     expect(_generateButton(tester).onPressed, isNull);
 
     pending.complete(
