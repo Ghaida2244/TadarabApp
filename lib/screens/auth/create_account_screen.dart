@@ -94,6 +94,17 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
     return null;
   }
 
+  /// Live match, independent of [_submitted] — unlike [_confirmError] (which
+  /// only fires after a submit attempt), the green border should appear as
+  /// soon as the two fields agree, not only after the user has tried to
+  /// submit once.
+  bool get _confirmMatches =>
+      _confirmController.text.isNotEmpty &&
+      AuthValidators.passwordsMatch(
+        _passwordController.text,
+        _confirmController.text,
+      );
+
   AppFieldState _stateFor(String value, String? error) {
     if (error != null) return AppFieldState.error;
     if (value.isNotEmpty) return AppFieldState.filled;
@@ -272,6 +283,12 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                 enabled: !_loading,
                 state: _stateFor(_confirmController.text, _confirmError),
                 errorText: _confirmError,
+                // Error always keeps priority (it's already baked into
+                // `state` above); only draw the green border once there's
+                // no error AND the two fields actually match.
+                borderColorOverride: _confirmError == null && _confirmMatches
+                    ? AppColors.success
+                    : null,
                 trailing: GestureDetector(
                   onTap: () =>
                       setState(() => _obscureConfirm = !_obscureConfirm),
@@ -293,30 +310,34 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                 onPressed: _submit,
               ),
               const SizedBox(height: 18),
-              GestureDetector(
-                onTap: _loading
-                    ? null
-                    : () => Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      ),
-                child: RichText(
-                  textAlign: TextAlign.center,
-                  text: TextSpan(
-                    style: AppTypography.footerBody.copyWith(
-                      color: _loading ? AppColors.textOnDisabled : null,
-                    ),
-                    children: [
-                      const TextSpan(text: 'Already have an account? '),
-                      TextSpan(
-                        text: 'Sign in',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: _loading
-                              ? AppColors.textOnDisabled
-                              : AppColors.red,
+              Center(
+                child: GestureDetector(
+                  onTap: _loading
+                      ? null
+                      : () => Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(
+                            builder: (_) => const LoginScreen(),
+                          ),
                         ),
+                  child: RichText(
+                    textAlign: TextAlign.center,
+                    text: TextSpan(
+                      style: AppTypography.footerBody.copyWith(
+                        color: _loading ? AppColors.textOnDisabled : null,
                       ),
-                    ],
+                      children: [
+                        const TextSpan(text: 'Already have an account? '),
+                        TextSpan(
+                          text: 'Sign in',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: _loading
+                                ? AppColors.textOnDisabled
+                                : AppColors.red,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
