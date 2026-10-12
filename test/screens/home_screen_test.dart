@@ -118,13 +118,20 @@ void main() {
         await tester.tap(find.text('Save course'));
         await tester.pumpAndSettle();
 
-        // Back on Home, not still on the Add Course screen.
+        // Not left on the Add Course screen, and — per the "land on
+        // Courses after creating from Home's onboarding" rule — switched
+        // to the Courses tab rather than staying on Home.
         expect(coursesService.createCourseCalls, 1);
         expect(find.text('Add course'), findsNothing);
-        // ...and Home reflects the new course instead of the stale
-        // zero-courses onboarding state.
-        expect(find.text('Create my first course'), findsNothing);
-        expect(find.text("Today's progress"), findsOneWidget);
+        final bottomNav = tester.widget(
+          find.byWidgetPredicate(
+            (w) => w.runtimeType.toString() == '_BottomNav',
+          ),
+        );
+        expect((bottomNav as dynamic).currentIndex, 1);
+        // The Courses tab itself shows the real, newly-created course —
+        // not just that the tab index flipped.
+        expect(find.text('IS230'), findsOneWidget);
       },
     );
 

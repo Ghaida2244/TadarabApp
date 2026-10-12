@@ -96,7 +96,6 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.homeBackground,
       body: SafeArea(
         child: Column(
           children: [

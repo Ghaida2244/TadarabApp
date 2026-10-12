@@ -23,6 +23,9 @@ void main() {
       expect(find.text('No courses yet'), findsOneWidget);
       expect(find.text('Add your first course'), findsOneWidget);
       expect(find.text('Courses'), findsOneWidget);
+      // The header "+" is hidden at zero courses — the big CTA above is
+      // the only add action.
+      expect(find.byIcon(Icons.add), findsNothing);
     });
   });
 
@@ -59,6 +62,10 @@ void main() {
       expect(find.text('1 material'), findsOneWidget);
       expect(find.text('0 materials'), findsOneWidget);
       expect(find.byIcon(Icons.delete_outline), findsNothing);
+      // The header "+" is shown once there's at least one course, and the
+      // big "Add your first course" CTA is gone.
+      expect(find.byIcon(Icons.add), findsOneWidget);
+      expect(find.text('Add your first course'), findsNothing);
     });
   });
 

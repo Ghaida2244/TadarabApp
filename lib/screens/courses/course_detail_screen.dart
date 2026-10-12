@@ -177,7 +177,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
         Navigator.of(context).pop(_changed);
       },
       child: Scaffold(
-        backgroundColor: AppColors.homeBackground,
         body: SafeArea(
           child: FutureBuilder<List<StudyMaterial>>(
             future: _materials,
@@ -200,13 +199,14 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                         ? const Center(child: CircularProgressIndicator())
                         : hasError
                         ? _ErrorState(onRetry: _reload)
-                        : SingleChildScrollView(
+                        : hasMaterials
+                        ? SingleChildScrollView(
                             padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _StudyTools(
-                                  unlocked: hasMaterials,
+                                  unlocked: true,
                                   onQuizTap: _openQuiz,
                                   onFlashcardsTap: _openFlashcards,
                                 ),
@@ -222,6 +222,79 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                 ),
                               ],
                             ),
+                          )
+                        // No materials yet: Study Tools stays fixed at the
+                        // top (locked, as always); the "Add your first
+                        // material" card — including its own "Course
+                        // materials" heading, see _EmptyMaterials — centers
+                        // in the remaining space below it, both
+                        // horizontally and vertically. Expanded needs a
+                        // bounded parent, so it wraps the LayoutBuilder
+                        // (legitimate here — this outer Column is itself
+                        // inside the grandparent's Expanded, so bounded) —
+                        // not anything inside the SingleChildScrollView's
+                        // child slot below, which always gets an unbounded
+                        // max height; centering there is done by the inner
+                        // Column's own `mainAxisAlignment: center` against
+                        // a ConstrainedBox(minHeight:) floor instead, the
+                        // standard "center if it fits, scroll if it
+                        // doesn't" pattern, so a short screen scrolls
+                        // instead of overflowing.
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  20,
+                                  18,
+                                  20,
+                                  0,
+                                ),
+                                child: _StudyTools(
+                                  unlocked: false,
+                                  onQuizTap: _openQuiz,
+                                  onFlashcardsTap: _openFlashcards,
+                                ),
+                              ),
+                              Expanded(
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    return SingleChildScrollView(
+                                      child: ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          minHeight: constraints.maxHeight,
+                                        ),
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Padding(
+                                              padding: const EdgeInsets.all(
+                                                20,
+                                              ),
+                                              child: _MaterialsSection(
+                                                materials: materials,
+                                                typeFilter: _typeFilter,
+                                                onTypeFilterChanged: (f) =>
+                                                    setState(
+                                                      () => _typeFilter = f,
+                                                    ),
+                                                onUpload: () =>
+                                                    _openUpload(materials),
+                                                onDeleteMaterial:
+                                                    _confirmDeleteMaterial,
+                                                deletingMaterialIds:
+                                                    _deletingMaterialIds,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
                           ),
                   ),
                 ],

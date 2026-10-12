@@ -78,7 +78,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.homeBackground,
       body: IndexedStack(
         index: _tabIndex,
         children: [
@@ -89,6 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
             flashcardServiceBuilder: _flashcardServiceBuilder,
             now: _now,
             active: _tabIndex == 0,
+            onCourseCreated: () => setState(() => _tabIndex = 1),
           ),
           CoursesListScreen(
             uid: widget.uid,
@@ -125,6 +125,7 @@ class _HomeTab extends StatefulWidget {
     required this.flashcardServiceBuilder,
     required this.now,
     required this.active,
+    required this.onCourseCreated,
   });
 
   final String uid;
@@ -140,6 +141,12 @@ class _HomeTab extends StatefulWidget {
   /// created from the Courses tab would never lift Home out of its
   /// zero-courses onboarding state within the same session.
   final bool active;
+
+  /// Switches HomeScreen's bottom-nav tab to Courses — called once a course
+  /// is successfully created from Home's onboarding card, so the student
+  /// lands on the Courses tab (with the new course visible) instead of
+  /// staying on Home.
+  final VoidCallback onCourseCreated;
 
   @override
   State<_HomeTab> createState() => _HomeTabState();
@@ -198,7 +205,10 @@ class _HomeTabState extends State<_HomeTab> {
         ),
       ),
     );
-    if (created == true) _reload();
+    if (created == true) {
+      _reload();
+      widget.onCourseCreated();
+    }
   }
 
   void _openFlashcardSessions(Course course, String? email) {
