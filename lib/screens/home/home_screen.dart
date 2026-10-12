@@ -4,12 +4,14 @@ import '../../features/flashcards/screens/flashcard_flip_deck_screen.dart';
 import '../../features/flashcards/screens/flashcard_sessions_screen.dart';
 import '../../models/course.dart';
 import '../../models/student.dart';
+import '../../models/study_material.dart';
 import '../../services/courses_service.dart';
 import '../../services/flashcard_service.dart';
 import '../../services/home_data_service.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../courses/add_course_screen.dart';
+import '../courses/course_detail_screen.dart';
 import '../courses/courses_list_screen.dart';
 import '../placeholder_screen.dart';
 import '../quiz/quiz_navigation.dart';
@@ -256,13 +258,68 @@ class _HomeTabState extends State<_HomeTab> {
       kind: kind,
       onCourseSelected: (Course course) {
         Navigator.of(context).pop();
-        if (kind == SessionKind.quiz) {
-          _openQuizSessions(course);
-        } else {
-          _openFlashcardSessions(course, email);
-        }
+        _onCoursePicked(kind, course, email: email);
       },
     );
+  }
+
+  /// The course picker can't tell in advance whether a course has any
+  /// material — Course Detail locks Quiz/Flashcards until at least one
+  /// exists (see `_StudyTools`'s `unlocked` there), so opening the
+  /// sessions screen directly for an empty course would let the student
+  /// reach a screen Course Detail itself would never let them into. Uses
+  /// [CoursesService.fetchMaterials] — the exact same source of truth
+  /// Course Detail reads from — fetched fresh at the moment of picking
+  /// rather than any cached count, so the two places can never disagree.
+  Future<void> _onCoursePicked(
+    SessionKind kind,
+    Course course, {
+    String? email,
+  }) async {
+    List<StudyMaterial> materials;
+    try {
+      materials = await widget.coursesService.fetchMaterials(
+        widget.uid,
+        course.courseId,
+      );
+    } on CoursesFailure catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    if (materials.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            kind == SessionKind.quiz
+                ? 'Upload a material first to start a quiz.'
+                : 'Upload a material first to start flashcards.',
+          ),
+        ),
+      );
+      Navigator.of(context)
+          .push(
+            MaterialPageRoute(
+              builder: (_) => CourseDetailScreen(
+                uid: widget.uid,
+                course: course,
+                coursesService: widget.coursesService,
+              ),
+            ),
+          )
+          .then((_) => _reload());
+      return;
+    }
+
+    if (kind == SessionKind.quiz) {
+      _openQuizSessions(course);
+    } else {
+      _openFlashcardSessions(course, email);
+    }
   }
 
   void _resumeSession(InProgressSession session) {

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tadarab_app/features/flashcards/screens/flashcard_sessions_screen.dart';
 import 'package:tadarab_app/models/calendar_event.dart';
 import 'package:tadarab_app/models/course.dart';
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/flashcard.dart';
 import 'package:tadarab_app/models/flashcard_session.dart';
 import 'package:tadarab_app/models/student.dart';
+import 'package:tadarab_app/models/study_material.dart';
+import 'package:tadarab_app/screens/courses/course_detail_screen.dart';
 import 'package:tadarab_app/screens/home/home_screen.dart';
 import 'package:tadarab_app/services/home_data_service.dart';
 
@@ -494,9 +497,27 @@ void main() {
       testWidgets(
         'picking a real course closes the sheet and opens the real Quiz sessions screen',
         (tester) async {
+          // At least one material, so the fresh materials check (added to
+          // guard against opening sessions for a still-locked course)
+          // lets this through to the sessions screen as before.
           await pumpHome(
             tester,
             dataService: FakeHomeDataService(courses: [aCourse]),
+            coursesService: FakeCoursesService(
+              courses: [aCourse],
+              materialsByCourse: {
+                'c1': [
+                  StudyMaterial(
+                    materialId: 'm1',
+                    title: 'Lecture 1',
+                    type: 'pptx',
+                    document: 'd',
+                    courseId: 'c1',
+                    extractedText: 't',
+                  ),
+                ],
+              },
+            ),
           );
 
           await tester.tap(find.text('New Quiz'));
@@ -508,11 +529,13 @@ void main() {
           // Indicator while its Firestore fetch is pending (no real Firebase
           // app in this test, so it never resolves) — an indeterminate
           // spinner animates forever, which would make pumpAndSettle hang.
-          // Two pumps (one for the sheet closing, one for the route's push
-          // transition) are enough to prove navigation happened; the header
-          // renders synchronously, independent of that fetch.
+          // One pump for the materials-check Future to resolve, one for the
+          // sheet closing, one for the route's push transition — enough to
+          // prove navigation happened; the header renders synchronously,
+          // independent of the sessions screen's own pending fetch.
           // QuizSessionsScreen's own states are covered by
           // test/screens/quiz_sessions_screen_test.dart.
+          await tester.pump();
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 300));
 
@@ -536,6 +559,126 @@ void main() {
           findsOneWidget,
         );
       });
+
+      testWidgets(
+        'picking a course with zero materials opens its Course Detail page '
+        'instead of Quiz sessions, with a heads-up SnackBar',
+        (tester) async {
+          await pumpHome(
+            tester,
+            dataService: FakeHomeDataService(courses: [aCourse]),
+            coursesService: FakeCoursesService(courses: [aCourse]),
+          );
+
+          await tester.tap(find.text('New Quiz'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('IS230'));
+          await tester.pumpAndSettle();
+
+          expect(find.byType(CourseDetailScreen), findsOneWidget);
+          expect(find.text('Quiz sessions'), findsNothing);
+          expect(
+            find.text('Upload a material first to start a quiz.'),
+            findsOneWidget,
+          );
+        },
+      );
+
+      testWidgets(
+        'picking a course with at least one material opens the real Quiz '
+        'sessions screen',
+        (tester) async {
+          await pumpHome(
+            tester,
+            dataService: FakeHomeDataService(courses: [aCourse]),
+            coursesService: FakeCoursesService(
+              courses: [aCourse],
+              materialsByCourse: {
+                'c1': [
+                  StudyMaterial(
+                    materialId: 'm1',
+                    title: 'Lecture 1',
+                    type: 'pptx',
+                    document: 'd',
+                    courseId: 'c1',
+                    extractedText: 't',
+                  ),
+                ],
+              },
+            ),
+          );
+
+          await tester.tap(find.text('New Quiz'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('IS230'));
+          await tester.pump();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
+
+          expect(find.text('Quiz sessions'), findsOneWidget);
+          expect(find.byType(CourseDetailScreen), findsNothing);
+        },
+      );
+
+      testWidgets(
+        'picking a course with zero materials for Flashcards also opens '
+        'Course Detail instead of Flashcard sessions',
+        (tester) async {
+          await pumpHome(
+            tester,
+            dataService: FakeHomeDataService(courses: [aCourse]),
+            coursesService: FakeCoursesService(courses: [aCourse]),
+          );
+
+          await tester.tap(find.text('New Flashcards'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('IS230'));
+          await tester.pumpAndSettle();
+
+          expect(find.byType(CourseDetailScreen), findsOneWidget);
+          expect(find.byType(FlashcardSessionsScreen), findsNothing);
+          expect(
+            find.text('Upload a material first to start flashcards.'),
+            findsOneWidget,
+          );
+        },
+      );
+
+      testWidgets(
+        'picking a course with at least one material opens the real '
+        'Flashcard sessions screen',
+        (tester) async {
+          await pumpHome(
+            tester,
+            dataService: FakeHomeDataService(courses: [aCourse]),
+            coursesService: FakeCoursesService(
+              courses: [aCourse],
+              materialsByCourse: {
+                'c1': [
+                  StudyMaterial(
+                    materialId: 'm1',
+                    title: 'Lecture 1',
+                    type: 'pptx',
+                    document: 'd',
+                    courseId: 'c1',
+                    extractedText: 't',
+                  ),
+                ],
+              },
+            ),
+            flashcardService: FakeFlashcardService(),
+          );
+
+          await tester.tap(find.text('New Flashcards'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('IS230'));
+          await tester.pump();
+          await tester.pumpAndSettle();
+
+          expect(find.byType(FlashcardSessionsScreen), findsOneWidget);
+          expect(find.byType(CourseDetailScreen), findsNothing);
+        },
+      );
     },
   );
 
