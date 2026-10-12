@@ -4,7 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/enums.dart';
 import '../models/question.dart';
 import '../models/quiz_session.dart';
+import '../models/session.dart';
 import '../models/study_material.dart';
+import 'generation_topics.dart';
 import 'material_catalog.dart';
 import 'quiz_generation_client.dart';
 import 'streak_service.dart';
@@ -151,6 +153,25 @@ class NoQuestionsGeneratedException implements Exception {
   final String? note;
 }
 
+/// Splits [totalOperations] Firestore writes into batches of at most 500
+/// (Firestore's hard per-batch cap) — used by [QuizSessionService
+/// .retakeSession]'s Learning-mode write. Same mechanism as Flashcards'
+/// own `batchSizes()` (flashcard_logic.dart), duplicated here rather than
+/// imported, to avoid a cross-feature dependency from Quiz into the
+/// Flashcards feature's own logic file.
+List<int> batchWriteSizes({required int totalOperations, int maxPerBatch = 500}) {
+  assert(totalOperations >= 0, 'totalOperations cannot be negative');
+  assert(maxPerBatch > 0, 'maxPerBatch must be positive');
+  final sizes = <int>[];
+  var remaining = totalOperations;
+  while (remaining > 0) {
+    final size = remaining < maxPerBatch ? remaining : maxPerBatch;
+    sizes.add(size);
+    remaining -= size;
+  }
+  return sizes;
+}
+
 /// Firestore-backed data/session layer for the Quiz generation & Sessions
 /// feature — the single place that reads/writes `quizSessions` and their
 /// `questions` subcollection, and orchestrates a call through
@@ -202,6 +223,20 @@ class QuizSessionService {
     final uid = _uid!;
     final doc = await _sessionsRef(uid).doc(sessionId).get();
     return QuizSession.fromFirestore(doc);
+  }
+
+  /// Every session in [rootSessionId]'s retake group (its original plus
+  /// every retake made from it so far) — used by [retakeSession] to compute
+  /// the next retake's `retakeNumber`. Single-field filter, no `orderBy`,
+  /// so (like [fetchSessions]) this never needs a composite index.
+  Future<List<QuizSession>> _fetchSessionsInGroup(
+    String uid,
+    String rootSessionId,
+  ) async {
+    final snap = await _sessionsRef(
+      uid,
+    ).where('rootSessionId', isEqualTo: rootSessionId).get();
+    return snap.docs.map(QuizSession.fromFirestore).toList();
   }
 
   Future<List<Question>> fetchQuestions(String sessionId) async {
@@ -281,6 +316,7 @@ class QuizSessionService {
       email: email,
       courseId: courseId,
       materialIds: materials.map((m) => m.materialId).toList(),
+      coveredTopics: result.coveredTopics,
       numberOfQuestions: result.items.length,
       mode: mode,
     );
@@ -422,21 +458,18 @@ class QuizSessionService {
   /// not updated per-answer, not updated per-navigation. So if the student
   /// leaves for any reason before this runs — closing the app, a crash,
   /// anything — there is nothing in Firestore to resume: this method is
-  /// the only place an Exam session's id is ever written.
+  /// the only place an Exam session's id is ever written. [draftSession
+  /// .sessionId] is always a brand-new, never-before-written id (reserved
+  /// via `.doc()` by [createSession] or [retakeSession], never reused), so
+  /// there's never anything under it to clear first — unlike before the
+  /// new-session-per-retake redesign, a retake no longer reuses its
+  /// source's id.
   Future<QuizSession> submitExamSession({
     required QuizSession draftSession,
     required List<Question> answeredQuestions,
   }) async {
     final uid = _uid!;
     final sessionRef = _sessionsRef(uid).doc(draftSession.sessionId);
-
-    // A retake reuses the same session id, so this clears out whatever
-    // the previous completed attempt left in the questions subcollection
-    // before writing the fresh set — same clear-then-write shape as the
-    // old (pre-draft) retakeSession, just fired here instead of at
-    // "Retake" tap time. For a brand-new exam (never before written),
-    // this query is simply empty — nothing to delete.
-    final existingQuestions = await sessionRef.collection('questions').get();
 
     final correct = answeredQuestions.where((q) => q.isCorrect == true).length;
     final incorrect = answeredQuestions.length - correct;
@@ -454,6 +487,10 @@ class QuizSessionService {
       email: draftSession.email,
       courseId: draftSession.courseId,
       materialIds: draftSession.materialIds,
+      rootSessionId: draftSession.rootSessionId,
+      retakeNumber: draftSession.retakeNumber,
+      retakeOfSessionId: draftSession.retakeOfSessionId,
+      coveredTopics: draftSession.coveredTopics,
       numberOfQuestions: answeredQuestions.length,
       mode: Mode.exam,
       correctAnswers: correct,
@@ -464,9 +501,6 @@ class QuizSessionService {
     );
 
     final batch = _firestore.batch();
-    for (final doc in existingQuestions.docs) {
-      batch.delete(doc.reference);
-    }
     batch.set(sessionRef, completed.toFirestore());
     final questionsRef = sessionRef.collection('questions');
     for (final q in answeredQuestions) {
@@ -482,11 +516,17 @@ class QuizSessionService {
     return completed;
   }
 
-  /// Retake: reuses the same session id (design's "session semantics"),
-  /// clearing its old questions and result, then calls generation fresh
-  /// and independently with the original settings (same materials,
-  /// difficulty level(s), count, mode) — no awareness of the previous
-  /// questions.
+  /// Retake: creates a brand-new session (a new, never-before-written id —
+  /// see [createSession]'s "reserve, don't write" approach) rather than
+  /// overwriting [sessionId] — the source session and its existing
+  /// questions are never touched or deleted. The new session shares the
+  /// source's `rootSessionId` and points `retakeOfSessionId` at it, with
+  /// `retakeNumber` one more than the highest already in that group (see
+  /// [nextRetakeNumber]). Generation is called fresh and independently with
+  /// the source session's own settings (same materials, difficulty
+  /// level(s), count, mode) plus `isRetake: true` and `previousTopics` —
+  /// the source session's own stored `coveredTopics` only, never a union
+  /// across the rest of the retake group (see [buildPreviousTopics]).
   Future<GeneratedSessionResult> retakeSession(String sessionId) async {
     final uid = _uid!;
     final existing = await fetchSession(sessionId);
@@ -507,27 +547,41 @@ class QuizSessionService {
       ),
     );
 
+    final previousTopics = buildPreviousTopics(existing.coveredTopics);
+
     final result = await _generationClient.generateQuiz(
       count: existing.numberOfQuestions,
       difficulties: existing.difficultyLevels,
       customPrompt: existing.customPrompt,
       materials: generationMaterials,
       isRetake: true,
+      previousTopics: previousTopics,
     );
 
     if (result.items.isEmpty) {
       throw NoQuestionsGeneratedException(result.note);
     }
 
-    final sessionRef = _sessionsRef(uid).doc(sessionId);
-    final refreshed = QuizSession(
-      sessionId: sessionId,
-      createdAt: existing.createdAt,
+    final group = await _fetchSessionsInGroup(uid, existing.rootSessionId);
+    final retakeNumber = nextRetakeNumber(group.map((s) => s.retakeNumber));
+
+    // .doc() (no id) reserves a brand-new, real Firestore document ID
+    // client-side — no server round trip, no write. Same "reserve, don't
+    // write yet" approach as createSession, so Exam mode below can hand
+    // this id back in an unwritten draft.
+    final sessionRef = _sessionsRef(uid).doc();
+    final fresh = QuizSession(
+      sessionId: sessionRef.id,
+      createdAt: DateTime.now(),
       difficultyLevels: existing.difficultyLevels,
       customPrompt: existing.customPrompt,
       email: existing.email,
       courseId: existing.courseId,
       materialIds: existing.materialIds,
+      rootSessionId: existing.rootSessionId,
+      retakeNumber: retakeNumber,
+      retakeOfSessionId: existing.sessionId,
+      coveredTopics: result.coveredTopics,
       numberOfQuestions: result.items.length,
       mode: existing.mode,
       currentQuestionIndex: 0,
@@ -535,34 +589,40 @@ class QuizSessionService {
     final questions = _reserveQuestions(sessionRef, result.items);
 
     if (existing.mode == Mode.exam) {
-      // Same reasoning as createSession's Exam branch: nothing is written
-      // here. The previous completed attempt is untouched in Firestore
-      // and stays that way unless/until this retake's own final Submit
-      // (submitExamSession) replaces it — so abandoning this retake for
-      // any reason just silently reverts to the original result, never a
-      // half-finished, resumable retake.
+      // Nothing is written here — same reasoning as createSession's Exam
+      // branch. The source session (and every other existing session) is
+      // completely untouched, so abandoning this retake for any reason
+      // before the final Submit (submitExamSession) leaves no trace at
+      // all — not a half-finished, resumable retake, and not a change to
+      // anything that already existed.
       return GeneratedSessionResult(
-        session: refreshed,
+        session: fresh,
         note: result.note,
         requestedCount: existing.numberOfQuestions,
         questions: questions,
       );
     }
 
-    final oldQuestions = await sessionRef.collection('questions').get();
-    final batch = _firestore.batch();
-    for (final doc in oldQuestions.docs) {
-      batch.delete(doc.reference);
+    final writes = <void Function(WriteBatch batch)>[
+      (batch) => batch.set(sessionRef, fresh.toFirestore()),
+      for (final q in questions)
+        (batch) => batch.set(
+          sessionRef.collection('questions').doc(q.questionId),
+          q.toFirestore(),
+        ),
+    ];
+    var start = 0;
+    for (final size in batchWriteSizes(totalOperations: writes.length)) {
+      final batch = _firestore.batch();
+      for (final write in writes.skip(start).take(size)) {
+        write(batch);
+      }
+      await batch.commit();
+      start += size;
     }
-    batch.set(sessionRef, refreshed.toFirestore());
-    final questionsRef = sessionRef.collection('questions');
-    for (final q in questions) {
-      batch.set(questionsRef.doc(q.questionId), q.toFirestore());
-    }
-    await batch.commit();
 
     return GeneratedSessionResult(
-      session: refreshed,
+      session: fresh,
       note: result.note,
       requestedCount: existing.numberOfQuestions,
       questions: questions,

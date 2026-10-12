@@ -22,6 +22,16 @@ const kFlashcardLoadingConfig = GenerationLoadingConfig(
       "Thanks for your patience. We're still putting it together.",
 );
 
+/// Retake's own wording for the Flashcards generating overlay — same tip
+/// and long-wait message as a fresh generation, just a different opening
+/// line (see flashcard_sessions_screen.dart's `_retake`).
+const kFlashcardRetakeLoadingConfig = GenerationLoadingConfig(
+  sentence: 'Creating new flashcards for you...',
+  tip: 'Say the answer out loud before you flip the card.',
+  longWaitMessage:
+      "Thanks for your patience. We're still putting it together.",
+);
+
 const _kMinCount = 5;
 const _kMaxCount = 150;
 const _kDefaultCount = 10;
@@ -129,13 +139,14 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
       }
 
       if (result.items.length == _count) {
-        await _startSession(materials, result.items);
+        await _startSession(materials, result.items, result.coveredTopics);
       } else {
         await showFewerCardsDialog(
           context,
           actualCount: result.items.length,
           requestedCount: _count,
-          onStartWithActual: () => _startSession(materials, result.items),
+          onStartWithActual: () =>
+              _startSession(materials, result.items, result.coveredTopics),
           onChangeSetup: () {},
         );
       }
@@ -157,6 +168,7 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
   Future<void> _startSession(
     List<StudyMaterial> materials,
     List<FlashcardGenerationItem> items,
+    List<String> coveredTopics,
   ) async {
     final selected = materials
         .where((m) => _selectedMaterialIds.contains(m.materialId))
@@ -171,6 +183,7 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
             ? null
             : _promptController.text.trim(),
         items: items,
+        coveredTopics: coveredTopics,
       );
       final flashcards = await _service.fetchFlashcards(sessionId);
       if (!mounted) return;

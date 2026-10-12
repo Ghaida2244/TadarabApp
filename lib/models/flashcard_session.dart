@@ -15,6 +15,10 @@ class FlashcardSession extends Session {
     required super.email,
     required super.courseId,
     required super.materialIds,
+    super.rootSessionId,
+    super.retakeNumber,
+    super.retakeOfSessionId,
+    super.coveredTopics,
     this.numberOfFlashcards = 0,
     required this.materialTitles,
     this.currentFlashcardIndex = 0,
@@ -45,7 +49,7 @@ class FlashcardSession extends Session {
     DocumentSnapshot<Map<String, dynamic>> doc,
   ) {
     final data = doc.data()!;
-    final shared = SessionFields.fromMap(data);
+    final shared = SessionFields.fromMap(data, sessionId: doc.id);
     return FlashcardSession(
       sessionId: doc.id,
       createdAt: shared.createdAt,
@@ -57,6 +61,10 @@ class FlashcardSession extends Session {
       email: shared.email,
       courseId: shared.courseId,
       materialIds: shared.materialIds,
+      rootSessionId: shared.rootSessionId,
+      retakeNumber: shared.retakeNumber,
+      retakeOfSessionId: shared.retakeOfSessionId,
+      coveredTopics: shared.coveredTopics,
       numberOfFlashcards: (data['numberOfFlashcards'] as num?)?.toInt() ?? 0,
       materialTitles: List<String>.from(
         data['materialTitles'] as List? ?? const [],

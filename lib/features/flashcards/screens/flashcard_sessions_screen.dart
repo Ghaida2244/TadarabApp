@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../../../models/flashcard_session.dart';
+import '../../../models/session.dart';
 import '../../../services/flashcard_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/app_button.dart';
 import '../../../widgets/dashed_border.dart';
+import '../../../widgets/generation_loading_overlay.dart';
 import '../../../widgets/scrollable_title_pill.dart';
 import '../logic/flashcard_logic.dart';
 import '../widgets/delete_session_dialog.dart';
@@ -69,6 +71,11 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
   // in flight.
   final Set<String> _retakingSessionIds = {};
 
+  // The session currently being retaken, kept only for the full-screen
+  // loading overlay's fixed line (its settings) — set the moment a retake
+  // starts, cleared once it finishes or fails.
+  FlashcardSession? _retakingSource;
+
   void _openSetup() {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -120,9 +127,14 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
   Future<void> _retake(FlashcardSession session) async {
     // Already retaking this session (double tap) — ignore, don't re-enter.
     if (_retakingSessionIds.contains(session.sessionId)) return;
-    setState(() => _retakingSessionIds.add(session.sessionId));
+    setState(() {
+      _retakingSessionIds.add(session.sessionId);
+      _retakingSource = session;
+    });
 
     try {
+      // Retake now creates a brand-new session rather than overwriting
+      // this one — outcome.newSessionId is the one to actually open.
       final outcome = await _service.retake(
         sessionId: session.sessionId,
         materialIds: session.materialIds,
@@ -130,9 +142,12 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
         count: session.numberOfFlashcards,
         customPrompt: session.customPrompt,
       );
-      final flashcards = await _service.fetchFlashcards(session.sessionId);
+      final flashcards = await _service.fetchFlashcards(outcome.newSessionId);
       if (!mounted) return;
-      setState(() => _retakingSessionIds.remove(session.sessionId));
+      setState(() {
+        _retakingSessionIds.remove(session.sessionId);
+        _retakingSource = null;
+      });
 
       final shortfall = outcome.actualCount < outcome.requestedCount;
       final message = outcome.note ??
@@ -151,7 +166,7 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
           builder: (_) => FlashcardFlipDeckScreen(
             uid: widget.uid,
             courseId: widget.courseId,
-            sessionId: session.sessionId,
+            sessionId: outcome.newSessionId,
             initialFlashcards: flashcards,
             initialIndex: 0,
             initialKnownCount: 0,
@@ -162,13 +177,19 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
       );
     } on FlashcardFailure catch (e) {
       if (!mounted) return;
-      setState(() => _retakingSessionIds.remove(session.sessionId));
+      setState(() {
+        _retakingSessionIds.remove(session.sessionId);
+        _retakingSource = null;
+      });
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
       if (!mounted) return;
-      setState(() => _retakingSessionIds.remove(session.sessionId));
+      setState(() {
+        _retakingSessionIds.remove(session.sessionId);
+        _retakingSource = null;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Retake failed. Please try again.')),
       );
@@ -203,58 +224,73 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
             sessions.where((s) => s.isSessionCompleted).toList(),
           );
 
-          return Column(
+          return Stack(
             children: [
-              _Header(
-                count: sessions.length,
-                onBack: () => Navigator.of(context).maybePop(),
+              Column(
+                children: [
+                  _Header(
+                    count: sessions.length,
+                    onBack: () => Navigator.of(context).maybePop(),
+                  ),
+                  Expanded(
+                    child: snapshot.hasError
+                        ? _ErrorState(onRetry: _retry)
+                        : snapshot.connectionState == ConnectionState.waiting
+                        ? const Center(child: CircularProgressIndicator())
+                        : sessions.isEmpty
+                        ? const _EmptyState()
+                        : ListView(
+                            padding: const EdgeInsets.fromLTRB(22, 0, 22, 12),
+                            children: [
+                              if (inProgress.isNotEmpty) ...[
+                                const _SectionLabel('IN PROGRESS'),
+                                for (final session in inProgress)
+                                  _SessionRow(
+                                    session: session,
+                                    sessionsInList: sessions,
+                                    onResume: () => _resume(session),
+                                    onDelete: () => _delete(session),
+                                  ),
+                              ],
+                              if (completed.isNotEmpty) ...[
+                                const _SectionLabel('COMPLETED'),
+                                for (final session in completed)
+                                  _SessionRow(
+                                    session: session,
+                                    sessionsInList: sessions,
+                                    onViewSummary: () => _viewSummary(session),
+                                    onRetake: () => _retake(session),
+                                    onDelete: () => _delete(session),
+                                    isRetaking: _retakingSessionIds.contains(
+                                      session.sessionId,
+                                    ),
+                                  ),
+                              ],
+                            ],
+                          ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 10, 22, 26),
+                    child: AppButton(
+                      label: 'Start new flashcards',
+                      variant: AppButtonVariant.accent,
+                      height: 56,
+                      borderRadius: 18,
+                      shadowColor: AppColors.redShadow.withValues(alpha: 0.6),
+                      onPressed: _openSetup,
+                    ),
+                  ),
+                ],
               ),
-              Expanded(
-                child: snapshot.hasError
-                    ? _ErrorState(onRetry: _retry)
-                    : snapshot.connectionState == ConnectionState.waiting
-                    ? const Center(child: CircularProgressIndicator())
-                    : sessions.isEmpty
-                    ? const _EmptyState()
-                    : ListView(
-                        padding: const EdgeInsets.fromLTRB(22, 0, 22, 12),
-                        children: [
-                          if (inProgress.isNotEmpty) ...[
-                            const _SectionLabel('IN PROGRESS'),
-                            for (final session in inProgress)
-                              _SessionRow(
-                                session: session,
-                                onResume: () => _resume(session),
-                                onDelete: () => _delete(session),
-                              ),
-                          ],
-                          if (completed.isNotEmpty) ...[
-                            const _SectionLabel('COMPLETED'),
-                            for (final session in completed)
-                              _SessionRow(
-                                session: session,
-                                onViewSummary: () => _viewSummary(session),
-                                onRetake: () => _retake(session),
-                                onDelete: () => _delete(session),
-                                isRetaking: _retakingSessionIds.contains(
-                                  session.sessionId,
-                                ),
-                              ),
-                          ],
-                        ],
-                      ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(22, 10, 22, 26),
-                child: AppButton(
-                  label: 'Start new flashcards',
-                  variant: AppButtonVariant.accent,
-                  height: 56,
-                  borderRadius: 18,
-                  shadowColor: AppColors.redShadow.withValues(alpha: 0.6),
-                  onPressed: _openSetup,
+              if (_retakingSource != null)
+                GenerationLoadingOverlay(
+                  config: kFlashcardRetakeLoadingConfig,
+                  fixedLine: buildGenerationFixedLine(
+                    count: _retakingSource!.numberOfFlashcards,
+                    noun: 'flashcards',
+                    difficulties: _retakingSource!.difficultyLevels.toSet(),
+                  ),
                 ),
-              ),
             ],
           );
         },
@@ -449,6 +485,7 @@ class _EmptyState extends StatelessWidget {
 class _SessionRow extends StatelessWidget {
   const _SessionRow({
     required this.session,
+    required this.sessionsInList,
     this.onResume,
     this.onViewSummary,
     this.onRetake,
@@ -457,6 +494,12 @@ class _SessionRow extends StatelessWidget {
   });
 
   final FlashcardSession session;
+
+  /// Every session currently loaded for this course — used to decide
+  /// whether [session] (when it's an original) actually has a retake, per
+  /// [sessionCardRetakeLabel].
+  final List<FlashcardSession> sessionsInList;
+
   final VoidCallback? onResume;
   final VoidCallback? onViewSummary;
   final VoidCallback? onRetake;
@@ -516,6 +559,22 @@ class _SessionRow extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 8),
+                    ],
+                    if (sessionCardRetakeLabel(session, sessionsInList)
+                        case final label?) ...[
+                      // A retake shows which retake it is; an original
+                      // only gets labeled once it actually has one —
+                      // see sessionCardRetakeLabel's own doc comment.
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          fontFamily: 'Nunito',
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.placeholder,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
                     ],
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -584,10 +643,7 @@ class _SessionRow extends StatelessWidget {
                         variant: AppButtonVariant.outlinedBrand,
                         height: 46,
                         borderRadius: 14,
-                        shadowColor: isRetaking
-                            ? null
-                            : AppColors.navy.withValues(alpha: 0.18),
-                        loading: isRetaking,
+                        shadowColor: AppColors.navy.withValues(alpha: 0.18),
                         onPressed: isRetaking ? null : onRetake,
                       ),
                     ],

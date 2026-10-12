@@ -7,8 +7,10 @@ import '../features/flashcards/logic/flashcard_logic.dart';
 import '../models/enums.dart';
 import '../models/flashcard.dart';
 import '../models/flashcard_session.dart';
+import '../models/session.dart';
 import '../models/study_material.dart';
 import 'auth_service.dart';
+import 'generation_topics.dart';
 
 // TODO: replace these two with the shared public constants from
 // auth_service.dart (kNetworkFailureMessage / kGenericFailureMessage) once
@@ -85,11 +87,17 @@ class FlashcardGenerationResult {
     required this.items,
     required this.requestedCount,
     this.note,
+    this.coveredTopics = const [],
   });
 
   final List<FlashcardGenerationItem> items;
   final int requestedCount;
   final String? note;
+
+  /// Short topic strings the Worker reports this batch actually covered —
+  /// stored on the session so a future retake of it can send them back as
+  /// `previousTopics`. Empty if the Worker's response omitted it.
+  final List<String> coveredTopics;
 }
 
 /// Firestore- and Worker-backed data/actions for the Flashcards feature,
@@ -201,6 +209,7 @@ class FlashcardService {
     required int count,
     String? customPrompt,
     bool isRetake = false,
+    List<String> previousTopics = const [],
   }) async {
     final allMaterials = await fetchMaterials();
     final materials = allMaterials
@@ -242,6 +251,8 @@ class FlashcardService {
                   {'title': m.title, 'sourceText': m.extractedText},
               ],
               'isRetake': isRetake,
+              if (isRetake && previousTopics.isNotEmpty)
+                'previousTopics': previousTopics,
             }),
           )
           .timeout(const Duration(seconds: 120));
@@ -270,6 +281,7 @@ class FlashcardService {
       items: items,
       requestedCount: count,
       note: body['note'] as String?,
+      coveredTopics: parseCoveredTopics(body['coveredTopics']),
     );
   }
 
@@ -282,6 +294,7 @@ class FlashcardService {
     required List<DifficultyLevel> difficultyLevels,
     String? customPrompt,
     required List<FlashcardGenerationItem> items,
+    List<String> coveredTopics = const [],
   }) async {
     final sessionRef = _sessionsRef.doc();
     final session = FlashcardSession(
@@ -294,6 +307,7 @@ class FlashcardService {
       materialIds: materialIds,
       materialTitles: materialTitles,
       numberOfFlashcards: items.length,
+      coveredTopics: coveredTopics,
     );
     try {
       final batch = _firestore.batch();
@@ -317,6 +331,32 @@ class FlashcardService {
     } on FirebaseException catch (e) {
       throw FlashcardFailure(_messageFor(e));
     }
+  }
+
+  /// One session's full document — used by [retake] to read the source
+  /// session's `rootSessionId`/`coveredTopics`/settings before generating
+  /// its replacement.
+  Future<FlashcardSession> fetchSession(String sessionId) async {
+    try {
+      final doc = await _sessionsRef.doc(sessionId).get();
+      return FlashcardSession.fromFirestore(doc);
+    } on FirebaseException catch (e) {
+      throw FlashcardFailure(_messageFor(e));
+    }
+  }
+
+  /// Every session in [sessionId]'s retake group (its `rootSessionId`'s
+  /// original plus every retake made from it so far) — used by [retake] to
+  /// compute the next retake's `retakeNumber`. Single-field filter, no
+  /// `orderBy`, so (like [watchSessions]) this never needs a composite
+  /// index.
+  Future<List<FlashcardSession>> _fetchSessionsInGroup(
+    String rootSessionId,
+  ) async {
+    final snap = await _sessionsRef
+        .where('rootSessionId', isEqualTo: rootSessionId)
+        .get();
+    return snap.docs.map(FlashcardSession.fromFirestore).toList();
   }
 
   /// A session's flashcards in their current stored order (see
@@ -395,24 +435,32 @@ class FlashcardService {
     }
   }
 
-  /// Regenerates this session's cards through the Worker — same settings
-  /// as the original (materials/difficulties/count/customPrompt, all
-  /// supplied by the caller, which already has them from the session doc)
-  /// plus `isRetake: true` — then replaces the old cards in place.
+  /// Retakes [sessionId] by generating a brand-new set of cards through the
+  /// Worker — same settings as the source session (materials/difficulties/
+  /// count/customPrompt, all supplied by the caller, which already has them
+  /// from the session doc) plus `isRetake: true` and `previousTopics` (the
+  /// source session's own stored [FlashcardSession.coveredTopics], never a
+  /// union across the rest of the retake group — see [buildPreviousTopics])
+  /// — then creates a brand-new [FlashcardSession] document for the result,
+  /// sharing the source's `rootSessionId` and pointing `retakeOfSessionId`
+  /// at it. The source session and its existing cards are never written to
+  /// or deleted: a retake no longer overwrites, it adds a new entry to the
+  /// same retake group.
   ///
-  /// The Worker is called FIRST; Firestore is only touched once it
+  /// Firestore is read once at the very start — [fetchSession] on the
+  /// source, purely to get its `coveredTopics` for `previousTopics` —
+  /// before the Worker is ever called; it is only WRITTEN once the Worker
   /// succeeds (a non-empty result), so a failure of any kind (network,
-  /// timeout, or zero usable cards) leaves the session and its existing
-  /// cards completely unchanged. [FlashcardFailure] covers all of these —
-  /// zero cards is treated the same as a Firestore failure, not a
-  /// successful-but-empty retake.
+  /// timeout, or zero usable cards) creates nothing and leaves every
+  /// existing session completely unchanged. [FlashcardFailure] covers all
+  /// of these — zero cards is treated the same as a Firestore failure, not
+  /// a successful-but-empty retake.
   ///
-  /// The write itself reuses existing card docs where possible (overwritten
-  /// with the new content, at the new index), adds brand-new ones if the
-  /// fresh set is bigger, and deletes the leftover old ones if it's
-  /// smaller — see [planRetakeCardWrites]. Split across batches of at most
-  /// 500 operations via [batchSizes], since a single Firestore batch can't
-  /// exceed that.
+  /// The new session's cards are all brand-new docs — [planRetakeCardWrites]
+  /// is still used (with `existingCount: 0`, since the new session starts
+  /// with none) so the write-building shape matches a pre-redesign retake
+  /// exactly; [batchSizes] still splits the writes into Firestore-safe
+  /// batches of at most 500 operations.
   Future<RetakeOutcome> retake({
     required String sessionId,
     required List<String> materialIds,
@@ -420,12 +468,16 @@ class FlashcardService {
     required int count,
     String? customPrompt,
   }) async {
+    final source = await fetchSession(sessionId);
+    final previousTopics = buildPreviousTopics(source.coveredTopics);
+
     final result = await generateFlashcards(
       materialIds: materialIds,
       difficulties: difficulties,
       count: count,
       customPrompt: customPrompt,
       isRetake: true,
+      previousTopics: previousTopics,
     );
 
     if (result.items.isEmpty) {
@@ -436,23 +488,43 @@ class FlashcardService {
       );
     }
 
-    final existingCards = await fetchFlashcards(sessionId);
-    final plan = planRetakeCardWrites(
-      existingCount: existingCards.length,
-      newCount: result.items.length,
-    );
-    final cardsCollection = _cardsRef(sessionId);
+    final group = await _fetchSessionsInGroup(source.rootSessionId);
+    final retakeNumber = nextRetakeNumber(group.map((s) => s.retakeNumber));
 
-    // Every write this retake needs, in one flat list — overwrite/add the
-    // new cards, delete any leftover old ones, then reset the session doc
-    // — so it can be sliced into Firestore-sized batches below.
+    final newSessionRef = _sessionsRef.doc();
+    final newSession = FlashcardSession(
+      sessionId: newSessionRef.id,
+      createdAt: DateTime.now(),
+      difficultyLevels: difficulties,
+      customPrompt: customPrompt,
+      email: source.email,
+      courseId: courseId,
+      materialIds: materialIds,
+      materialTitles: source.materialTitles,
+      rootSessionId: source.rootSessionId,
+      retakeNumber: retakeNumber,
+      retakeOfSessionId: source.sessionId,
+      coveredTopics: result.coveredTopics,
+      numberOfFlashcards: result.items.length,
+    );
+
+    // A new session always starts with zero existing cards, so this plan
+    // is always "add every one of them" (overwriteCount 0) — called anyway
+    // so the write-building shape here still reuses the exact same
+    // function the pre-redesign retake used.
+    final plan = planRetakeCardWrites(existingCount: 0, newCount: result.items.length);
+    assert(plan.overwriteCount == 0 && plan.addCount == result.items.length);
+    final newCardsCollection = _cardsRef(newSessionRef.id);
+
+    // Every write this retake needs, in one flat list — the new session
+    // doc, then every one of its (all brand-new) cards — sliced into
+    // Firestore-sized batches below.
     final writes = <void Function(WriteBatch batch)>[
+      (batch) => batch.set(newSessionRef, newSession.toFirestore()),
       for (var i = 0; i < result.items.length; i++)
         (batch) {
           final item = result.items[i];
-          final docRef = i < plan.overwriteCount
-              ? cardsCollection.doc(existingCards[i].flashcardId)
-              : cardsCollection.doc();
+          final docRef = newCardsCollection.doc();
           batch.set(
             docRef,
             Flashcard(
@@ -461,23 +533,11 @@ class FlashcardService {
               backText: item.backText,
               reviewStatus: null,
               sourceLocation: item.sourceLocation,
-              sessionId: sessionId,
+              sessionId: newSessionRef.id,
               cardIndex: i,
             ).toFirestore(),
           );
         },
-      for (var i = plan.overwriteCount; i < existingCards.length; i++)
-        (batch) =>
-            batch.delete(cardsCollection.doc(existingCards[i].flashcardId)),
-      (batch) => batch.update(_sessionsRef.doc(sessionId), {
-        'numberOfFlashcards': result.items.length,
-        'knownCount': kRetakeSessionFields.knownCount,
-        'needsReviewCount': kRetakeSessionFields.needsReviewCount,
-        'currentFlashcardIndex': kRetakeSessionFields.currentFlashcardIndex,
-        'isSessionCompleted': kRetakeSessionFields.isSessionCompleted,
-        'completedAt': kRetakeSessionFields.completedAt,
-        'earnedPoints': kRetakeSessionFields.earnedPoints,
-      }),
     ];
 
     try {
@@ -498,6 +558,7 @@ class FlashcardService {
       requestedCount: result.requestedCount,
       actualCount: result.items.length,
       note: result.note,
+      newSessionId: newSessionRef.id,
     );
   }
 

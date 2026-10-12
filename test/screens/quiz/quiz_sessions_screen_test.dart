@@ -11,6 +11,7 @@ import 'package:tadarab_app/screens/quiz/quiz_sessions_screen.dart';
 import 'package:tadarab_app/services/quiz_session_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
+import 'package:tadarab_app/widgets/generation_loading_overlay.dart';
 import 'package:tadarab_app/widgets/scrollable_title_pill.dart';
 
 import '../../helpers/fake_quiz_session_service.dart';
@@ -19,12 +20,22 @@ AppButton _retakeButton(WidgetTester tester) => tester.widget<AppButton>(
   find.byWidgetPredicate((w) => w is AppButton && w.label == 'Retake quiz'),
 );
 
+/// Matches a "Retake N" chain label specifically — not the "Retake quiz"
+/// button, which also contains the substring "Retake" and would otherwise
+/// make a plain `find.textContaining('Retake')` useless for this.
+final Finder _retakeChainLabel = find.byWidgetPredicate(
+  (w) => w is Text && RegExp(r'^Retake \d+$').hasMatch(w.data ?? ''),
+);
+
 QuizSession _session({
   required String id,
   required bool completed,
   Mode mode = Mode.exam,
   int currentQuestionIndex = 3,
   int correctAnswers = 8,
+  int retakeNumber = 0,
+  String? rootSessionId,
+  String? retakeOfSessionId,
 }) {
   return QuizSession(
     sessionId: id,
@@ -38,6 +49,9 @@ QuizSession _session({
     mode: mode,
     currentQuestionIndex: currentQuestionIndex,
     correctAnswers: correctAnswers,
+    retakeNumber: retakeNumber,
+    rootSessionId: rootSessionId,
+    retakeOfSessionId: retakeOfSessionId,
   );
 }
 
@@ -98,6 +112,73 @@ void main() {
     await _pump(tester, service);
 
     expect(find.text('Retake quiz'), findsNothing);
+  });
+
+  group('retake label', () {
+    testWidgets(
+      'normal case: an original session that already has a loaded retake '
+      'is labeled "Original"',
+      (tester) async {
+        final service = FakeQuizSessionService(
+          sessions: [
+            _session(id: 's1', completed: true, retakeNumber: 0),
+            _session(
+              id: 's2',
+              completed: true,
+              retakeNumber: 1,
+              rootSessionId: 's1',
+              retakeOfSessionId: 's1',
+            ),
+          ],
+        );
+        await _pump(tester, service);
+
+        expect(find.text('Original'), findsOneWidget);
+        expect(find.text('Retake 1'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'edge case: an original session with no retakes currently loaded '
+      'shows no label at all',
+      (tester) async {
+        final service = FakeQuizSessionService(
+          sessions: [_session(id: 's1', completed: true, retakeNumber: 0)],
+        );
+        await _pump(tester, service);
+
+        expect(find.text('Original'), findsNothing);
+        expect(_retakeChainLabel, findsNothing);
+      },
+    );
+
+    testWidgets('normal case: a session with retakeNumber 2 is labeled "Retake 2"', (
+      tester,
+    ) async {
+      final service = FakeQuizSessionService(
+        sessions: [_session(id: 's1', completed: true, retakeNumber: 2)],
+      );
+      await _pump(tester, service);
+
+      expect(find.text('Retake 2'), findsOneWidget);
+      expect(find.text('Original'), findsNothing);
+    });
+
+    testWidgets(
+      'edge case: an old session (default rootSessionId/retakeNumber, as '
+      'if it predates these fields) shows no label at all',
+      (tester) async {
+        // No rootSessionId/retakeOfSessionId passed — same defaults a
+        // document that predates these fields would read as.
+        final service = FakeQuizSessionService(
+          sessions: [_session(id: 's1', completed: true)],
+        );
+        await _pump(tester, service);
+
+        expect(find.text('Original'), findsNothing);
+        expect(_retakeChainLabel, findsNothing);
+      },
+    );
   });
 
   testWidgets(
@@ -181,7 +262,8 @@ void main() {
     }
 
     testWidgets(
-      'tapping Retake shows a loading state on the button and disables it',
+      'tapping Retake disables the button and shows the full-screen '
+      'generating overlay',
       (tester) async {
         final original = _session(id: 's1', completed: true, mode: Mode.learning);
         final pending = Completer<GeneratedSessionResult>();
@@ -191,12 +273,13 @@ void main() {
         );
         await _pump(tester, service);
 
-        expect(_retakeButton(tester).loading, isFalse);
+        expect(find.byType(GenerationLoadingOverlay), findsNothing);
+        expect(_retakeButton(tester).onPressed, isNotNull);
 
         await tester.tap(find.text('Retake quiz'));
         await tester.pump();
 
-        expect(_retakeButton(tester).loading, isTrue);
+        expect(find.byType(GenerationLoadingOverlay), findsOneWidget);
         expect(_retakeButton(tester).onPressed, isNull);
 
         pending.complete(learningResult(original));
@@ -283,13 +366,13 @@ void main() {
         navigatorState.pop();
         await tester.pumpAndSettle();
 
-        expect(_retakeButton(tester).loading, isFalse);
+        expect(find.byType(GenerationLoadingOverlay), findsNothing);
         expect(_retakeButton(tester).onPressed, isNotNull);
       },
     );
 
     testWidgets(
-      'loading clears after a failed retake, and shows the error SnackBar',
+      'the overlay clears after a failed retake, and shows the error SnackBar',
       (tester) async {
         final original = _session(id: 's1', completed: true, mode: Mode.learning);
         final service = FakeQuizSessionService(
@@ -303,7 +386,7 @@ void main() {
         await tester.pump();
 
         expect(find.text('Retake failed. Please try again.'), findsOneWidget);
-        expect(_retakeButton(tester).loading, isFalse);
+        expect(find.byType(GenerationLoadingOverlay), findsNothing);
         expect(_retakeButton(tester).onPressed, isNotNull);
       },
     );

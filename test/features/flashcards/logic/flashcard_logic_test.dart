@@ -1,9 +1,6 @@
-import 'dart:math';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/features/flashcards/logic/flashcard_logic.dart';
 import 'package:tadarab_app/models/enums.dart';
-import 'package:tadarab_app/models/flashcard.dart';
 import 'package:tadarab_app/models/flashcard_session.dart';
 
 FlashcardSession _session(
@@ -22,18 +19,6 @@ FlashcardSession _session(
     courseId: 'course-1',
     materialIds: const ['material-1'],
     materialTitles: const ['Lecture 1'],
-  );
-}
-
-Flashcard _card(String id, {ReviewStatus? status, int cardIndex = 0}) {
-  return Flashcard(
-    flashcardId: id,
-    frontText: 'front-$id',
-    backText: 'back-$id',
-    reviewStatus: status,
-    sourceLocation: 'Lecture 1 - Slide 1',
-    sessionId: 'session-1',
-    cardIndex: cardIndex,
   );
 }
 
@@ -75,54 +60,6 @@ void main() {
 
     test('failure: a zero-card deck never returns a positive index', () {
       expect(resumeIndexFor(currentFlashcardIndex: 4, total: 0), 0);
-    });
-  });
-
-  group('prepareRetake', () {
-    test('normal: reshuffles multiple cards, keeping the same set and '
-        'clearing review status', () {
-      final cards = [
-        _card('a', status: ReviewStatus.knowIt, cardIndex: 0),
-        _card('b', status: ReviewStatus.needsReview, cardIndex: 1),
-        _card('c', cardIndex: 2),
-      ];
-
-      final result = prepareRetake(flashcards: cards, random: Random(1));
-
-      expect(result.flashcards.map((f) => f.flashcardId).toSet(), {
-        'a',
-        'b',
-        'c',
-      });
-      expect(result.flashcards.every((f) => f.reviewStatus == null), isTrue);
-      expect(
-        result.flashcards.map((f) => f.cardIndex).toList(),
-        List.generate(cards.length, (i) => i),
-      );
-      expect(result.sessionFields.knownCount, 0);
-      expect(result.sessionFields.needsReviewCount, 0);
-      expect(result.sessionFields.currentFlashcardIndex, 0);
-      expect(result.sessionFields.isSessionCompleted, isFalse);
-      expect(result.sessionFields.completedAt, isNull);
-      expect(result.sessionFields.earnedPoints, 0);
-    });
-
-    test('edge: a single-card deck still resets status and index', () {
-      final cards = [_card('solo', status: ReviewStatus.knowIt, cardIndex: 0)];
-
-      final result = prepareRetake(flashcards: cards);
-
-      expect(result.flashcards, hasLength(1));
-      expect(result.flashcards.single.reviewStatus, isNull);
-      expect(result.flashcards.single.cardIndex, 0);
-    });
-
-    test('failure: an empty deck does not crash and resets session fields '
-        'regardless', () {
-      final result = prepareRetake(flashcards: const []);
-
-      expect(result.flashcards, isEmpty);
-      expect(result.sessionFields.knownCount, 0);
     });
   });
 

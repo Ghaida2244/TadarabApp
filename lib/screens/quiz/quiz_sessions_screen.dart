@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../models/enums.dart';
 import '../../models/quiz_session.dart';
+import '../../models/session.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/dashed_border.dart';
+import '../../widgets/generation_loading_overlay.dart';
 import '../../widgets/scrollable_title_pill.dart';
 import 'quiz_navigation.dart';
 import 'quiz_play_screen.dart';
@@ -47,6 +49,11 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
   // FlashcardSessionsScreen, so retaking one session doesn't freeze every
   // other row's button while generation is in flight.
   final Set<String> _retakingSessionIds = {};
+
+  // The session currently being retaken, kept only for the full-screen
+  // loading overlay's fixed line (its settings) — set the moment a retake
+  // starts, cleared once it finishes or fails.
+  QuizSession? _retakingSource;
 
   @override
   void initState() {
@@ -154,12 +161,18 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
   Future<void> _retake(QuizSession session) async {
     // Already retaking this session (double tap) — ignore, don't re-enter.
     if (_retakingSessionIds.contains(session.sessionId)) return;
-    setState(() => _retakingSessionIds.add(session.sessionId));
+    setState(() {
+      _retakingSessionIds.add(session.sessionId);
+      _retakingSource = session;
+    });
 
     try {
       final result = await widget.service.retakeSession(session.sessionId);
       if (!mounted) return;
-      setState(() => _retakingSessionIds.remove(session.sessionId));
+      setState(() {
+        _retakingSessionIds.remove(session.sessionId);
+        _retakingSource = null;
+      });
 
       final message = result.note ??
           (result.gotFewerThanRequested
@@ -194,7 +207,10 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
       _resume(result.session);
     } on NoQuestionsGeneratedException catch (e) {
       if (!mounted) return;
-      setState(() => _retakingSessionIds.remove(session.sessionId));
+      setState(() {
+        _retakingSessionIds.remove(session.sessionId);
+        _retakingSource = null;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -204,7 +220,10 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
       );
     } catch (_) {
       if (!mounted) return;
-      setState(() => _retakingSessionIds.remove(session.sessionId));
+      setState(() {
+        _retakingSessionIds.remove(session.sessionId);
+        _retakingSource = null;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Retake failed. Please try again.')),
       );
@@ -216,7 +235,26 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Column(
+        child: Stack(
+          children: [
+            _buildBody(),
+            if (_retakingSource != null)
+              GenerationLoadingOverlay(
+                config: kQuizRetakeLoadingConfig,
+                fixedLine: buildGenerationFixedLine(
+                  count: _retakingSource!.numberOfQuestions,
+                  noun: 'questions',
+                  difficulties: _retakingSource!.difficultyLevels.toSet(),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    return Column(
           children: [
             Container(
               padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
@@ -284,6 +322,7 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
                           final entry = entries[index];
                           final card = _SessionCard(
                             session: entry.session,
+                            sessionsInList: sessions,
                             service: widget.service,
                             materialTitles: materialTitles,
                             onAct: entry.session.isSessionCompleted
@@ -345,9 +384,7 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
               ),
             ),
           ],
-        ),
-      ),
-    );
+        );
   }
 }
 
@@ -439,6 +476,7 @@ class _ErrorState extends StatelessWidget {
 class _SessionCard extends StatelessWidget {
   const _SessionCard({
     required this.session,
+    required this.sessionsInList,
     required this.service,
     required this.materialTitles,
     required this.onAct,
@@ -448,6 +486,12 @@ class _SessionCard extends StatelessWidget {
   });
 
   final QuizSession session;
+
+  /// Every session currently loaded for this course — used to decide
+  /// whether [session] (when it's an original) actually has a retake, per
+  /// [sessionCardRetakeLabel].
+  final List<QuizSession> sessionsInList;
+
   final QuizSessionService service;
 
   /// materialId -> title, for the materials badge. A session's own
@@ -525,7 +569,20 @@ class _SessionCard extends StatelessWidget {
                         color: AppColors.navy,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    if (sessionCardRetakeLabel(session, sessionsInList)
+                        case final label?) ...[
+                      const SizedBox(height: 6),
+                      // A retake shows which retake it is; an original
+                      // only gets labeled once it actually has one —
+                      // see sessionCardRetakeLabel's own doc comment.
+                      Text(
+                        label,
+                        style: AppTypography.quizBadge.copyWith(
+                          color: AppColors.placeholder,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -624,12 +681,9 @@ class _SessionCard extends StatelessWidget {
                         label: 'Retake quiz',
                         variant: AppButtonVariant.outlinedBrand,
                         onPressed: isRetaking ? null : onRetake,
-                        loading: isRetaking,
                         height: 46,
                         borderRadius: 14,
-                        shadowColor: isRetaking
-                            ? null
-                            : AppColors.navy.withValues(alpha: 0.10),
+                        shadowColor: AppColors.navy.withValues(alpha: 0.10),
                       ),
                     ],
                   ],

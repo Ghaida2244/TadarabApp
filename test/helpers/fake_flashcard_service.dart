@@ -98,6 +98,7 @@ class FakeFlashcardService extends FlashcardService {
     required int count,
     String? customPrompt,
     bool isRetake = false,
+    List<String> previousTopics = const [],
   }) async {
     generateFlashcardsCalls++;
     lastGenerateMaterialIds = materialIds;
@@ -118,6 +119,7 @@ class FakeFlashcardService extends FlashcardService {
     required List<DifficultyLevel> difficultyLevels,
     String? customPrompt,
     required List<FlashcardGenerationItem> items,
+    List<String> coveredTopics = const [],
   }) async {
     createSessionCalls++;
     lastCreateSessionMaterialIds = materialIds;
@@ -176,7 +178,13 @@ class FakeFlashcardService extends FlashcardService {
     lastRetakeCustomPrompt = customPrompt;
     if (pendingRetake != null) return pendingRetake!.future;
     if (writeError != null) throw writeError!;
-    return retakeResult ?? (requestedCount: count, actualCount: count, note: null);
+    return retakeResult ??
+        (
+          requestedCount: count,
+          actualCount: count,
+          note: null,
+          newSessionId: createdSessionId,
+        );
   }
 
   @override

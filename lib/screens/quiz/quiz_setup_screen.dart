@@ -21,6 +21,16 @@ const kQuizLoadingConfig = GenerationLoadingConfig(
       "Thanks for your patience. We're still putting it together.",
 );
 
+/// Retake's own wording for the Quiz generating overlay — same tip and
+/// long-wait message as a fresh generation, just a different opening line
+/// (see quiz_sessions_screen.dart's `_retake`).
+const kQuizRetakeLoadingConfig = GenerationLoadingConfig(
+  sentence: 'Creating new questions for you...',
+  tip: 'Try to answer before you look at the options.',
+  longWaitMessage:
+      "Thanks for your patience. We're still putting it together.",
+);
+
 /// Materials (multi-select), difficulty (multi-select), question-count
 /// stepper (min 5, no cap, +/- and direct numeric entry), mode, and an
 /// optional 300-character extra-instructions field — then Generate.

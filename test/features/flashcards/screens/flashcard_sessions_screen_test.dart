@@ -9,6 +9,7 @@ import 'package:tadarab_app/models/flashcard.dart';
 import 'package:tadarab_app/models/flashcard_session.dart';
 import 'package:tadarab_app/services/flashcard_service.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
+import 'package:tadarab_app/widgets/generation_loading_overlay.dart';
 
 import '../../../helpers/fake_flashcard_service.dart';
 
@@ -16,6 +17,14 @@ AppButton _retakeButton(WidgetTester tester) => tester.widget<AppButton>(
   find.byWidgetPredicate(
     (w) => w is AppButton && w.label == 'Retake flashcards',
   ),
+);
+
+/// Matches a "Retake N" chain label specifically — not the "Retake
+/// flashcards" button, which also contains the substring "Retake" and
+/// would otherwise make a plain `find.textContaining('Retake')` useless
+/// for this.
+final Finder _retakeChainLabel = find.byWidgetPredicate(
+  (w) => w is Text && RegExp(r'^Retake \d+$').hasMatch(w.data ?? ''),
 );
 
 List<Flashcard> _flashcards(int count, {String sessionId = 's1'}) =>
@@ -42,6 +51,9 @@ FlashcardSession _session({
   List<String> materialTitles = const ['Lecture 1 - Introduction'],
   DateTime? createdAt,
   DateTime? completedAt,
+  int retakeNumber = 0,
+  String? rootSessionId,
+  String? retakeOfSessionId,
 }) {
   return FlashcardSession(
     sessionId: id,
@@ -57,6 +69,9 @@ FlashcardSession _session({
     knownCount: knownCount,
     needsReviewCount: needsReviewCount,
     currentFlashcardIndex: currentFlashcardIndex,
+    retakeNumber: retakeNumber,
+    rootSessionId: rootSessionId,
+    retakeOfSessionId: retakeOfSessionId,
   );
 }
 
@@ -240,10 +255,94 @@ void main() {
     expect(find.text('Retake flashcards'), findsOneWidget);
   });
 
+  group('retake label', () {
+    testWidgets(
+      'normal case: an original session that already has a loaded retake '
+      'is labeled "Original"',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            FakeFlashcardService(
+              sessions: [
+                _session(id: 's1', completed: true, retakeNumber: 0),
+                _session(
+                  id: 's2',
+                  completed: true,
+                  retakeNumber: 1,
+                  rootSessionId: 's1',
+                  retakeOfSessionId: 's1',
+                ),
+              ],
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('Original'), findsOneWidget);
+        expect(find.text('Retake 1'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'edge case: an original session with no retakes currently loaded '
+      'shows no label at all',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            FakeFlashcardService(
+              sessions: [
+                _session(id: 's1', completed: true, retakeNumber: 0),
+              ],
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('Original'), findsNothing);
+        expect(_retakeChainLabel, findsNothing);
+      },
+    );
+
+    testWidgets('normal case: a session with retakeNumber 3 is labeled '
+        '"Retake 3"', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          FakeFlashcardService(
+            sessions: [
+              _session(id: 's1', completed: true, retakeNumber: 3),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Retake 3'), findsOneWidget);
+      expect(find.text('Original'), findsNothing);
+    });
+
+    testWidgets(
+      'edge case: an old session (default rootSessionId/retakeNumber, as '
+      'if it predates these fields) shows no label at all',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            FakeFlashcardService(
+              sessions: [_session(id: 's1', completed: true)],
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('Original'), findsNothing);
+        expect(_retakeChainLabel, findsNothing);
+      },
+    );
+  });
+
   group('Retake', () {
     testWidgets(
-      'tapping Retake shows a loading state on the button until the Worker '
-      'call resolves, then navigates',
+      'tapping Retake disables the button and shows the full-screen '
+      'generating overlay until the Worker call resolves, then navigates',
       (tester) async {
         final pending = Completer<RetakeOutcome>();
         final service = FakeFlashcardService(
@@ -256,15 +355,21 @@ void main() {
         await tester.pumpWidget(_wrap(service));
         await tester.pump();
 
-        expect(_retakeButton(tester).loading, isFalse);
+        expect(find.byType(GenerationLoadingOverlay), findsNothing);
+        expect(_retakeButton(tester).onPressed, isNotNull);
 
         await tester.tap(find.text('Retake flashcards'));
         await tester.pump();
 
-        expect(_retakeButton(tester).loading, isTrue);
+        expect(find.byType(GenerationLoadingOverlay), findsOneWidget);
         expect(_retakeButton(tester).onPressed, isNull);
 
-        pending.complete((requestedCount: 10, actualCount: 10, note: null));
+        pending.complete((
+          requestedCount: 10,
+          actualCount: 10,
+          note: null,
+          newSessionId: 's1',
+        ));
         await tester.pumpAndSettle();
 
         expect(
@@ -276,8 +381,8 @@ void main() {
     );
 
     testWidgets(
-      'a Retake failure shows a SnackBar, clears the loading state, and '
-      'leaves the session in place',
+      'a Retake failure shows a SnackBar, clears the generating overlay, '
+      'and leaves the session in place',
       (tester) async {
         final service = FakeFlashcardService(
           sessions: [
@@ -293,7 +398,7 @@ void main() {
         await tester.pump();
 
         expect(find.text('Could not reach Tadarab.'), findsOneWidget);
-        expect(_retakeButton(tester).loading, isFalse);
+        expect(find.byType(GenerationLoadingOverlay), findsNothing);
         expect(_retakeButton(tester).onPressed, isNotNull);
         expect(find.text('Retake flashcards'), findsOneWidget);
       },

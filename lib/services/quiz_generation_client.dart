@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/enums.dart';
+import 'generation_topics.dart';
 
 /// One material's title + the text sent to the generation Worker as its
 /// content. [sourceText] is expected to already carry the Worker's
@@ -54,10 +55,15 @@ class GeneratedQuizItem {
 /// explaining why, meant to be shown to the student directly rather than a
 /// generic error.
 class GenerationResult {
-  GenerationResult({required this.items, this.note});
+  GenerationResult({required this.items, this.note, this.coveredTopics = const []});
 
   final List<GeneratedQuizItem> items;
   final String? note;
+
+  /// Short topic strings the Worker reports this batch actually covered —
+  /// stored on the session so a future retake of it can send them back as
+  /// `previousTopics`. Empty if the Worker's response omitted it.
+  final List<String> coveredTopics;
 }
 
 /// A generation request failed in a way the student should be told about
@@ -110,12 +116,17 @@ class QuizGenerationClient {
   /// ask Claude to vary phrasing/examples rather than repeat the same set —
   /// see [QuizSessionService.retakeSession], its only caller that passes
   /// `true`.
+  ///
+  /// [previousTopics] is only ever meaningfully sent when [isRetake] is
+  /// true and non-empty — the retake's source session's own stored
+  /// `coveredTopics` (see `buildPreviousTopics` in generation_topics.dart).
   Future<GenerationResult> generateQuiz({
     required int count,
     required List<DifficultyLevel> difficulties,
     String? customPrompt,
     required List<GenerationMaterial> materials,
     bool isRetake = false,
+    List<String> previousTopics = const [],
   }) async {
     final String token;
     try {
@@ -147,6 +158,8 @@ class QuizGenerationClient {
                 'customPrompt': customPrompt.trim(),
               'materials': materials.map((m) => m.toJson()).toList(),
               'isRetake': isRetake,
+              if (isRetake && previousTopics.isNotEmpty)
+                'previousTopics': previousTopics,
             }),
           )
           .timeout(const Duration(seconds: 120));
@@ -177,6 +190,10 @@ class QuizGenerationClient {
         .map((raw) => GeneratedQuizItem.fromJson(raw as Map<String, dynamic>))
         .toList();
 
-    return GenerationResult(items: items, note: body['note'] as String?);
+    return GenerationResult(
+      items: items,
+      note: body['note'] as String?,
+      coveredTopics: parseCoveredTopics(body['coveredTopics']),
+    );
   }
 }

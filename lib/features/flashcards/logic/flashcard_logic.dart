@@ -1,6 +1,3 @@
-import 'dart:math';
-
-import '../../../models/flashcard.dart';
 import '../../../models/flashcard_session.dart';
 
 /// Points awarded per flashcard marked "I Know It" at session (or Retake)
@@ -25,64 +22,25 @@ int resumeIndexFor({required int currentFlashcardIndex, required int total}) {
   return currentFlashcardIndex;
 }
 
-/// The Session-document fields a Retake resets, alongside the reshuffled
-/// deck — see CLAUDE.md's Retake section for the exact list.
-typedef RetakeSessionFields = ({
-  int knownCount,
-  int needsReviewCount,
-  int currentFlashcardIndex,
-  bool isSessionCompleted,
-  DateTime? completedAt,
-  int earnedPoints,
-});
-
-const kRetakeSessionFields = (
-  knownCount: 0,
-  needsReviewCount: 0,
-  currentFlashcardIndex: 0,
-  isSessionCompleted: false,
-  completedAt: null,
-  earnedPoints: 0,
-);
-
-/// Result of [prepareRetake]: the same cards in a freshly-shuffled order
-/// (new [Flashcard.cardIndex] per card, [Flashcard.reviewStatus] cleared)
-/// plus the session-document fields to reset alongside them. Pure — the
-/// caller (FlashcardService) persists both to Firestore.
-typedef RetakeResult = ({
-  List<Flashcard> flashcards,
-  RetakeSessionFields sessionFields,
-});
-
-/// Reshuffles the same session's existing flashcards into a new random
-/// order and clears every card's review status, per the Retake spec.
-/// [random] is injectable so tests can assert on a fixed shuffle.
-RetakeResult prepareRetake({
-  required List<Flashcard> flashcards,
-  Random? random,
-}) {
-  final shuffled = List<Flashcard>.from(flashcards)
-    ..shuffle(random ?? Random());
-  final reset = [
-    for (var i = 0; i < shuffled.length; i++)
-      shuffled[i].copyWith(reviewStatus: () => null, cardIndex: i),
-  ];
-  return (flashcards: reset, sessionFields: kRetakeSessionFields);
-}
-
 /// What a Retake-via-Worker outcome gives back to the UI: the fresh card
 /// count, how many were actually requested (so the caller can tell if it
-/// fell short, same as [FlashcardGenerationResult.requestedCount]), and the
-/// Worker's own `note` if it sent one. See [FlashcardService.retake].
-typedef RetakeOutcome = ({int requestedCount, int actualCount, String? note});
+/// fell short, same as [FlashcardGenerationResult.requestedCount]), the
+/// Worker's own `note` if it sent one, and the id of the brand-new session
+/// the retake created (a retake no longer overwrites the session it was
+/// started from — see [FlashcardService.retake]).
+typedef RetakeOutcome = ({
+  int requestedCount,
+  int actualCount,
+  String? note,
+  String newSessionId,
+});
 
-/// Retake's card-write plan, given how many cards the session already had
-/// and how many the Worker generated this time: the first
-/// `min(existingCount, newCount)` existing card docs are overwritten in
-/// place with the new content (reusing their ids); if there are more new
-/// cards than old ones, the rest are added as brand-new docs; if there are
-/// fewer, the leftover old ones are deleted. See
-/// [FlashcardService.retake].
+/// Retake's card-write plan for its new session's cards, given how many
+/// cards that new session already had (always 0 — it's brand new) and how
+/// many the Worker generated this time. Kept in this shape (rather than a
+/// plain "write N new docs") so [FlashcardService.retake] reuses the exact
+/// same write-planning function it did before the new-session-per-retake
+/// redesign. See [FlashcardService.retake].
 typedef RetakeCardWritePlan = ({int overwriteCount, int addCount, int deleteCount});
 
 RetakeCardWritePlan planRetakeCardWrites({
