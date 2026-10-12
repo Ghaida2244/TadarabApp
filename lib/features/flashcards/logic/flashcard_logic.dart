@@ -14,26 +14,6 @@ int calculateEarnedPoints({required int knownCount}) {
   return knownCount * kPointsPerKnownFlashcard;
 }
 
-/// The three Performance Summary message-block tiers.
-enum PerformanceTier { mastery, developing, needsReview }
-
-/// Selects the Performance Summary tier from the knownCount/total ratio:
-/// >= 0.80 mastery, [0.50, 0.80) developing, below that (including a
-/// zero-known session) needsReview. A zero-card session (total == 0) can't
-/// happen in practice but is treated as needsReview rather than dividing by
-/// zero.
-PerformanceTier performanceTierFor({
-  required int knownCount,
-  required int total,
-}) {
-  assert(knownCount >= 0, 'knownCount cannot be negative');
-  assert(total >= 0, 'total cannot be negative');
-  final ratio = total == 0 ? 0.0 : knownCount / total;
-  if (ratio >= 0.80) return PerformanceTier.mastery;
-  if (ratio >= 0.50) return PerformanceTier.developing;
-  return PerformanceTier.needsReview;
-}
-
 /// Clamps a stored `currentFlashcardIndex` into the valid `[0, total - 1]`
 /// range before Resume opens the Flip Deck, so a corrupted/stale index
 /// (e.g. from data written by a future version of the app) can't crash the

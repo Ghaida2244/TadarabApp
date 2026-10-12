@@ -224,35 +224,7 @@ void main() {
     });
   });
 
-  group('resultMoodFor', () {
-    test('normal case: 90% is the top tier', () {
-      expect(resultMoodFor(correct: 9, total: 10), ResultMood.great);
-    });
-
-    test('edge case: exactly 80% is still the top tier (inclusive boundary)', () {
-      expect(resultMoodFor(correct: 8, total: 10), ResultMood.great);
-    });
-
-    test('edge case: exactly 50% is the middle tier (inclusive boundary)', () {
-      expect(resultMoodFor(correct: 5, total: 10), ResultMood.solid);
-    });
-
-    test('normal case: below 50% is the lowest tier', () {
-      expect(resultMoodFor(correct: 2, total: 10), ResultMood.keepPractising);
-    });
-
-    test('failure case: a zero total does not throw, falls back to lowest tier', () {
-      expect(resultMoodFor(correct: 0, total: 0), ResultMood.keepPractising);
-    });
-  });
-
-  group('resultMessageFor', () {
-    test('every tier has distinct, non-empty copy', () {
-      final messages = ResultMood.values.map(resultMessageFor).toSet();
-      expect(messages.length, ResultMood.values.length);
-      for (final m in messages) {
-        expect(m, isNotEmpty);
-      }
-    });
-  });
+  // The result-mood/message logic moved to a shared
+  // `lib/logic/performance_tier.dart` (NOTE 6), used by both Quiz and
+  // Flashcards — see test/logic/performance_tier_test.dart.
 }

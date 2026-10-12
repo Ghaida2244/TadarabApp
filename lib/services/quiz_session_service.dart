@@ -110,36 +110,6 @@ bool generatedFewerThanRequested({
   required int actualCount,
 }) => actualCount < requestedCount;
 
-/// The three result-message tiers the Performance Summary screen uses for
-/// its mood icon, color, and message — same tiers CLAUDE.md's Points &
-/// ranks section implies (trophy/star/arrow), keyed off the fraction
-/// correct rather than a shown percentage (the design never shows one).
-enum ResultMood { great, solid, keepPractising }
-
-/// Picks the mood tier for [correct] out of [total]. A [total] of zero
-/// (shouldn't happen for a real session, but guards against div-by-zero)
-/// falls back to the lowest tier rather than throwing.
-ResultMood resultMoodFor({required int correct, required int total}) {
-  if (total <= 0) return ResultMood.keepPractising;
-  final ratio = correct / total;
-  if (ratio >= 0.8) return ResultMood.great;
-  if (ratio >= 0.5) return ResultMood.solid;
-  return ResultMood.keepPractising;
-}
-
-/// The motivational line shown under the correct/wrong counts, per mood
-/// tier — exact copy from the design.
-String resultMessageFor(ResultMood mood) {
-  switch (mood) {
-    case ResultMood.great:
-      return 'Excellent work — keep it up. You are ready for the next lecture.';
-    case ResultMood.solid:
-      return 'Good progress. Close the gaps below and you have got this.';
-    case ResultMood.keepPractising:
-      return 'Keep practising, you are improving.';
-  }
-}
-
 /// A newly (or freshly re-)generated session, plus whatever note the Worker
 /// attached (grounding-check discards, or Claude generating fewer items
 /// than requested) — the Setup screen shows [note] directly rather than

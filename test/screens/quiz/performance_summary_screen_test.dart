@@ -169,14 +169,17 @@ void main() {
     },
   );
 
-  testWidgets('mood tiers: a low score shows the keep-practising message, not the top tier', (tester) async {
+  testWidgets('mood tiers: a low score shows the needsWork message (NOTE 6), not the top tier', (tester) async {
     final service = FakeQuizSessionService(
       sessions: [_completedSession(mode: Mode.exam, correct: 2, total: 10)],
       questions: {'s1': _questionsWith(correct: 2, total: 10)},
     );
     await _pumpReal(tester, service);
 
-    expect(find.text('Keep practising, you are improving.'), findsOneWidget);
+    expect(
+      find.text("This one needs more work before it clicks. You'll get there."),
+      findsOneWidget,
+    );
   });
 
   testWidgets('Back to Sessions pops back to the Quiz sessions route', (tester) async {

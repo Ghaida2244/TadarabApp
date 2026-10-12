@@ -9,7 +9,9 @@ import 'package:tadarab_app/models/study_material.dart';
 import 'package:tadarab_app/screens/quiz/quiz_navigation.dart';
 import 'package:tadarab_app/screens/quiz/quiz_sessions_screen.dart';
 import 'package:tadarab_app/services/quiz_session_service.dart';
+import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
+import 'package:tadarab_app/widgets/scrollable_title_pill.dart';
 
 import '../../helpers/fake_quiz_session_service.dart';
 
@@ -499,236 +501,173 @@ void main() {
       },
     );
 
+    // NOTE 12: this bar is now the exact same shared `ScrollableTitlePill`
+    // the Flashcard Sessions screen uses — see
+    // test/features/flashcards/screens/flashcard_sessions_screen_test.dart's
+    // "material-title pill sizing" group for the pill's own tests. Unlike
+    // the old Quiz-only `_MaterialsBadge` (which always rendered a
+    // SingleChildScrollView, even for content that fit, and used a
+    // deliberately oversized 32px hit-target with a right-edge fade),
+    // the shared pill renders *no* SingleChildScrollView at all when the
+    // text already fits — these two tests mirror that real behavior
+    // instead of asserting the old widget's now-superseded internals.
     testWidgets(
-      'regression: a label longer than the available space genuinely overflows and can scroll',
+      'a short label that already fits has nothing to scroll — no '
+      'SingleChildScrollView is introduced at all',
       (tester) async {
-        final longTitleMaterials = List.generate(
-          6,
-          (i) => StudyMaterial(
-            materialId: 'm$i',
-            title: 'A Genuinely Long Lecture Title Number $i',
-            type: 'pptx',
-            document: '',
-            courseId: 'course-1',
-            extractedText: '',
-          ),
-        );
-        final session = QuizSession(
-          sessionId: 's1',
-          createdAt: DateTime(2026, 1, 1),
-          isSessionCompleted: true,
-          difficultyLevels: const [DifficultyLevel.medium],
-          email: 'a@b.com',
-          courseId: 'course-1',
-          materialIds: longTitleMaterials.map((m) => m.materialId).toList(),
-          numberOfQuestions: 10,
-          mode: Mode.exam,
-          correctAnswers: 8,
-        );
         final service = FakeQuizSessionService(
-          sessions: [session],
-          materials: longTitleMaterials,
-        );
-        await _pump(tester, service);
-
-        // Scoped to the badge's own SingleChildScrollView specifically, and
-        // read via its ScrollableState directly (not Scrollable.of(), which
-        // searches *ancestors* — starting from the Scrollable's own element
-        // would find the outer sessions ListView's scrollable instead).
-        final scrollableFinder = find.descendant(
-          of: find.byType(SingleChildScrollView),
-          matching: find.byType(Scrollable),
-        );
-        final position = tester
-            .state<ScrollableState>(scrollableFinder)
-            .position;
-        expect(
-          position.maxScrollExtent,
-          greaterThan(0),
-          reason: 'the label is far longer than the card — there must be real overflow to scroll',
-        );
-      },
-    );
-
-    testWidgets(
-      'regression: a real horizontal drag on the badge actually moves it, inside the real vertical sessions list',
-      (tester) async {
-        // maxScrollExtent > 0 only proves the content overflows — it says
-        // nothing about whether a real drag gesture actually reaches this
-        // Scrollable instead of being claimed by the outer vertical
-        // ListView (a gesture-arena conflict, not a layout one). This
-        // drives an actual drag through the widget tester's real gesture
-        // pipeline — the same arena-resolution code a live app uses — to
-        // verify the touch genuinely lands on and moves this scrollable,
-        // sitting inside its real ListView.separated context (not pumped
-        // in isolation).
-        final longTitleMaterials = List.generate(
-          6,
-          (i) => StudyMaterial(
-            materialId: 'm$i',
-            title: 'A Genuinely Long Lecture Title Number $i',
-            type: 'pptx',
-            document: '',
-            courseId: 'course-1',
-            extractedText: '',
-          ),
-        );
-        final session = QuizSession(
-          sessionId: 's1',
-          createdAt: DateTime(2026, 1, 1),
-          isSessionCompleted: true,
-          difficultyLevels: const [DifficultyLevel.medium],
-          email: 'a@b.com',
-          courseId: 'course-1',
-          materialIds: longTitleMaterials.map((m) => m.materialId).toList(),
-          numberOfQuestions: 10,
-          mode: Mode.exam,
-          correctAnswers: 8,
-        );
-        final service = FakeQuizSessionService(
-          sessions: [session],
-          materials: longTitleMaterials,
-        );
-        await _pump(tester, service);
-
-        final scrollableFinder = find.descendant(
-          of: find.byType(SingleChildScrollView),
-          matching: find.byType(Scrollable),
-        );
-        final position = tester
-            .state<ScrollableState>(scrollableFinder)
-            .position;
-        expect(position.pixels, 0);
-
-        // Drag starting from the badge's own on-screen center — a point
-        // that's actually inside the clipped, visible viewport (not the
-        // Text's full unclipped geometry, which can extend far outside it).
-        final badgeCenter = tester.getCenter(
-          find.byType(SingleChildScrollView).first,
-        );
-        await tester.dragFrom(badgeCenter, const Offset(-80, 0));
-        await tester.pump();
-
-        expect(
-          position.pixels,
-          greaterThan(0),
-          reason:
-              'a real horizontal drag on the badge must move its own scroll position, not be '
-              'swallowed by the outer vertical list',
-        );
-      },
-    );
-
-    testWidgets(
-      'regression: the badge itself is genuinely 32px tall, and a drag near its edge still works',
-      (tester) async {
-        // Two other approaches were tried and confirmed (by failing
-        // tests, not just reasoning) not to work: an invisible
-        // SizedOverflowBox-based hit-slop can't extend hit-testing at
-        // all, and wrapping the small pill in a taller SizedBox+Center
-        // hits the same wall one level up (Center still hit-tests against
-        // the *child's own* size). The only thing that actually works is
-        // the pill itself genuinely being 32px — settled on with the user
-        // after confirming that and that matching the nearby EXAM/
-        // LEARNING badge's 22px wouldn't meet the reliability floor.
-        //
-        // Uses several long titles (not just one) to guarantee genuine
-        // overflow — a single title, even a long one, can fit within the
-        // available card width and never overflow, which would make this
-        // test pass for the wrong reason (nothing to scroll, so "no
-        // movement" is vacuously true regardless of where the drag starts).
-        final longTitleMaterials = List.generate(
-          6,
-          (i) => StudyMaterial(
-            materialId: 'm$i',
-            title: 'A Genuinely Long Lecture Title Number $i',
-            type: 'pptx',
-            document: '',
-            courseId: 'course-1',
-            extractedText: '',
-          ),
-        );
-        final service = FakeQuizSessionService(
-          sessions: [
-            QuizSession(
-              sessionId: 's1',
-              createdAt: DateTime(2026, 1, 1),
-              isSessionCompleted: true,
-              difficultyLevels: const [DifficultyLevel.medium],
-              email: 'a@b.com',
+          sessions: [_session(id: 's1', completed: true)], // materialIds: ['m1']
+          materials: [
+            StudyMaterial(
+              materialId: 'm1',
+              title: 'L1',
+              type: 'pptx',
+              document: '',
               courseId: 'course-1',
-              materialIds: longTitleMaterials.map((m) => m.materialId).toList(),
-              numberOfQuestions: 10,
-              mode: Mode.exam,
-              correctAnswers: 8,
+              extractedText: '',
             ),
           ],
-          materials: longTitleMaterials,
         );
         await _pump(tester, service);
-
-        final pillSize = tester.getSize(
-          find.byType(SingleChildScrollView).first,
-        );
-        expect(pillSize.height, 32.0);
-
-        final scrollableFinder = find.descendant(
-          of: find.byType(SingleChildScrollView),
-          matching: find.byType(Scrollable),
-        );
-        final position = tester
-            .state<ScrollableState>(scrollableFinder)
-            .position;
-        expect(position.pixels, 0);
-        expect(
-          position.maxScrollExtent,
-          greaterThan(0),
-          reason: 'the setup must force real overflow, or this test would pass vacuously',
-        );
-
-        // Start the drag right at the pill's own top edge — under the old
-        // ~18px pill this would have been well outside it; now it's
-        // genuinely inside the real, hit-testable 32px pill.
-        final pillTopLeft = tester.getTopLeft(
-          find.byType(SingleChildScrollView).first,
-        );
-        final nearTopEdge = pillTopLeft + Offset(pillSize.width / 2, 4);
-        await tester.dragFrom(nearTopEdge, const Offset(-80, 0));
         await tester.pump();
 
-        expect(
-          position.pixels,
-          greaterThan(0),
-          reason: 'a drag starting near the top edge of the 32px pill must still move it',
-        );
+        expect(find.text('L1'), findsOneWidget);
+        expect(find.byType(SingleChildScrollView), findsNothing);
       },
     );
 
-    testWidgets('a short label that already fits has nothing to scroll', (
-      tester,
-    ) async {
-      final service = FakeQuizSessionService(
-        sessions: [_session(id: 's1', completed: true)], // materialIds: ['m1']
-        materials: [
-          StudyMaterial(
-            materialId: 'm1',
-            title: 'L1',
+    testWidgets(
+      'regression: a label longer than the available space becomes '
+      'exactly that width and is genuinely drag-scrollable — not '
+      'wrapped, not truncated',
+      (tester) async {
+        final longTitleMaterials = List.generate(
+          6,
+          (i) => StudyMaterial(
+            materialId: 'm$i',
+            title: 'A Genuinely Long Lecture Title That Goes On And On, Number $i',
             type: 'pptx',
             document: '',
             courseId: 'course-1',
             extractedText: '',
           ),
-        ],
-      );
-      await _pump(tester, service);
+        );
+        final session = QuizSession(
+          sessionId: 's1',
+          createdAt: DateTime(2026, 1, 1),
+          isSessionCompleted: true,
+          difficultyLevels: const [DifficultyLevel.medium],
+          email: 'a@b.com',
+          courseId: 'course-1',
+          materialIds: longTitleMaterials.map((m) => m.materialId).toList(),
+          numberOfQuestions: 10,
+          mode: Mode.exam,
+          correctAnswers: 8,
+        );
+        final service = FakeQuizSessionService(
+          sessions: [session],
+          materials: longTitleMaterials,
+        );
+        await _pump(tester, service);
+        await tester.pump();
+        await tester.pump();
 
-      final scrollableFinder = find.descendant(
-        of: find.byType(SingleChildScrollView),
-        matching: find.byType(Scrollable),
-      );
-      final position = tester.state<ScrollableState>(scrollableFinder).position;
-      expect(position.maxScrollExtent, 0);
-    });
+        final joined = longTitleMaterials.map((m) => m.title).join(', ');
+        expect(find.text(joined), findsOneWidget);
+
+        final scrollFinder = find.byType(SingleChildScrollView);
+        expect(scrollFinder, findsOneWidget);
+        expect(
+          tester.widget<SingleChildScrollView>(scrollFinder).scrollDirection,
+          Axis.horizontal,
+        );
+
+        // Genuinely draggable, not just present: a drag actually moves the
+        // scroll position away from zero — the same real-gesture check as
+        // Flashcards' own equivalent test, run here inside the real
+        // vertical ListView.separated context (not pumped in isolation),
+        // confirming the drag genuinely reaches this inner Scrollable
+        // rather than being claimed by the outer vertical list.
+        final scrollableState = tester.state<ScrollableState>(
+          find.descendant(of: scrollFinder, matching: find.byType(Scrollable)),
+        );
+        expect(scrollableState.position.pixels, 0.0);
+
+        await tester.drag(scrollFinder, const Offset(-80, 0));
+        await tester.pump();
+
+        expect(
+          scrollableState.position.pixels,
+          greaterThan(0.0),
+          reason: 'Dragging the pill did not move its scroll position — it '
+              "isn't actually scrollable.",
+        );
+      },
+    );
+
+    testWidgets(
+      'NOTE 12: the pill\'s rendered size on Quiz Sessions is pixel-'
+      'identical to the Flashcard Sessions one for the same title and '
+      'the same available width — both now build the exact same '
+      'ScrollableTitlePill widget',
+      (tester) async {
+        const title = 'Lecture 1 — Introduction';
+
+        final quizService = FakeQuizSessionService(
+          sessions: [_session(id: 's1', completed: true)], // materialIds: ['m1']
+          materials: [
+            StudyMaterial(
+              materialId: 'm1',
+              title: title,
+              type: 'pptx',
+              document: '',
+              courseId: 'course-1',
+              extractedText: '',
+            ),
+          ],
+        );
+        await _pump(tester, quizService);
+        await tester.pump();
+
+        final quizPillSize = tester.getSize(
+          find
+              .byWidgetPredicate((w) => w.runtimeType.toString() == 'ScrollableTitlePill')
+              .first,
+        );
+
+        // Wrapped in a hugging Column, same as how both real screens'
+        // cards actually place this pill — a bare Scaffold body gives it
+        // a full-screen *tight* height instead of letting it hug its own
+        // content, which would make this comparison meaningless.
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 300,
+                    child: ScrollableTitlePill(
+                      text: title,
+                      style: AppTypography.helper.copyWith(color: AppColors.navy),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        final referencePillSize = tester.getSize(
+          find.byType(ScrollableTitlePill),
+        );
+
+        expect(quizPillSize.height, referencePillSize.height);
+      },
+    );
   });
 
   testWidgets(

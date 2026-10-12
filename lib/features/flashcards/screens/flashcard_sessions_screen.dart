@@ -5,6 +5,7 @@ import '../../../services/flashcard_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/app_button.dart';
 import '../../../widgets/dashed_border.dart';
+import '../../../widgets/scrollable_title_pill.dart';
 import '../logic/flashcard_logic.dart';
 import '../widgets/delete_session_dialog.dart';
 import '../widgets/header_circle_button.dart';
@@ -17,9 +18,6 @@ import 'flashcard_setup_screen.dart';
 /// theme file).
 const _kSectionDividerColor = Color(0xFFE6E9F7);
 const _kEmptyStateDashColor = Color(0xFFC9CEE8);
-
-const _kMaterialPillHPadding = 11.0;
-const _kMaterialPillVPadding = 6.0;
 
 /// Screen 1: every flashcard session for one course, split into "IN
 /// PROGRESS" and "COMPLETED" sections.
@@ -511,7 +509,7 @@ class _SessionRow extends StatelessWidget {
                       // On its own full-width line so it can hug short
                       // content or grow up to the whole card width, without
                       // the delete chip eating into that budget.
-                      _MaterialTitlePill(
+                      ScrollableTitlePill(
                         text: session.materialTitles.join(', '),
                         style: AppTypography.helper.copyWith(
                           color: AppColors.navy,
@@ -600,103 +598,6 @@ class _SessionRow extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// A pill that hugs [text] up to the full width its parent offers; if the
-/// text is still too wide even at that full width, it becomes exactly that
-/// width and the text scrolls horizontally inside it by drag (a plain
-/// `SingleChildScrollView`, not auto-animating) — never wraps to a second
-/// line or truncates with an ellipsis.
-///
-/// The "available width" is read from an invisible, full-width sizing box
-/// via a `GlobalKey` + `RenderBox` in a post-frame callback, not a
-/// `LayoutBuilder`: this widget sits inside an `IntrinsicHeight` (see
-/// `_SessionRow`'s stretch `Row` for the colored side strip), and a
-/// `LayoutBuilder` inside an intrinsic-sizing pass throws a storm of
-/// `RenderFlex`/`debugCheckForParentData` assertions and hangs
-/// `pumpAndSettle` — a failure hit and fixed here before. Reading a
-/// `RenderBox` after layout has already finished sidesteps that class of
-/// bug entirely: the first frame always renders the plain, intrinsically-
-/// safe hugging layout, and only a later frame may switch to the
-/// fixed-width scrolling one.
-class _MaterialTitlePill extends StatefulWidget {
-  const _MaterialTitlePill({required this.text, required this.style});
-
-  final String text;
-  final TextStyle style;
-
-  @override
-  State<_MaterialTitlePill> createState() => _MaterialTitlePillState();
-}
-
-class _MaterialTitlePillState extends State<_MaterialTitlePill> {
-  final _measureKey = GlobalKey();
-
-  late final double _textWidth = _measure();
-  double? _availableWidth;
-
-  double _measure() {
-    final painter = TextPainter(
-      text: TextSpan(text: widget.text, style: widget.style),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    return painter.width;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback(_checkAvailableWidth);
-  }
-
-  void _checkAvailableWidth(Duration _) {
-    if (!mounted) return;
-    final box = _measureKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return;
-    if (_availableWidth != box.size.width) {
-      setState(() => _availableWidth = box.size.width);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final contentWidth = _textWidth + _kMaterialPillHPadding * 2;
-    final needsScroll =
-        _availableWidth != null && contentWidth > _availableWidth!;
-
-    final text = Text(
-      widget.text,
-      style: widget.style,
-      maxLines: 1,
-      softWrap: false,
-      overflow: TextOverflow.clip,
-    );
-
-    final pill = Container(
-      width: needsScroll ? _availableWidth : null,
-      padding: const EdgeInsets.symmetric(
-        horizontal: _kMaterialPillHPadding,
-        vertical: _kMaterialPillVPadding,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.cardTint,
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-      ),
-      child: needsScroll
-          ? SingleChildScrollView(scrollDirection: Axis.horizontal, child: text)
-          : text,
-    );
-
-    // The measuring box spans the full width offered by the parent Column
-    // (invisible — no decoration of its own) so a later frame can learn
-    // the true available width; the visible pill inside it still hugs its
-    // own content via Align, which doesn't force its child to fill.
-    return SizedBox(
-      key: _measureKey,
-      width: double.infinity,
-      child: Align(alignment: Alignment.centerLeft, child: pill),
     );
   }
 }

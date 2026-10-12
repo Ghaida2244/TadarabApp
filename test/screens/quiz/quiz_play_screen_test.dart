@@ -61,6 +61,22 @@ Future<void> _pumpSession(
 }
 
 void main() {
+  testWidgets(
+    'NOTE 10: the question text is fontSize 20 / w800, not the heavier '
+    '21 / w900 it used before',
+    (tester) async {
+      final service = FakeQuizSessionService(
+        sessions: [_session(mode: Mode.exam)],
+        questions: {'s1': _questions()},
+      );
+      await _pumpSession(tester, service);
+
+      final style = tester.widget<Text>(find.text('What is a database?')).style!;
+      expect(style.fontSize, 20);
+      expect(style.fontWeight, FontWeight.w800);
+    },
+  );
+
   group('Learning mode', () {
     testWidgets('normal case: submitting reveals correctness without advancing the index', (tester) async {
       final service = FakeQuizSessionService(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../features/flashcards/flashcard_navigation.dart';
 import '../../features/flashcards/screens/flashcard_sessions_screen.dart';
 import '../../models/course.dart';
 import '../../models/study_material.dart';
@@ -103,6 +104,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
           email: widget.course.email,
           service: widget.flashcardService,
         ),
+        settings: const RouteSettings(name: flashcardSessionsRouteName),
       ),
     );
   }

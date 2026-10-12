@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../logic/performance_tier.dart';
 import '../../models/enums.dart';
 import '../../models/question.dart';
 import '../../models/quiz_session.dart';
@@ -120,7 +121,10 @@ class _PerformanceSummaryScreenState extends State<PerformanceSummaryScreen> {
               );
             }
             final data = snapshot.data!;
-            final mood = resultMoodFor(correct: data.correct, total: data.total);
+            final tier = performanceTierFor(
+              numerator: data.correct,
+              denominator: data.total,
+            );
             final wrong = data.total - data.correct;
 
             return Column(
@@ -176,7 +180,7 @@ class _PerformanceSummaryScreenState extends State<PerformanceSummaryScreen> {
                           ],
                         ),
                         const SizedBox(height: 18),
-                        _MoodBanner(mood: mood),
+                        _MoodBanner(tier: tier),
                         if (!widget.isPracticeResult) ...[
                           const SizedBox(height: 18),
                           _PointsStrip(points: data.session!.earnedPoints),
@@ -317,27 +321,27 @@ class _CountCard extends StatelessWidget {
 }
 
 class _MoodBanner extends StatelessWidget {
-  const _MoodBanner({required this.mood});
+  const _MoodBanner({required this.tier});
 
-  final ResultMood mood;
+  final PerformanceTier tier;
 
   @override
   Widget build(BuildContext context) {
     final Color bg;
     final Color ink;
     final IconData icon;
-    switch (mood) {
-      case ResultMood.great:
+    switch (tier) {
+      case PerformanceTier.excellent:
         bg = AppColors.successBackgroundStrong;
         ink = AppColors.successDark;
         icon = Icons.emoji_events_outlined;
         break;
-      case ResultMood.solid:
+      case PerformanceTier.nice:
         bg = AppColors.cardTint;
         ink = AppColors.navy;
         icon = Icons.star_outline;
         break;
-      case ResultMood.keepPractising:
+      case PerformanceTier.needsWork:
         bg = AppColors.errorBannerBackground;
         ink = AppColors.errorBannerBody;
         icon = Icons.trending_up;
@@ -357,7 +361,7 @@ class _MoodBanner extends StatelessWidget {
           ),
           const SizedBox(width: 14),
           Expanded(
-            child: Text(resultMessageFor(mood), style: AppTypography.quizResultLine(ink)),
+            child: Text(performanceTierMessage(tier), style: AppTypography.quizResultLine(ink)),
           ),
         ],
       ),

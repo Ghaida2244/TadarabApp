@@ -6,6 +6,7 @@ import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/dashed_border.dart';
+import '../../widgets/scrollable_title_pill.dart';
 import 'quiz_navigation.dart';
 import 'quiz_play_screen.dart';
 import 'quiz_setup_screen.dart';
@@ -518,7 +519,12 @@ class _SessionCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _MaterialsBadge(label: _materialsLabel()),
+                    ScrollableTitlePill(
+                      text: _materialsLabel(),
+                      style: AppTypography.helper.copyWith(
+                        color: AppColors.navy,
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -633,117 +639,6 @@ class _SessionCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// A session card's materials badge: a horizontally-scrollable pill listing
-/// which material(s) the session was generated from, with a right-edge
-/// fade hinting there's more to scroll when the label overflows. Built
-/// directly from Tadarab Phase 2 - Quiz.dc.html's own markup — a light tint
-/// pill (`#EEF0FF`) with navy text, not a solid navy fill; the "navy" in
-/// its name refers to the (mostly hidden) wrapper and the text color.
-class _MaterialsBadge extends StatelessWidget {
-  const _MaterialsBadge({required this.label});
-
-  final String label;
-
-  static const _leftPad = 9.0;
-  static const _rightPad = 22.0;
-
-  // Vertical padding sized so the pill's *real, honestly-reported* height
-  // is exactly 32px (14px measured text height + _vPad on each side) —
-  // this is a genuinely bigger pill, not a hidden margin around a smaller
-  // one. Two other approaches were tried and don't work: an invisible
-  // SizedOverflowBox-based hit-slop can't work at all — Flutter's hit-
-  // testing requires a render object's own reported size to contain the
-  // touch point before it looks at children, so overflow *painting* never
-  // extends *hit-testing*; wrapping the small pill in a taller SizedBox +
-  // Center hits the same wall one level up — Center still hit-tests
-  // against the *child's own* size, so the extra margin it reserves is
-  // real layout space but not actually touch-responsive. Both confirmed
-  // by failing tester.dragFrom() tests, not just reasoned through. 32px
-  // was settled on with the user after confirming an invisible fix isn't
-  // possible and that matching the nearby EXAM/LEARNING badge's own
-  // height (measured: 22px) wouldn't meet the reliability floor either.
-  static const _vPad = 9.0;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = AppTypography.quizBadge.copyWith(
-      color: AppColors.navy,
-      fontSize: 10,
-    );
-
-    // Flexible/Stack sizing alone never gives this box a *tighter* width
-    // than the label needs — a Stack sizes to its largest non-positioned
-    // child, and SingleChildScrollView happily reports wanting the full
-    // incoming (loose) max, so the viewport ended up exactly as wide as
-    // its own content and nothing ever overflowed it to actually scroll.
-    // Capping this subtree's width at the label's own natural width (via
-    // ConstrainedBox, not LayoutBuilder — LayoutBuilder can't sit under
-    // the card's IntrinsicHeight, which needs to query this subtree's
-    // intrinsic height) makes Flutter's normal constraint *intersection*
-    // do the rest: nested inside Flexible (which already caps at the
-    // available width), the box ends up at min(natural, available) —
-    // hugging short content, and genuinely overflowing (so it can scroll)
-    // when the label is longer than the available space.
-    final painter = TextPainter(
-      text: TextSpan(text: label, style: style),
-      maxLines: 1,
-      textDirection: Directionality.of(context),
-    )..layout();
-    final naturalWidth = painter.width + _leftPad + _rightPad;
-
-    return Row(
-      children: [
-        Flexible(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: naturalWidth),
-            child: Container(
-              // The design's outer wrapper is navy, but its inner
-              // scrollable area is an opaque tint that fully covers it —
-              // the navy is essentially never visible. Filling the whole
-              // pill with the tint directly matches what actually renders.
-              clipBehavior: Clip.hardEdge,
-              decoration: BoxDecoration(
-                color: AppColors.cardTint,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Stack(
-                alignment: Alignment.centerRight,
-                children: [
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.fromLTRB(
-                      _leftPad,
-                      _vPad,
-                      _rightPad,
-                      _vPad,
-                    ),
-                    child: Text(label, maxLines: 1, style: style),
-                  ),
-                  IgnorePointer(
-                    child: Container(
-                      width: 22,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                          colors: [
-                            AppColors.cardTint.withValues(alpha: 0),
-                            AppColors.cardTint.withValues(alpha: 0.6),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

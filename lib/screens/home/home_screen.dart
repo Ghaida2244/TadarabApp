@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../features/flashcards/flashcard_navigation.dart';
 import '../../features/flashcards/screens/flashcard_flip_deck_screen.dart';
 import '../../features/flashcards/screens/flashcard_sessions_screen.dart';
 import '../../models/course.dart';
@@ -230,6 +231,7 @@ class _HomeTabState extends State<_HomeTab> {
                 courseId: course.courseId,
               ),
             ),
+            settings: const RouteSettings(name: flashcardSessionsRouteName),
           ),
         )
         .then((_) => _reload());

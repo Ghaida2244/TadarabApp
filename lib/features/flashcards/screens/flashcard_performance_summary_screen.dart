@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../../logic/performance_tier.dart';
 import '../../../models/enums.dart';
 import '../../../services/flashcard_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/app_button.dart';
-import '../logic/flashcard_logic.dart';
+import '../flashcard_navigation.dart';
 import 'flashcard_review_pass_screen.dart';
 
 /// Screen 5: shown after finishing a deck (or a Retake). Reachable either
@@ -54,13 +55,19 @@ class FlashcardPerformanceSummaryScreen extends StatelessWidget {
     );
   }
 
-  void _backToCourse(BuildContext context) {
-    Navigator.of(context).pop();
+  // Was a plain Navigator.pop() ("Back to course") — unreliable, since
+  // this screen is reachable both via the Sessions list (pop lands there,
+  // fine) AND via Resume from Home (pop lands on Home instead, never on
+  // the course page either way). popToFlashcardSessions deterministically
+  // reaches the Sessions list regardless of entry path, mirroring Quiz's
+  // own popToQuizSessions.
+  void _backToSessions(BuildContext context) {
+    popToFlashcardSessions(context);
   }
 
   @override
   Widget build(BuildContext context) {
-    final tier = performanceTierFor(knownCount: knownCount, total: _total);
+    final tier = performanceTierFor(numerator: knownCount, denominator: _total);
     final tierInfo = _tierInfoFor(tier);
 
     return Scaffold(
@@ -107,7 +114,7 @@ class FlashcardPerformanceSummaryScreen extends StatelessWidget {
           ),
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(22, 30, 22, 26),
+              padding: const EdgeInsets.fromLTRB(22, 30, 22, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -156,7 +163,7 @@ class FlashcardPerformanceSummaryScreen extends StatelessWidget {
                         const SizedBox(width: 14),
                         Expanded(
                           child: Text(
-                            tierInfo.message,
+                            performanceTierMessage(tier),
                             style: TextStyle(
                               fontFamily: 'Nunito',
                               fontSize: 14,
@@ -190,7 +197,22 @@ class FlashcardPerformanceSummaryScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 26),
+                ],
+              ),
+            ),
+          ),
+          // Fixed at the bottom, outside the scrollable content above —
+          // anchored to the screen's actual bottom regardless of how
+          // short that content is, same pattern as Quiz's own Performance
+          // Summary screen. SafeArea(top: false) since the header above
+          // already handles the top inset itself.
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(22, 0, 22, 26),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                   if (needsReviewCount >= 1) ...[
                     AppButton(
                       label: 'Review now',
@@ -201,11 +223,11 @@ class FlashcardPerformanceSummaryScreen extends StatelessWidget {
                     const SizedBox(height: 11),
                   ],
                   AppButton(
-                    label: 'Back to course',
+                    label: 'Back to sessions',
                     variant: AppButtonVariant.accent,
                     height: 56,
                     shadowColor: AppColors.redShadow.withValues(alpha: 0.6),
-                    onPressed: () => _backToCourse(context),
+                    onPressed: () => _backToSessions(context),
                   ),
                 ],
               ),
@@ -223,54 +245,44 @@ class _TierInfo {
     required this.background,
     required this.shadow,
     required this.ink,
-    required this.message,
   });
 
   final IconData icon;
   final Color background;
   final Color shadow;
   final Color ink;
-  final String message;
 }
 
-/// Tier message copy is deliberately NOT sourced from the design handoff —
-/// it comes from a separate, research-cited product decision (Bloom 1968;
-/// Mueller & Dweck 1998) that takes priority over the mockup's own copy.
-/// Tier background/shadow/ink colors below ARE sourced from the handoff
-/// (`moodBg`/`moodShadow`/`moodInk` in `Tadarab Phase 2b -
-/// Flashcards.dc.html`) — note its "developing" tier is actually a light
-/// navy/lavender tint (`#EEF0FF` + navy ink), not purple; see the
-/// conversation notes for why this differs from this screen's previous
-/// (invented, not handoff-sourced) purple.
+/// Tier message copy now comes from the shared `performanceTierMessage`
+/// (NOTE 6) — identical wording to Quiz's own Performance Summary screen.
+/// Tier background/shadow/ink colors below are still sourced from the
+/// handoff (`moodBg`/`moodShadow`/`moodInk` in `Tadarab Phase 2b -
+/// Flashcards.dc.html`) and kept exactly as before — note its "developing"
+/// (now "nice") tier is actually a light navy/lavender tint (`#EEF0FF` +
+/// navy ink), not purple; see the conversation notes for why this differs
+/// from this screen's previous (invented, not handoff-sourced) purple.
 _TierInfo _tierInfoFor(PerformanceTier tier) {
   switch (tier) {
-    case PerformanceTier.mastery:
+    case PerformanceTier.excellent:
       return const _TierInfo(
         icon: Icons.emoji_events,
         background: Color(0xFFE6F7EC),
         shadow: Color(0x3816A34A), // rgba(22,163,74,0.22)
         ink: Color(0xFF15803D),
-        message: "You've mastered this.",
       );
-    case PerformanceTier.developing:
+    case PerformanceTier.nice:
       return const _TierInfo(
         icon: Icons.star,
         background: AppColors.cardTint,
         shadow: Color(0x1F0B0F5B), // rgba(11,15,91,0.12)
         ink: AppColors.navy,
-        message:
-            "You're building real understanding; a bit more practice on "
-            "the tricky parts will get you there.",
       );
-    case PerformanceTier.needsReview:
+    case PerformanceTier.needsWork:
       return const _TierInfo(
         icon: Icons.arrow_upward,
         background: AppColors.errorBannerBackground,
         shadow: Color(0x2EE31B23), // rgba(227,27,35,0.18)
         ink: Color(0xFFA8141B),
-        message:
-            "This one needs more work before it clicks — let's go through "
-            "it again together.",
       );
   }
 }

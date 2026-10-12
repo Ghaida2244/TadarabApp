@@ -6,6 +6,7 @@ import '../../models/quiz_session.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
+import '../../widgets/draggable_overflow_text.dart';
 import 'performance_summary_screen.dart';
 import 'widgets/quiz_icon_button.dart';
 
@@ -406,7 +407,17 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              child: Text(current.questionText, style: AppTypography.quizQuestion),
+                              // NOTE 10: fontSize 20 / w800 locally — app_typography.dart
+                              // is frozen, so quizQuestion's own 21/w900 stays
+                              // untouched and this overrides just those two
+                              // properties at the call site instead.
+                              child: Text(
+                                current.questionText,
+                                style: AppTypography.quizQuestion.copyWith(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
                             ),
                             if (!widget.isPractice)
                               IconButton(
@@ -629,7 +640,11 @@ class _ExplanationPanel extends StatelessWidget {
                     children: [
                       Text('FIND IT IN YOUR MATERIAL', style: AppTypography.quizPanelLabel(color: Colors.white.withValues(alpha: 0.55))),
                       const SizedBox(height: 2),
-                      Text(question.sourceLocation, style: AppTypography.quizSourceValue),
+                      DraggableOverflowText(
+                        text: question.sourceLocation,
+                        style: AppTypography.quizSourceValue,
+                        fadeColor: AppColors.navy,
+                      ),
                     ],
                   ),
                 ),

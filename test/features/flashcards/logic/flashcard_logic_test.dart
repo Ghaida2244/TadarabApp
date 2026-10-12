@@ -52,57 +52,9 @@ void main() {
     });
   });
 
-  group('performanceTierFor', () {
-    test('normal: 80% or more is mastery', () {
-      expect(
-        performanceTierFor(knownCount: 8, total: 10),
-        PerformanceTier.mastery,
-      );
-    });
-
-    test('normal: between 50% and 80% is developing', () {
-      expect(
-        performanceTierFor(knownCount: 6, total: 10),
-        PerformanceTier.developing,
-      );
-    });
-
-    test('normal: below 50% is needsReview', () {
-      expect(
-        performanceTierFor(knownCount: 3, total: 10),
-        PerformanceTier.needsReview,
-      );
-    });
-
-    test('boundary: exactly 80% is mastery, not developing', () {
-      expect(
-        performanceTierFor(knownCount: 4, total: 5),
-        PerformanceTier.mastery,
-      );
-    });
-
-    test('boundary: exactly 50% is developing, not needsReview', () {
-      expect(
-        performanceTierFor(knownCount: 5, total: 10),
-        PerformanceTier.developing,
-      );
-    });
-
-    test('edge: exactly 0% is needsReview', () {
-      expect(
-        performanceTierFor(knownCount: 0, total: 10),
-        PerformanceTier.needsReview,
-      );
-    });
-
-    test('failure: a zero-card session is treated as needsReview, not a '
-        'division-by-zero crash', () {
-      expect(
-        performanceTierFor(knownCount: 0, total: 0),
-        PerformanceTier.needsReview,
-      );
-    });
-  });
+  // The performance-tier logic moved to a shared `lib/logic/performance_tier.dart`
+  // (NOTE 6), used by both Quiz and Flashcards — see
+  // test/logic/performance_tier_test.dart.
 
   group('resumeIndexFor', () {
     test('normal: an in-range index is returned unchanged', () {
