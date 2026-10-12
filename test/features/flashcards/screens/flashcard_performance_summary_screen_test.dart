@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/features/flashcards/screens/flashcard_performance_summary_screen.dart';
+import 'package:tadarab_app/features/flashcards/screens/flashcard_review_pass_screen.dart';
+import 'package:tadarab_app/models/enums.dart';
+import 'package:tadarab_app/models/flashcard.dart';
+import 'package:tadarab_app/services/flashcard_service.dart';
+
+import '../../../helpers/fake_flashcard_service.dart';
 
 Widget _wrap({
   required int knownCount,
   required int needsReviewCount,
   int earnedPoints = 20,
+  FlashcardService? service,
 }) {
   return MaterialApp(
     home: FlashcardPerformanceSummaryScreen(
@@ -15,6 +22,7 @@ Widget _wrap({
       knownCount: knownCount,
       needsReviewCount: needsReviewCount,
       earnedPoints: earnedPoints,
+      service: service,
     ),
   );
 }
@@ -106,4 +114,87 @@ void main() {
       );
     },
   );
+
+  group('Review now', () {
+    Flashcard card(String id, ReviewStatus? status) => Flashcard(
+      flashcardId: id,
+      frontText: 'front-$id',
+      backText: 'back-$id',
+      reviewStatus: status,
+      sourceLocation: 'Slide 1',
+      sessionId: 'session-1',
+      cardIndex: 0,
+    );
+
+    testWidgets(
+      'opens a review pass with only the needs-review cards, none of the '
+      'known ones',
+      (tester) async {
+        final service = FakeFlashcardService(
+          flashcardsBySessionId: {
+            'session-1': [
+              card('a', ReviewStatus.needsReview),
+              card('b', ReviewStatus.knowIt),
+              card('c', ReviewStatus.needsReview),
+              card('d', null),
+            ],
+          },
+        );
+        await tester.pumpWidget(
+          _wrap(knownCount: 1, needsReviewCount: 2, service: service),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Review now'));
+        await tester.pumpAndSettle();
+
+        final reviewScreen = tester.widget<FlashcardReviewPassScreen>(
+          find.byType(FlashcardReviewPassScreen),
+        );
+        expect(
+          reviewScreen.flashcards.map((f) => f.flashcardId).toSet(),
+          {'a', 'c'},
+        );
+      },
+    );
+
+    testWidgets(
+      'leaving the review pass returns to this summary with its stored '
+      'counts and points unchanged',
+      (tester) async {
+        final service = FakeFlashcardService(
+          flashcardsBySessionId: {
+            'session-1': [
+              card('a', ReviewStatus.needsReview),
+              card('b', ReviewStatus.needsReview),
+            ],
+          },
+        );
+        await tester.pumpWidget(
+          _wrap(
+            knownCount: 6,
+            needsReviewCount: 2,
+            earnedPoints: 12,
+            service: service,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Review now'));
+        await tester.pumpAndSettle();
+        expect(find.byType(FlashcardReviewPassScreen), findsOneWidget);
+
+        // Walk through both cards to the end (Done reviewing pops).
+        await tester.tap(find.text('Next →'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Done reviewing →'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(FlashcardReviewPassScreen), findsNothing);
+        expect(find.text('6'), findsOneWidget); // knownCount, unchanged
+        expect(find.text('2'), findsOneWidget); // needsReviewCount, unchanged
+        expect(find.text('+12'), findsOneWidget); // earnedPoints, unchanged
+      },
+    );
+  });
 }

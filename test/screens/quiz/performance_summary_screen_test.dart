@@ -214,12 +214,105 @@ void main() {
       expect(find.text('Points earned'), findsNothing);
     });
 
-    testWidgets('has no Review Mistakes and no Practice Now — only Back to Sessions', (tester) async {
+    testWidgets('has no Review Mistakes and no Practice Now — only Done', (tester) async {
       await pumpPracticeResult(tester, correct: 1, total: 5);
 
       expect(find.text('Review mistakes'), findsNothing);
       expect(find.text('Practice Now'), findsNothing);
-      expect(find.text('Back to Sessions'), findsOneWidget);
+      expect(find.text('Back to Sessions'), findsNothing);
+      expect(find.text('Done'), findsOneWidget);
     });
+
+    testWidgets(
+      'tapping Done pops back to whatever is underneath, not all the way '
+      'to Sessions',
+      (tester) async {
+        // Mirrors the real stack shape: original summary pushed, then
+        // practice result pushed/replaced on top of Play — Done must land
+        // on the original summary, not skip past it via popToQuizSessions.
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: ElevatedButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => PerformanceSummaryScreen.practiceResult(
+                        correct: 3,
+                        total: 5,
+                      ),
+                    ),
+                  ),
+                  child: const Text('Original summary placeholder'),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Original summary placeholder'));
+        await tester.pumpAndSettle();
+        expect(find.text('Done'), findsOneWidget);
+
+        await tester.tap(find.text('Done'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Done'), findsNothing);
+        expect(find.text('Original summary placeholder'), findsOneWidget);
+      },
+    );
+  });
+
+  group('Practice Now: shuffle, zero writes, and returning to the original', () {
+    testWidgets(
+      'practice never calls completeSession/submitExamSession/submitAnswer, '
+      'and the original session is untouched after a full practice round',
+      (tester) async {
+        final service = FakeQuizSessionService(
+          sessions: [_completedSession(mode: Mode.learning, correct: 4, total: 10)],
+          questions: {'s1': _questionsWith(correct: 4, total: 10)},
+        );
+        await _pumpReal(tester, service);
+
+        await tester.ensureVisible(find.text('Practice Now'));
+        await tester.tap(find.text('Practice Now'));
+        await tester.pumpAndSettle();
+
+        // Every mistake question from _questionsWith shares the exact
+        // same 4-option set ('Right'/'Wrong'/'Other'/'Another'), so
+        // 'Right' is always one of the options on screen for whichever
+        // question is currently showing, regardless of shuffle order.
+        final playScreen = tester.widget<QuizPlayScreen>(
+          find.byType(QuizPlayScreen),
+        );
+        final practiceCount = playScreen.practiceQuestions!.length;
+        for (var i = 0; i < practiceCount; i++) {
+          await tester.tap(find.text('Right'));
+          await tester.pump();
+          await tester.tap(find.text('Submit answer'));
+          await tester.pumpAndSettle();
+          final isLast = i == practiceCount - 1;
+          await tester.tap(find.text(isLast ? 'Finish quiz' : 'Next question'));
+          await tester.pumpAndSettle();
+        }
+
+        // Landed on the practice result, never touching the real service.
+        expect(find.byType(PerformanceSummaryScreen), findsOneWidget);
+        expect(service.completeCalls, 0);
+        expect(service.submitExamSessionCalls, 0);
+        expect(service.submittedAnswers, isEmpty);
+
+        // Leave the practice result and land back on the original summary
+        // with its stored values unchanged.
+        await tester.tap(find.text('Done'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('4'), findsOneWidget); // original correctAnswers
+        expect(find.text('+16'), findsOneWidget); // original earnedPoints (4*4)
+        expect(service.completeCalls, 0);
+        expect(service.submitExamSessionCalls, 0);
+      },
+    );
   });
 }

@@ -86,8 +86,16 @@ class Question {
 
   /// Returns a copy with [studentAnswer] set/replaced — used when the
   /// student answers this question, or when the setup's answers are
-  /// restored from a resumed session.
-  Question copyWith({String? studentAnswer, bool? isReported}) {
+  /// restored from a resumed session. [options] replaces the option order
+  /// wholesale when given (e.g. Practice Now's reshuffle — see
+  /// lib/logic/practice_shuffle.dart) — [correctAnswer] is a literal
+  /// string, not an index, so reordering [options] never risks
+  /// desynchronizing which one is correct.
+  Question copyWith({
+    String? studentAnswer,
+    bool? isReported,
+    List<String>? options,
+  }) {
     return Question(
       questionId: questionId,
       questionText: questionText,
@@ -95,7 +103,7 @@ class Question {
       explanation: explanation,
       sourceLocation: sourceLocation,
       studentAnswer: studentAnswer ?? this.studentAnswer,
-      options: options,
+      options: options ?? this.options,
       sessionId: sessionId,
       isReported: isReported ?? this.isReported,
     );

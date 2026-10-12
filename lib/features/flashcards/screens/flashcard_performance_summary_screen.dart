@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../logic/performance_tier.dart';
+import '../../../logic/practice_shuffle.dart';
 import '../../../models/enums.dart';
 import '../../../services/flashcard_service.dart';
 import '../../../theme/app_theme.dart';
@@ -50,7 +51,13 @@ class FlashcardPerformanceSummaryScreen extends StatelessWidget {
     if (!context.mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => FlashcardReviewPassScreen(flashcards: needsReview),
+        // Shuffled fresh every time this is opened — a review pass
+        // shouldn't always present the same cards in the same stored
+        // order. FlashcardReviewPassScreen itself stays read-only/zero-
+        // write; only the order handed to it differs.
+        builder: (_) => FlashcardReviewPassScreen(
+          flashcards: shuffleFlashcardsForReview(needsReview),
+        ),
       ),
     );
   }
