@@ -137,6 +137,7 @@ class AppTextField extends StatelessWidget {
                     hintText: hintText,
                     hintStyle: AppTypography.fieldInput.copyWith(
                       color: AppColors.placeholder,
+                      letterSpacing: 0,
                     ),
                   ),
                 ),

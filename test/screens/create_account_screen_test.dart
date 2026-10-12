@@ -110,6 +110,20 @@ void main() {
 
       expect(find.text('Strong'), findsOneWidget);
     });
+
+    testWidgets(
+      'Re-enter password never shows a checkmark when it matches — only '
+      'the show/hide eye icon, same as Password',
+      (tester) async {
+        await pumpCreateAccount(tester);
+
+        await fillForm(tester, password: 'abcdefg1', confirm: 'abcdefg1');
+        await tester.pump();
+
+        expect(find.byIcon(Icons.check), findsNothing);
+        expect(find.byIcon(Icons.visibility_outlined), findsNWidgets(2));
+      },
+    );
   });
 
   group('A3c — email already taken', () {

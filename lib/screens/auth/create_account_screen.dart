@@ -272,27 +272,17 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                 enabled: !_loading,
                 state: _stateFor(_confirmController.text, _confirmError),
                 errorText: _confirmError,
-                trailing:
-                    AuthValidators.passwordsMatch(
-                      _passwordController.text,
-                      _confirmController.text,
-                    )
-                    ? const Icon(
-                        Icons.check,
-                        size: 19,
-                        color: AppColors.success,
-                      )
-                    : GestureDetector(
-                        onTap: () =>
-                            setState(() => _obscureConfirm = !_obscureConfirm),
-                        child: Icon(
-                          _obscureConfirm
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                          size: 19,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
+                trailing: GestureDetector(
+                  onTap: () =>
+                      setState(() => _obscureConfirm = !_obscureConfirm),
+                  child: Icon(
+                    _obscureConfirm
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    size: 19,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
                 onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 24),
