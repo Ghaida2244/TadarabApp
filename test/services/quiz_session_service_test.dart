@@ -57,7 +57,7 @@ void main() {
 
       final entries = groupQuizSessions(sessions);
 
-      expect(entries.map((e) => e.session.sessionId), [
+      expect(entries.map((e) => e.group.top.sessionId), [
         'inprogress-1',
         'done-1',
         'done-2',
@@ -91,7 +91,7 @@ void main() {
         _session(id: 'c', completed: false),
       ];
       final entries = groupQuizSessions(sessions);
-      expect(entries.map((e) => e.session.sessionId), ['a', 'b', 'c']);
+      expect(entries.map((e) => e.group.top.sessionId), ['a', 'b', 'c']);
     });
 
     test(
@@ -105,7 +105,7 @@ void main() {
 
         final entries = groupQuizSessions(sessions);
 
-        expect(entries.map((e) => e.session.sessionId), [
+        expect(entries.map((e) => e.group.top.sessionId), [
           'newest',
           'middle',
           'oldest',
@@ -123,7 +123,7 @@ void main() {
 
         final entries = groupQuizSessions(sessions);
 
-        expect(entries.map((e) => e.session.sessionId), ['has-date', 'no-date']);
+        expect(entries.map((e) => e.group.top.sessionId), ['has-date', 'no-date']);
       },
     );
 
@@ -138,7 +138,7 @@ void main() {
 
         final entries = groupQuizSessions(sessions);
 
-        expect(entries.map((e) => e.session.sessionId), [
+        expect(entries.map((e) => e.group.top.sessionId), [
           'newest',
           'middle',
           'oldest',

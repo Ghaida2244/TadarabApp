@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../logic/session_stacking.dart';
 import '../models/enums.dart';
 import '../models/question.dart';
 import '../models/quiz_session.dart';
@@ -19,67 +20,54 @@ const int pointsPerCorrectAnswer = 4;
 int pointsForCorrectAnswers(int correctAnswers) =>
     correctAnswers * pointsPerCorrectAnswer;
 
-/// One row in the grouped Quiz sessions list, pairing a session with
-/// whether a group header ("IN PROGRESS" / "COMPLETED") belongs above it.
+/// One row in the grouped Quiz sessions list, pairing a session group
+/// (today's plain card for a lone session, or a Retake Stack for 2+
+/// sharing a retake chain — see [groupSessionsIntoStacks]) with whether a
+/// section header ("IN PROGRESS" / "COMPLETED") belongs above it.
 class QuizSessionListEntry {
   QuizSessionListEntry({
-    required this.session,
+    required this.group,
     required this.showHeader,
     required this.headerLabel,
   });
 
-  final QuizSession session;
+  final SessionStack<QuizSession> group;
   final bool showHeader;
   final String headerLabel;
 }
 
 /// Groups sessions with in-progress ones first, completed ones after —
 /// mirroring the design's Quiz sessions list — and marks which entries
-/// start a new group so the screen can render a header above them. Within
-/// each group, newest first: completed sessions by [QuizSession.completedAt]
-/// descending, in-progress ones by [QuizSession.createdAt] descending (an
-/// in-progress session has no completedAt yet, so createdAt — when the
-/// student started it — is the only meaningful "newest" for that group).
-/// The most recent session should be the first thing the student sees
-/// under either header, not the oldest. Falls back to the input's original
-/// relative order if a timestamp is unexpectedly missing — Dart's
-/// [List.sort] isn't guaranteed stable, so this sorts on a decorated index
-/// instead of relying on that for the fallback case.
+/// start a new section so the screen can render a header above them.
+/// Sessions sharing a retake chain ([Session.rootSessionId]) within the
+/// same section become one [SessionStack]; see [groupSessionsIntoStacks]
+/// for the exact within-stack and between-stack ordering (unchanged from
+/// before stacking existed: completed groups by their top attempt's
+/// [QuizSession.completedAt] descending, in-progress groups by
+/// [QuizSession.createdAt] descending).
 List<QuizSessionListEntry> groupQuizSessions(List<QuizSession> sessions) {
-  final indexed = sessions.asMap().entries.toList()
-    ..sort((a, b) {
-      final aDone = a.value.isSessionCompleted ? 1 : 0;
-      final bDone = b.value.isSessionCompleted ? 1 : 0;
-      if (aDone != bDone) return aDone.compareTo(bDone);
-      if (a.value.isSessionCompleted) {
-        final aCompletedAt = a.value.completedAt;
-        final bCompletedAt = b.value.completedAt;
-        if (aCompletedAt != null && bCompletedAt != null) {
-          final cmp = bCompletedAt.compareTo(aCompletedAt); // newest first
-          if (cmp != 0) return cmp;
-        }
-      } else {
-        final cmp = b.value.createdAt.compareTo(a.value.createdAt); // newest first
-        if (cmp != 0) return cmp;
-      }
-      // Equal (or missing) timestamps: fall back to stable input order.
-      return a.key.compareTo(b.key);
-    });
+  final groups = groupSessionsIntoStacks<QuizSession>(
+    sessions: sessions,
+    isCompleted: (s) => s.isSessionCompleted,
+    rootSessionId: (s) => s.rootSessionId,
+    retakeNumber: (s) => s.retakeNumber,
+    createdAt: (s) => s.createdAt,
+    completedAt: (s) => s.completedAt,
+  );
 
   final result = <QuizSessionListEntry>[];
   bool? lastCompleted;
-  for (final entry in indexed) {
-    final session = entry.value;
+  for (final group in groups) {
     final isFirstInGroup =
-        lastCompleted == null || lastCompleted != session.isSessionCompleted;
+        lastCompleted == null || lastCompleted != group.isCompleted;
     result.add(
       QuizSessionListEntry(
-        session: session,
+        group: group,
         showHeader: isFirstInGroup,
-        headerLabel: session.isSessionCompleted ? 'COMPLETED' : 'IN PROGRESS',
+        headerLabel: group.isCompleted ? 'COMPLETED' : 'IN PROGRESS',
       ),
     );
-    lastCompleted = session.isSessionCompleted;
+    lastCompleted = group.isCompleted;
   }
   return result;
 }

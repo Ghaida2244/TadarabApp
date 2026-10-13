@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../logic/session_stacking.dart';
 import '../../models/enums.dart';
 import '../../models/quiz_session.dart';
 import '../../models/session.dart';
@@ -9,11 +10,27 @@ import '../../widgets/app_button.dart';
 import '../../widgets/dashed_border.dart';
 import '../../widgets/generation_loading_overlay.dart';
 import '../../widgets/scrollable_title_pill.dart';
+import '../../widgets/session_stack_card.dart';
+import '../../widgets/session_stack_focus_view.dart';
 import 'quiz_navigation.dart';
 import 'quiz_play_screen.dart';
 import 'quiz_setup_screen.dart';
 import 'performance_summary_screen.dart';
 import 'widgets/quiz_icon_button.dart';
+
+/// materialId -> title lookup for [session]'s own materials, comma-joined
+/// — or "Material removed" if none resolve. Shared by [_SessionCard] and
+/// the focus view's header subtitle, so both read the exact same label.
+String materialsLabelFor(
+  QuizSession session,
+  Map<String, String> materialTitles,
+) {
+  final titles = session.materialIds
+      .map((id) => materialTitles[id])
+      .whereType<String>()
+      .toList();
+  return titles.isEmpty ? 'Material removed' : titles.join(', ');
+}
 
 /// The Quiz sessions list for one course — empty state, or sessions grouped
 /// IN PROGRESS above COMPLETED. Entry point into the whole Quiz feature
@@ -54,6 +71,27 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
   // loading overlay's fixed line (its settings) — set the moment a retake
   // starts, cleared once it finishes or fails.
   QuizSession? _retakingSource;
+
+  // Which stack's focus view is open, if any — identified by section +
+  // rootSessionId (see _keyFor) rather than holding the SessionStack
+  // object itself, since a fresh one is rebuilt from the latest data on
+  // every build(); re-resolving by this key lets the focus view track
+  // deletes/retakes to the same group across reloads, and lets build()
+  // detect when the group has shrunk to a single attempt (see
+  // _confirmDelete) and close it automatically.
+  String? _openStackKey;
+
+  String _keyFor(SessionStack<QuizSession> group) =>
+      '${group.isCompleted}:${group.top.rootSessionId}';
+
+  void _openStack(SessionStack<QuizSession> group) {
+    setState(() => _openStackKey = _keyFor(group));
+  }
+
+  void _closeStack() {
+    if (_openStackKey == null) return;
+    setState(() => _openStackKey = null);
+  }
 
   @override
   void initState() {
@@ -110,14 +148,35 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
     });
   }
 
-  Future<void> _confirmDelete(QuizSession session) async {
+  /// [closeFocusIfGroupShrinks]: when this delete happens from inside an
+  /// open focus view, re-checks that group after the delete and closes the
+  /// view (back to a plain card) if it's down to a single attempt — see
+  /// CLAUDE.md's Retake Stacks point 4.
+  Future<void> _confirmDelete(
+    QuizSession session, {
+    bool closeFocusIfGroupShrinks = false,
+  }) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => _DeleteSessionDialog(),
     );
     if (confirmed != true) return;
     await widget.service.deleteSession(session.sessionId);
-    _reload();
+
+    if (!closeFocusIfGroupShrinks || _openStackKey == null) {
+      _reload();
+      return;
+    }
+    final fresh = await widget.service.fetchSessions(widget.courseId);
+    if (!mounted) return;
+    final stillStack = groupQuizSessions(
+      fresh,
+    ).any((e) => _keyFor(e.group) == _openStackKey && e.group.isStack);
+    setState(() {
+      _sessionsFuture = Future.value(fresh);
+      _materialTitlesFuture = _loadMaterialTitles();
+      if (!stillStack) _openStackKey = null;
+    });
   }
 
   void _openSetup() {
@@ -232,24 +291,94 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            _buildBody(),
-            if (_retakingSource != null)
-              GenerationLoadingOverlay(
-                config: kQuizRetakeLoadingConfig,
-                fixedLine: buildGenerationFixedLine(
-                  count: _retakingSource!.numberOfQuestions,
-                  noun: 'questions',
-                  difficulties: _retakingSource!.difficultyLevels.toSet(),
+    return PopScope(
+      canPop: _openStackKey == null,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _closeStack();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Stack(
+            children: [
+              _buildBody(),
+              _buildFocusViewIfOpen(context),
+              if (_retakingSource != null)
+                GenerationLoadingOverlay(
+                  config: kQuizRetakeLoadingConfig,
+                  fixedLine: buildGenerationFixedLine(
+                    count: _retakingSource!.numberOfQuestions,
+                    noun: 'questions',
+                    difficulties: _retakingSource!.difficultyLevels.toSet(),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  /// Resolves the currently-open stack (if any) from the latest loaded
+  /// sessions and renders its [SessionStackFocusView]. A plain
+  /// [SizedBox.shrink] when nothing's open, or when the key no longer
+  /// matches a real stack (e.g. deleted down to one attempt elsewhere —
+  /// see _confirmDelete, which already clears [_openStackKey] itself in
+  /// that case; this is just the render-time mirror of the same check).
+  Widget _buildFocusViewIfOpen(BuildContext context) {
+    if (_openStackKey == null) return const SizedBox.shrink();
+    return FutureBuilder<List<QuizSession>>(
+      future: _sessionsFuture,
+      builder: (context, snapshot) {
+        final sessions = snapshot.data ?? const <QuizSession>[];
+        if (sessions.isEmpty) return const SizedBox.shrink();
+        final entries = groupQuizSessions(sessions);
+        SessionStack<QuizSession>? openGroup;
+        for (final entry in entries) {
+          if (_keyFor(entry.group) == _openStackKey && entry.group.isStack) {
+            openGroup = entry.group;
+            break;
+          }
+        }
+        if (openGroup == null) return const SizedBox.shrink();
+        final group = openGroup;
+        return FutureBuilder<Map<String, String>>(
+          future: _materialTitlesFuture,
+          builder: (context, materialsSnapshot) {
+            final materialTitles = materialsSnapshot.data ?? const {};
+            return SessionStackFocusView(
+              title:
+                  '${group.sessions.length} attempts · '
+                  '${group.isCompleted ? 'Completed' : 'In progress'}',
+              subtitle: materialsLabelFor(group.top, materialTitles),
+              itemCount: group.sessions.length,
+              itemBuilder: (context, index) {
+                final session = group.sessions[index];
+                return _SessionCard(
+                  session: session,
+                  sessionsInList: sessions,
+                  service: widget.service,
+                  materialTitles: materialTitles,
+                  onAct: session.isSessionCompleted
+                      ? () => _viewSummary(session)
+                      : () => _resume(session),
+                  onRetake: session.isSessionCompleted
+                      ? () => _retake(session)
+                      : null,
+                  onDelete: () => _confirmDelete(
+                    session,
+                    closeFocusIfGroupShrinks: true,
+                  ),
+                  isRetaking: _retakingSessionIds.contains(session.sessionId),
+                );
+              },
+              onClose: _closeStack,
+              reducedMotion: MediaQuery.of(context).disableAnimations,
+            );
+          },
+        );
+      },
     );
   }
 
@@ -320,22 +449,38 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
                         separatorBuilder: (_, _) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
                           final entry = entries[index];
-                          final card = _SessionCard(
-                            session: entry.session,
+                          final group = entry.group;
+                          final top = group.top;
+                          final topCard = _SessionCard(
+                            session: top,
                             sessionsInList: sessions,
                             service: widget.service,
                             materialTitles: materialTitles,
-                            onAct: entry.session.isSessionCompleted
-                                ? () => _viewSummary(entry.session)
-                                : () => _resume(entry.session),
-                            onRetake: entry.session.isSessionCompleted
-                                ? () => _retake(entry.session)
+                            onAct: top.isSessionCompleted
+                                ? () => _viewSummary(top)
+                                : () => _resume(top),
+                            onRetake: top.isSessionCompleted
+                                ? () => _retake(top)
                                 : null,
-                            onDelete: () => _confirmDelete(entry.session),
+                            onDelete: () => _confirmDelete(top),
                             isRetaking: _retakingSessionIds.contains(
-                              entry.session.sessionId,
+                              top.sessionId,
                             ),
+                            // A collapsed stack's top card shows no action
+                            // buttons and no delete of its own — tapping
+                            // it opens the focus view instead, where every
+                            // attempt gets its own full card. A lone
+                            // session (group.isStack == false) renders
+                            // exactly as it always has.
+                            isStackTop: group.isStack,
                           );
+                          final card = group.isStack
+                              ? SessionStackCard(
+                                  stackSize: group.sessions.length,
+                                  cardBuilder: (_) => topCard,
+                                  onOpenStack: () => _openStack(group),
+                                )
+                              : topCard;
                           if (!entry.showHeader) return card;
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -483,6 +628,7 @@ class _SessionCard extends StatelessWidget {
     required this.onRetake,
     required this.onDelete,
     this.isRetaking = false,
+    this.isStackTop = false,
   });
 
   final QuizSession session;
@@ -496,7 +642,7 @@ class _SessionCard extends StatelessWidget {
 
   /// materialId -> title, for the materials badge. A session's own
   /// materialIds that aren't in this map (deleted since) are simply
-  /// skipped — see [_materialsLabel].
+  /// skipped — see [materialsLabelFor].
   final Map<String, String> materialTitles;
 
   final VoidCallback onAct;
@@ -507,28 +653,25 @@ class _SessionCard extends StatelessWidget {
   /// disables the button and shows a spinner, prevents double taps.
   final bool isRetaking;
 
-  /// The comma-joined titles of this session's materials, straight from
-  /// the design file's own logic (`matsLabel` in Tadarab Phase 2 -
-  /// Quiz.dc.html): every materialId that still resolves to a title,
-  /// joined with ", " — or "Material removed" if none do.
-  String _materialsLabel() {
-    final titles = session.materialIds
-        .map((id) => materialTitles[id])
-        .whereType<String>()
-        .toList();
-    return titles.isEmpty ? 'Material removed' : titles.join(', ');
-  }
+  /// True when this card is rendered as a collapsed stack's top card
+  /// (inside a [SessionStackCard]) rather than standalone or inside the
+  /// focus view — per the Retake Stacks design's "Stack buttons: Hide"
+  /// and "a collapsed stack has no delete button" decisions, it then shows
+  /// neither its action buttons nor its delete button; tapping it opens
+  /// the stack instead (handled by the [SessionStackCard] wrapper, not
+  /// here).
+  final bool isStackTop;
 
   @override
   Widget build(BuildContext context) {
     final complete = session.isSessionCompleted;
     final hue = complete ? AppColors.success : AppColors.red;
-    final detail = complete
-        ? '${session.numberOfQuestions} questions · ${session.correctAnswers} correct'
-        : null; // in-progress detail is built below, via FutureBuilder
-    final actLabel = complete
-        ? 'View performance summary'
-        : 'Resume at question ${session.currentQuestionIndex + 1}';
+    // "Correct count: Hide" (approved Retake Stacks configuration) — a
+    // completed card's result line drops the "· N correct" half that was
+    // here before; the in-progress line (via the FutureBuilder below) is
+    // untouched, since that switch only ever affected the done branch.
+    final detail = complete ? '${session.numberOfQuestions} questions' : null;
+    final label = sessionCardRetakeLabel(session, sessionsInList);
 
     return Container(
       decoration: BoxDecoration(
@@ -564,24 +707,11 @@ class _SessionCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     ScrollableTitlePill(
-                      text: _materialsLabel(),
+                      text: materialsLabelFor(session, materialTitles),
                       style: AppTypography.helper.copyWith(
                         color: AppColors.navy,
                       ),
                     ),
-                    if (sessionCardRetakeLabel(session, sessionsInList)
-                        case final label?) ...[
-                      const SizedBox(height: 6),
-                      // A retake shows which retake it is; an original
-                      // only gets labeled once it actually has one —
-                      // see sessionCardRetakeLabel's own doc comment.
-                      Text(
-                        label,
-                        style: AppTypography.quizBadge.copyWith(
-                          color: AppColors.placeholder,
-                        ),
-                      ),
-                    ],
                     const SizedBox(height: 10),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -590,9 +720,22 @@ class _SessionCard extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
+                              // SPEC: label pill "sits before the mode
+                              // tag"; wrap (not a plain Row) so a long
+                              // label + mode + status still fits on
+                              // narrow widths instead of overflowing.
+                              Wrap(
+                                spacing: 7,
+                                runSpacing: 4,
+                                crossAxisAlignment:
+                                    WrapCrossAlignment.center,
                                 children: [
+                                  // "Original"/"Retake N" — shown only
+                                  // once this session actually has a
+                                  // retake relationship; the logic lives
+                                  // in sessionCardRetakeLabel, unchanged
+                                  // by this redesign.
+                                  if (label != null) _RetakeLabelPill(label),
                                   Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 9,
@@ -609,21 +752,24 @@ class _SessionCard extends StatelessWidget {
                                       style: AppTypography.quizBadge,
                                     ),
                                   ),
-                                  const SizedBox(width: 7),
-                                  Container(
-                                    width: 7,
-                                    height: 7,
-                                    decoration: BoxDecoration(
-                                      color: hue,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    complete ? 'Completed' : 'In progress',
-                                    style: AppTypography.quizStatus.copyWith(
-                                      color: hue,
-                                    ),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 7,
+                                        height: 7,
+                                        decoration: BoxDecoration(
+                                          color: hue,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        complete ? 'Completed' : 'In progress',
+                                        style: AppTypography.quizStatus
+                                            .copyWith(color: hue),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
@@ -648,43 +794,90 @@ class _SessionCard extends StatelessWidget {
                             ],
                           ),
                         ),
-                        GestureDetector(
-                          onTap: onDelete,
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: AppColors.errorBannerBackground,
-                              borderRadius: BorderRadius.circular(11),
-                            ),
-                            child: const Icon(
-                              Icons.delete_outline,
-                              size: 16,
-                              color: AppColors.red,
+                        // SPEC: "A collapsed stack has no delete button" —
+                        // delete lives on each attempt inside the focus
+                        // view instead; a lone card keeps its delete as
+                        // today.
+                        if (!isStackTop)
+                          GestureDetector(
+                            onTap: onDelete,
+                            child: Container(
+                              width: 32,
+                              height: 32,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: AppColors.errorBannerBackground,
+                                borderRadius: BorderRadius.circular(11),
+                              ),
+                              child: const Icon(
+                                Icons.delete_outline,
+                                size: 16,
+                                color: AppColors.red,
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    AppButton(
-                      label: actLabel,
-                      onPressed: onAct,
-                      height: 46,
-                      borderRadius: 14,
-                      shadowColor: AppColors.navy.withValues(alpha: 0.10),
-                    ),
-                    if (onRetake != null) ...[
-                      const SizedBox(height: 10),
-                      AppButton(
-                        label: 'Retake quiz',
-                        variant: AppButtonVariant.outlinedBrand,
-                        onPressed: isRetaking ? null : onRetake,
-                        height: 46,
-                        borderRadius: 14,
-                        shadowColor: AppColors.navy.withValues(alpha: 0.10),
-                      ),
+                    // SPEC: "Stack buttons: Hide" — the collapsed stack's
+                    // top card shows neither action button; tapping the
+                    // card (handled by SessionStackCard) opens the focus
+                    // view, where every attempt has its own full buttons.
+                    if (!isStackTop) ...[
+                      const SizedBox(height: 12),
+                      if (complete)
+                        // "Completed buttons: Side by side" (approved
+                        // configuration) — a shorter pair of buttons in a
+                        // row, per the hand-off's exact compact-button
+                        // metrics (40dp height, 12dp radius, 13sp labels,
+                        // 1.35:1 flex ratio) and shortened labels.
+                        Row(
+                          children: [
+                            Expanded(
+                              flex: 135,
+                              child: AppButton(
+                                label: 'View summary',
+                                onPressed: onAct,
+                                height: 40,
+                                borderRadius: 12,
+                                fontSize: 13,
+                                shadowColor: AppColors.navy.withValues(
+                                  alpha: 0.10,
+                                ),
+                              ),
+                            ),
+                            if (onRetake != null) ...[
+                              const SizedBox(width: 8),
+                              Expanded(
+                                flex: 100,
+                                child: AppButton(
+                                  label: 'Retake',
+                                  variant: AppButtonVariant.outlinedBrand,
+                                  onPressed: isRetaking ? null : onRetake,
+                                  height: 40,
+                                  borderRadius: 12,
+                                  fontSize: 13,
+                                  shadowColor: AppColors.navy.withValues(
+                                    alpha: 0.10,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        )
+                      else
+                        // Same compact metrics as the completed row's
+                        // buttons (SessionStackCard.dc.html: btnH/btnR/
+                        // btnFs depend only on compactButtons, not on
+                        // a.done) — confirmed to apply here too.
+                        AppButton(
+                          label:
+                              'Resume at question ${session.currentQuestionIndex + 1}',
+                          onPressed: onAct,
+                          height: 40,
+                          borderRadius: 12,
+                          fontSize: 13,
+                          shadowColor: AppColors.navy.withValues(alpha: 0.10),
+                        ),
                     ],
                   ],
                 ),
@@ -692,6 +885,33 @@ class _SessionCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The "ORIGINAL" / "RETAKE N" pill — SPEC: 'uppercase, 10sp / w900,
+/// tracking .04em, navy #0B0F5B fill, white text, pill radius 999, padding
+/// 4 × 9. Sits before the mode tag.' The label TEXT itself still comes
+/// from [sessionCardRetakeLabel], unchanged by this redesign — only the
+/// rendering (a filled pill inline with the mode badge, instead of plain
+/// grey text on its own line) is new.
+class _RetakeLabelPill extends StatelessWidget {
+  const _RetakeLabelPill(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.navy,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label.toUpperCase(),
+        style: AppTypography.quizBadge.copyWith(color: Colors.white),
       ),
     );
   }

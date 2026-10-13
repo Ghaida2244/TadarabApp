@@ -13,18 +13,20 @@ import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
 import 'package:tadarab_app/widgets/generation_loading_overlay.dart';
 import 'package:tadarab_app/widgets/scrollable_title_pill.dart';
+import 'package:tadarab_app/widgets/session_stack_card.dart';
+import 'package:tadarab_app/widgets/session_stack_focus_view.dart';
 
 import '../../helpers/fake_quiz_session_service.dart';
 
 AppButton _retakeButton(WidgetTester tester) => tester.widget<AppButton>(
-  find.byWidgetPredicate((w) => w is AppButton && w.label == 'Retake quiz'),
+  find.byWidgetPredicate((w) => w is AppButton && w.label == 'Retake'),
 );
 
-/// Matches a "Retake N" chain label specifically — not the "Retake quiz"
-/// button, which also contains the substring "Retake" and would otherwise
-/// make a plain `find.textContaining('Retake')` useless for this.
+/// Matches a "Retake N" chain label specifically — not the "Retake"
+/// button, which would otherwise make a plain
+/// `find.textContaining('Retake')` ambiguous for this.
 final Finder _retakeChainLabel = find.byWidgetPredicate(
-  (w) => w is Text && RegExp(r'^Retake \d+$').hasMatch(w.data ?? ''),
+  (w) => w is Text && RegExp(r'^RETAKE \d+$').hasMatch(w.data ?? ''),
 );
 
 QuizSession _session({
@@ -98,8 +100,29 @@ void main() {
       expect(find.text('IN PROGRESS'), findsOneWidget);
       expect(find.text('COMPLETED'), findsOneWidget);
       expect(find.text('Resume at question 5'), findsOneWidget);
-      expect(find.text('View performance summary'), findsOneWidget);
-      expect(find.text('Retake quiz'), findsOneWidget);
+      expect(find.text('View summary'), findsOneWidget);
+      expect(find.text('Retake'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'the in-progress Resume button uses the same compact metrics as the '
+    'completed row\'s buttons (40dp height, 12dp radius, 13sp font) — '
+    'confirmed to apply here too, not just on completed cards',
+    (tester) async {
+      final service = FakeQuizSessionService(
+        sessions: [
+          _session(id: 's1', completed: false, currentQuestionIndex: 4),
+        ],
+      );
+      await _pump(tester, service);
+
+      final resumeButton = tester.widget<AppButton>(
+        find.widgetWithText(AppButton, 'Resume at question 5'),
+      );
+      expect(resumeButton.height, 40);
+      expect(resumeButton.borderRadius, 12);
+      expect(resumeButton.fontSize, 13);
     },
   );
 
@@ -111,13 +134,14 @@ void main() {
     );
     await _pump(tester, service);
 
-    expect(find.text('Retake quiz'), findsNothing);
+    expect(find.text('Retake'), findsNothing);
   });
 
   group('retake label', () {
     testWidgets(
       'normal case: an original session that already has a loaded retake '
-      'is labeled "Original"',
+      'is labeled "Original" — both labels visible inside the resulting '
+      "stack's focus view",
       (tester) async {
         final service = FakeQuizSessionService(
           sessions: [
@@ -133,8 +157,26 @@ void main() {
         );
         await _pump(tester, service);
 
-        expect(find.text('Original'), findsOneWidget);
-        expect(find.text('Retake 1'), findsOneWidget);
+        // Two completed attempts sharing a root now collapse into one
+        // stack in the main list — open it to see both labels at once.
+        // The list underneath stays mounted (just visually covered), so
+        // these finders are scoped to inside the focus view specifically
+        // — a bare find.text(...) would also match the still-mounted
+        // collapsed stack's own top card underneath.
+        expect(find.byType(SessionStackCard), findsOneWidget);
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+
+        final focusView = find.byType(SessionStackFocusView);
+        expect(focusView, findsOneWidget);
+        expect(
+          find.descendant(of: focusView, matching: find.text('ORIGINAL')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: focusView, matching: find.text('RETAKE 1')),
+          findsOneWidget,
+        );
       },
     );
 
@@ -147,7 +189,7 @@ void main() {
         );
         await _pump(tester, service);
 
-        expect(find.text('Original'), findsNothing);
+        expect(find.text('ORIGINAL'), findsNothing);
         expect(_retakeChainLabel, findsNothing);
       },
     );
@@ -160,8 +202,8 @@ void main() {
       );
       await _pump(tester, service);
 
-      expect(find.text('Retake 2'), findsOneWidget);
-      expect(find.text('Original'), findsNothing);
+      expect(find.text('RETAKE 2'), findsOneWidget);
+      expect(find.text('ORIGINAL'), findsNothing);
     });
 
     testWidgets(
@@ -175,7 +217,7 @@ void main() {
         );
         await _pump(tester, service);
 
-        expect(find.text('Original'), findsNothing);
+        expect(find.text('ORIGINAL'), findsNothing);
         expect(_retakeChainLabel, findsNothing);
       },
     );
@@ -221,7 +263,7 @@ void main() {
       await _pump(tester, service);
       final loadsBeforeRetake = service.fetchSessionsCalls;
 
-      await tester.tap(find.text('Retake quiz'));
+      await tester.tap(find.text('Retake'));
       await tester.pumpAndSettle();
 
       expect(find.text('Question 1 of 1'), findsOneWidget);
@@ -276,7 +318,7 @@ void main() {
         expect(find.byType(GenerationLoadingOverlay), findsNothing);
         expect(_retakeButton(tester).onPressed, isNotNull);
 
-        await tester.tap(find.text('Retake quiz'));
+        await tester.tap(find.text('Retake'));
         await tester.pump();
 
         expect(find.byType(GenerationLoadingOverlay), findsOneWidget);
@@ -298,14 +340,14 @@ void main() {
         );
         await _pump(tester, service);
 
-        await tester.tap(find.text('Retake quiz'));
+        await tester.tap(find.text('Retake'));
         await tester.pump();
         expect(service.retakeCalls, 1);
 
         // The button is disabled while loading, but tap it again anyway to
         // prove the guard in _retake() itself (not just the disabled
         // button) is what prevents a second call.
-        await tester.tap(find.text('Retake quiz'), warnIfMissed: false);
+        await tester.tap(find.text('Retake'), warnIfMissed: false);
         await tester.pump();
 
         expect(service.retakeCalls, 1);
@@ -355,7 +397,7 @@ void main() {
         );
         await _pump(tester, service);
 
-        await tester.tap(find.text('Retake quiz'));
+        await tester.tap(find.text('Retake'));
         await tester.pumpAndSettle();
 
         // The Exam draft is pushed (not a replacement), so Sessions is
@@ -381,7 +423,7 @@ void main() {
         );
         await _pump(tester, service);
 
-        await tester.tap(find.text('Retake quiz'));
+        await tester.tap(find.text('Retake'));
         await tester.pump();
         await tester.pump();
 
@@ -427,7 +469,7 @@ void main() {
         );
         await _pump(tester, service);
 
-        await tester.tap(find.text('Retake quiz'));
+        await tester.tap(find.text('Retake'));
         await tester.pump();
         await tester.pump();
 
@@ -471,7 +513,7 @@ void main() {
         );
         await _pump(tester, service);
 
-        await tester.tap(find.text('Retake quiz'));
+        await tester.tap(find.text('Retake'));
         await tester.pump();
         await tester.pump();
 
@@ -494,7 +536,7 @@ void main() {
         );
         await _pump(tester, service);
 
-        await tester.tap(find.text('Retake quiz'));
+        await tester.tap(find.text('Retake'));
         await tester.pump();
         await tester.pump();
 
@@ -923,4 +965,232 @@ void main() {
       expect(service.fetchSessionsCalls, callsOnFirstLoad + 1);
     },
   );
+
+  group('Retake Stacks: focus view', () {
+    List<QuizSession> twoCompletedAttempts() => [
+      _session(
+        id: 'original',
+        completed: true,
+        retakeNumber: 0,
+        correctAnswers: 6,
+      ),
+      _session(
+        id: 'retake-1',
+        completed: true,
+        retakeNumber: 1,
+        rootSessionId: 'original',
+        retakeOfSessionId: 'original',
+        correctAnswers: 8,
+      ),
+    ];
+
+    List<QuizSession> twoInProgressAttempts() => [
+      _session(
+        id: 'original',
+        completed: false,
+        retakeNumber: 0,
+        currentQuestionIndex: 1,
+      ),
+      _session(
+        id: 'retake-1',
+        completed: false,
+        retakeNumber: 1,
+        rootSessionId: 'original',
+        retakeOfSessionId: 'original',
+        currentQuestionIndex: 3,
+      ),
+    ];
+
+    testWidgets(
+      'inside the focus view, an in-progress attempt\'s Resume button also '
+      'uses the compact metrics (40dp height, 12dp radius, 13sp font)',
+      (tester) async {
+        final service = FakeQuizSessionService(
+          sessions: twoInProgressAttempts(),
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+
+        final focusView = find.byType(SessionStackFocusView);
+        final resumeButtons = tester.widgetList<AppButton>(
+          find.descendant(
+            of: focusView,
+            matching: find.byWidgetPredicate(
+              (w) => w is AppButton && w.label.startsWith('Resume at question'),
+            ),
+          ),
+        );
+        expect(resumeButtons, hasLength(2));
+        for (final button in resumeButtons) {
+          expect(button.height, 40);
+          expect(button.borderRadius, 12);
+          expect(button.fontSize, 13);
+        }
+      },
+    );
+
+    testWidgets('tapping a stack opens its focus view', (tester) async {
+      final service = FakeQuizSessionService(sessions: twoCompletedAttempts());
+      await _pump(tester, service);
+
+      expect(find.byType(SessionStackFocusView), findsNothing);
+      await tester.tap(find.byType(SessionStackCard));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SessionStackFocusView), findsOneWidget);
+      expect(find.text('2 attempts · Completed'), findsOneWidget);
+    });
+
+    testWidgets('the × button closes the focus view', (tester) async {
+      final service = FakeQuizSessionService(sessions: twoCompletedAttempts());
+      await _pump(tester, service);
+
+      await tester.tap(find.byType(SessionStackCard));
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionStackFocusView), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SessionStackFocusView), findsNothing);
+    });
+
+    testWidgets('tapping the dimmed backdrop closes the focus view', (
+      tester,
+    ) async {
+      final service = FakeQuizSessionService(sessions: twoCompletedAttempts());
+      await _pump(tester, service);
+
+      await tester.tap(find.byType(SessionStackCard));
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionStackFocusView), findsOneWidget);
+
+      // Tap near the very top-left corner — outside the header/list
+      // content, onto the dimmed backdrop itself.
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SessionStackFocusView), findsNothing);
+    });
+
+    testWidgets(
+      'every attempt inside the focus view has its own full card: Retake '
+      'is present on completed attempts, and each has its own delete',
+      (tester) async {
+        final service = FakeQuizSessionService(sessions: twoCompletedAttempts());
+        await _pump(tester, service);
+
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+
+        final focusView = find.byType(SessionStackFocusView);
+        expect(
+          find.descendant(of: focusView, matching: find.text('View summary')),
+          findsNWidgets(2),
+        );
+        expect(
+          find.descendant(of: focusView, matching: find.text('Retake')),
+          findsNWidgets(2),
+        );
+        expect(
+          find.descendant(
+            of: focusView,
+            matching: find.byIcon(Icons.delete_outline),
+          ),
+          findsNWidgets(2),
+        );
+      },
+    );
+
+    testWidgets(
+      'deleting an attempt inside the focus view down to one closes it '
+      'and leaves a plain card behind, keeping its own label',
+      (tester) async {
+        final service = FakeQuizSessionService(sessions: twoCompletedAttempts());
+        await _pump(tester, service);
+
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+
+        final focusView = find.byType(SessionStackFocusView);
+        await tester.tap(
+          find
+              .descendant(
+                of: focusView,
+                matching: find.byIcon(Icons.delete_outline),
+              )
+              .first,
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Delete this session?'), findsOneWidget);
+        await tester.tap(find.text('Delete session'));
+        await tester.pumpAndSettle();
+
+        expect(service.deleteCalls, 1);
+        // Down to one attempt: the focus view closes itself, and the
+        // remaining attempt renders as a plain (non-stack) card.
+        expect(find.byType(SessionStackFocusView), findsNothing);
+        expect(find.byType(SessionStackCard), findsNothing);
+        expect(find.textContaining('RETAKE'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'reduced motion: the stack and its focus view render without error',
+      (tester) async {
+        final service = FakeQuizSessionService(sessions: twoCompletedAttempts());
+        await tester.pumpWidget(
+          MediaQuery(
+            data: const MediaQueryData(disableAnimations: true),
+            child: MaterialApp(
+              home: QuizSessionsScreen(
+                courseId: 'course-1',
+                courseName: 'IS230',
+                service: service,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.byType(SessionStackFocusView), findsOneWidget);
+
+        await tester.tap(find.byIcon(Icons.close));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.byType(SessionStackFocusView), findsNothing);
+      },
+    );
+
+    testWidgets('RTL: the stack and its focus view render without error', (
+      tester,
+    ) async {
+      final service = FakeQuizSessionService(sessions: twoCompletedAttempts());
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Directionality(
+            textDirection: TextDirection.rtl,
+            child: QuizSessionsScreen(
+              courseId: 'course-1',
+              courseName: 'IS230',
+              service: service,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byType(SessionStackCard));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byType(SessionStackFocusView), findsOneWidget);
+    });
+  });
 }
