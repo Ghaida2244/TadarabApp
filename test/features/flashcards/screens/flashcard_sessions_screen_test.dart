@@ -8,23 +8,25 @@ import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/flashcard.dart';
 import 'package:tadarab_app/models/flashcard_session.dart';
 import 'package:tadarab_app/services/flashcard_service.dart';
+import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
 import 'package:tadarab_app/widgets/generation_loading_overlay.dart';
+import 'package:tadarab_app/widgets/session_stack_card.dart';
+import 'package:tadarab_app/widgets/session_stack_focus_view.dart';
 
 import '../../../helpers/fake_flashcard_service.dart';
 
 AppButton _retakeButton(WidgetTester tester) => tester.widget<AppButton>(
   find.byWidgetPredicate(
-    (w) => w is AppButton && w.label == 'Retake flashcards',
+    (w) => w is AppButton && w.label == 'Retake',
   ),
 );
 
-/// Matches a "Retake N" chain label specifically — not the "Retake
-/// flashcards" button, which also contains the substring "Retake" and
-/// would otherwise make a plain `find.textContaining('Retake')` useless
-/// for this.
+/// Matches a "RETAKE N" chain label pill specifically — not the "Retake"
+/// button, which would otherwise make a plain
+/// `find.textContaining('Retake')` ambiguous for this.
 final Finder _retakeChainLabel = find.byWidgetPredicate(
-  (w) => w is Text && RegExp(r'^Retake \d+$').hasMatch(w.data ?? ''),
+  (w) => w is Text && RegExp(r'^RETAKE \d+$').hasMatch(w.data ?? ''),
 );
 
 List<Flashcard> _flashcards(int count, {String sessionId = 's1'}) =>
@@ -145,6 +147,7 @@ void main() {
         completed: true,
         createdAt: DateTime(2025, 1, 1),
         completedAt: DateTime(2026, 1, 1),
+        numberOfFlashcards: 10,
         knownCount: 3,
       );
       final s4 = _session(
@@ -152,6 +155,7 @@ void main() {
         completed: true,
         createdAt: DateTime(2025, 1, 1),
         completedAt: DateTime(2026, 3, 1),
+        numberOfFlashcards: 12,
         knownCount: 7,
       );
 
@@ -174,8 +178,8 @@ void main() {
       await tester.drag(find.byType(ListView), const Offset(0, -600));
       await tester.pump();
 
-      final s4Known = tester.getTopLeft(find.text('10 cards · 7 known')).dy;
-      final s3Known = tester.getTopLeft(find.text('10 cards · 3 known')).dy;
+      final s4Known = tester.getTopLeft(find.text('12 cards')).dy;
+      final s3Known = tester.getTopLeft(find.text('10 cards')).dy;
       expect(
         s4Known,
         lessThan(s3Known),
@@ -250,15 +254,16 @@ void main() {
     await tester.pump();
 
     expect(find.text('COMPLETED'), findsOneWidget);
-    expect(find.text('10 cards · 8 known'), findsOneWidget);
-    expect(find.text('View performance summary'), findsOneWidget);
-    expect(find.text('Retake flashcards'), findsOneWidget);
+    expect(find.text('10 cards'), findsOneWidget);
+    expect(find.text('View summary'), findsOneWidget);
+    expect(find.text('Retake'), findsOneWidget);
   });
 
   group('retake label', () {
     testWidgets(
       'normal case: an original session that already has a loaded retake '
-      'is labeled "Original"',
+      'is labeled "Original" — both labels visible inside the resulting '
+      "stack's focus view",
       (tester) async {
         await tester.pumpWidget(
           _wrap(
@@ -277,9 +282,26 @@ void main() {
           ),
         );
         await tester.pump();
+        await tester.pump();
 
-        expect(find.text('Original'), findsOneWidget);
-        expect(find.text('Retake 1'), findsOneWidget);
+        // Two completed attempts sharing a root now collapse into one
+        // stack in the main list — open it to see both labels at once.
+        // The list underneath stays mounted (just visually covered), so
+        // these finders are scoped to inside the focus view specifically.
+        expect(find.byType(SessionStackCard), findsOneWidget);
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+
+        final focusView = find.byType(SessionStackFocusView);
+        expect(focusView, findsOneWidget);
+        expect(
+          find.descendant(of: focusView, matching: find.text('ORIGINAL')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: focusView, matching: find.text('RETAKE 1')),
+          findsOneWidget,
+        );
       },
     );
 
@@ -298,7 +320,7 @@ void main() {
         );
         await tester.pump();
 
-        expect(find.text('Original'), findsNothing);
+        expect(find.text('ORIGINAL'), findsNothing);
         expect(_retakeChainLabel, findsNothing);
       },
     );
@@ -316,8 +338,8 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('Retake 3'), findsOneWidget);
-      expect(find.text('Original'), findsNothing);
+      expect(find.text('RETAKE 3'), findsOneWidget);
+      expect(find.text('ORIGINAL'), findsNothing);
     });
 
     testWidgets(
@@ -333,7 +355,7 @@ void main() {
         );
         await tester.pump();
 
-        expect(find.text('Original'), findsNothing);
+        expect(find.text('ORIGINAL'), findsNothing);
         expect(_retakeChainLabel, findsNothing);
       },
     );
@@ -358,7 +380,7 @@ void main() {
         expect(find.byType(GenerationLoadingOverlay), findsNothing);
         expect(_retakeButton(tester).onPressed, isNotNull);
 
-        await tester.tap(find.text('Retake flashcards'));
+        await tester.tap(find.text('Retake'));
         await tester.pump();
 
         expect(find.byType(GenerationLoadingOverlay), findsOneWidget);
@@ -393,14 +415,14 @@ void main() {
         await tester.pumpWidget(_wrap(service));
         await tester.pump();
 
-        await tester.tap(find.text('Retake flashcards'));
+        await tester.tap(find.text('Retake'));
         await tester.pump();
         await tester.pump();
 
         expect(find.text('Could not reach Tadarab.'), findsOneWidget);
         expect(find.byType(GenerationLoadingOverlay), findsNothing);
         expect(_retakeButton(tester).onPressed, isNotNull);
-        expect(find.text('Retake flashcards'), findsOneWidget);
+        expect(find.text('Retake'), findsOneWidget);
       },
     );
   });
@@ -485,5 +507,376 @@ void main() {
             "isn't actually scrollable.",
       );
     });
+  });
+
+  group('Retake Stacks: focus view', () {
+    List<FlashcardSession> twoCompletedAttempts() => [
+      _session(
+        id: 'original',
+        completed: true,
+        retakeNumber: 0,
+        knownCount: 6,
+      ),
+      _session(
+        id: 'retake-1',
+        completed: true,
+        retakeNumber: 1,
+        rootSessionId: 'original',
+        retakeOfSessionId: 'original',
+        knownCount: 8,
+      ),
+    ];
+
+    List<FlashcardSession> twoInProgressAttempts() => [
+      _session(
+        id: 'original',
+        completed: false,
+        retakeNumber: 0,
+        currentFlashcardIndex: 1,
+      ),
+      _session(
+        id: 'retake-1',
+        completed: false,
+        retakeNumber: 1,
+        rootSessionId: 'original',
+        retakeOfSessionId: 'original',
+        currentFlashcardIndex: 3,
+      ),
+    ];
+
+    testWidgets('tapping a stack opens its focus view', (tester) async {
+      await tester.pumpWidget(
+        _wrap(FakeFlashcardService(sessions: twoCompletedAttempts())),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(SessionStackFocusView), findsNothing);
+      await tester.tap(find.byType(SessionStackCard));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SessionStackFocusView), findsOneWidget);
+      expect(find.text('2 attempts · Completed'), findsOneWidget);
+    });
+
+    testWidgets('the × button closes the focus view', (tester) async {
+      await tester.pumpWidget(
+        _wrap(FakeFlashcardService(sessions: twoCompletedAttempts())),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byType(SessionStackCard));
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionStackFocusView), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SessionStackFocusView), findsNothing);
+    });
+
+    testWidgets('tapping the dimmed backdrop closes the focus view', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(FakeFlashcardService(sessions: twoCompletedAttempts())),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byType(SessionStackCard));
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionStackFocusView), findsOneWidget);
+
+      // Tap near the very top-left corner — outside the header/list
+      // content, onto the dimmed backdrop itself.
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SessionStackFocusView), findsNothing);
+    });
+
+    testWidgets(
+      'every attempt inside the focus view has its own full card: Retake '
+      'is present on completed attempts, and each has its own delete',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(FakeFlashcardService(sessions: twoCompletedAttempts())),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+
+        final focusView = find.byType(SessionStackFocusView);
+        expect(
+          find.descendant(of: focusView, matching: find.text('View summary')),
+          findsNWidgets(2),
+        );
+        expect(
+          find.descendant(of: focusView, matching: find.text('Retake')),
+          findsNWidgets(2),
+        );
+        expect(
+          find.descendant(
+            of: focusView,
+            matching: find.byIcon(Icons.delete_outline),
+          ),
+          findsNWidgets(2),
+        );
+      },
+    );
+
+    testWidgets(
+      'deleting an attempt inside the focus view down to one closes it '
+      'and leaves a plain card behind, keeping its own label',
+      (tester) async {
+        final service = FakeFlashcardService(
+          sessions: twoCompletedAttempts(),
+        );
+        await tester.pumpWidget(_wrap(service));
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+
+        final focusView = find.byType(SessionStackFocusView);
+        await tester.tap(
+          find
+              .descendant(
+                of: focusView,
+                matching: find.byIcon(Icons.delete_outline),
+              )
+              .first,
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Delete this session?'), findsOneWidget);
+        await tester.tap(find.text('Delete session'));
+        await tester.pumpAndSettle();
+
+        expect(service.deleteSessionCalls, 1);
+        // Down to one attempt: the live stream reflects the delete, the
+        // focus view closes itself, and the remaining attempt renders as
+        // a plain (non-stack) card.
+        expect(find.byType(SessionStackFocusView), findsNothing);
+        expect(find.byType(SessionStackCard), findsNothing);
+        expect(find.textContaining('RETAKE'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      "a plain in-progress card's Resume button uses the same compact "
+      'metrics as Quiz\'s (40dp height, 12dp radius, 13sp font)',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            FakeFlashcardService(
+              sessions: [_session(id: 's1', completed: false)],
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        final resumeButton = tester.widget<AppButton>(
+          find.widgetWithText(AppButton, 'Resume at card 1'),
+        );
+        expect(resumeButton.height, 40);
+        expect(resumeButton.borderRadius, 12);
+        expect(resumeButton.fontSize, 13);
+      },
+    );
+
+    testWidgets(
+      "inside the focus view, an in-progress attempt's Resume button also "
+      'uses the compact metrics',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(FakeFlashcardService(sessions: twoInProgressAttempts())),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+
+        final focusView = find.byType(SessionStackFocusView);
+        final resumeButtons = tester.widgetList<AppButton>(
+          find.descendant(
+            of: focusView,
+            matching: find.byWidgetPredicate(
+              (w) => w is AppButton && w.label.startsWith('Resume at card'),
+            ),
+          ),
+        );
+        expect(resumeButtons, hasLength(2));
+        for (final button in resumeButtons) {
+          expect(button.height, 40);
+          expect(button.borderRadius, 12);
+          expect(button.fontSize, 13);
+        }
+      },
+    );
+
+    testWidgets(
+      'reduced motion: the stack and its focus view render without error',
+      (tester) async {
+        await tester.pumpWidget(
+          MediaQuery(
+            data: const MediaQueryData(disableAnimations: true),
+            child: _wrap(FakeFlashcardService(sessions: twoCompletedAttempts())),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.byType(SessionStackFocusView), findsOneWidget);
+
+        await tester.tap(find.byIcon(Icons.close));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.byType(SessionStackFocusView), findsNothing);
+      },
+    );
+
+    testWidgets('RTL: the stack and its focus view render without error', (
+      tester,
+    ) async {
+      final service = FakeFlashcardService(sessions: twoCompletedAttempts());
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Directionality(
+            textDirection: TextDirection.rtl,
+            child: FlashcardSessionsScreen(
+              uid: 'uid-1',
+              courseId: 'course-1',
+              email: 'student@example.com',
+              service: service,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byType(SessionStackCard));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byType(SessionStackFocusView), findsOneWidget);
+    });
+
+    // Regression coverage for a real visual bug found on-device: the row's
+    // own Container used to carry `margin: EdgeInsets.only(bottom: 12)` for
+    // inter-card spacing (this screen used a plain ListView, not
+    // ListView.separated). That margin became part of the exact widget
+    // SessionStackCard measures to place its peek layers, so a stacked
+    // top card's margin was silently absorbed into the peek's own reserved
+    // space — the peek stuck out ~20dp instead of the design's 8dp, and the
+    // "gap" before the next list item was entirely consumed by that
+    // overshoot instead of ever being a real gap. Fixed by removing the
+    // row's own margin and giving the list itself a uniform 12dp
+    // `ListView.separated` gap (matching quiz_sessions_screen.dart exactly).
+    testWidgets(
+      "a stacked top card's peek layer sticks out exactly 8dp below the "
+      'visible card, not inflated by the row content pushing into the '
+      "stack's own reserved spacing",
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(FakeFlashcardService(sessions: twoCompletedAttempts())),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        final stack = find.byType(SessionStackCard);
+        final peekLayer = find.descendant(
+          of: stack,
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is Container &&
+                w.decoration is BoxDecoration &&
+                (w.decoration as BoxDecoration).border?.top.color ==
+                    AppColors.borderDefault,
+          ),
+        );
+        final visibleCard = find.descendant(
+          of: stack,
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is Container &&
+                w.decoration is BoxDecoration &&
+                (w.decoration as BoxDecoration).border?.top.color ==
+                    AppColors.cardTint,
+          ),
+        );
+        expect(peekLayer, findsOneWidget);
+        expect(visibleCard, findsOneWidget);
+
+        final peekBottom = tester.getRect(peekLayer).bottom;
+        final cardBottom = tester.getRect(visibleCard).bottom;
+        expect(
+          peekBottom - cardBottom,
+          8,
+          reason:
+              'the peek layer should stick out exactly 8dp below the '
+              'visible card (SessionStackCard.dc.html spec), not more — a '
+              "row's own margin corrupting the stack's reserved-space math "
+              'would inflate this.',
+        );
+      },
+    );
+
+    testWidgets(
+      'the gap between a stack and the next card in the same section '
+      "matches a plain card's own list gap (12dp) — the stack's peek "
+      "reservation doesn't swallow the row's spacing",
+      (tester) async {
+        final sessions = [
+          ...twoCompletedAttempts(),
+          _session(
+            id: 'lone',
+            completed: true,
+            createdAt: DateTime(2025, 12, 1),
+            knownCount: 1,
+            // A count distinct from twoCompletedAttempts' default (10), so
+            // this card's own detail text is unambiguous to find.
+            numberOfFlashcards: 7,
+          ),
+        ];
+        await tester.pumpWidget(_wrap(FakeFlashcardService(sessions: sessions)));
+        await tester.pump();
+        await tester.pump();
+
+        final stackBottom = tester.getRect(find.byType(SessionStackCard)).bottom;
+        final loneCard = find.ancestor(
+          of: find.text('7 cards'),
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is Container &&
+                w.decoration is BoxDecoration &&
+                (w.decoration as BoxDecoration).border?.top.color ==
+                    AppColors.cardTint,
+          ),
+        );
+        expect(loneCard, findsOneWidget);
+        final loneCardTop = tester.getRect(loneCard).top;
+
+        expect(
+          loneCardTop - stackBottom,
+          12,
+          reason:
+              'the gap after a stack should be the same 12dp ListView.'
+              'separated gap as every other item — not swallowed by the '
+              "stack's own peek-layer reservation.",
+        );
+      },
+    );
   });
 }

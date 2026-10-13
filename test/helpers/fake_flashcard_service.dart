@@ -85,10 +85,37 @@ class FakeFlashcardService extends FlashcardService {
     return materials;
   }
 
+  // Broadcasts [sessions] after it's mutated (e.g. by [deleteSession]) to
+  // every currently-open watchSessions() stream — mirrors the real
+  // FlashcardService.watchSessions()'s live Firestore snapshot behavior,
+  // so a test can delete a session and see the Sessions screen's
+  // StreamBuilder reactively pick up the new list without needing a
+  // manual retry. Added for the Retake Stacks "delete down to one"
+  // widget tests; existing tests that never mutate `sessions` see no
+  // behavior change — each watchSessions() call still just emits the
+  // current snapshot immediately.
+  final StreamController<List<FlashcardSession>> _sessionUpdates =
+      StreamController<List<FlashcardSession>>.broadcast();
+
   @override
   Stream<List<FlashcardSession>> watchSessions() {
     if (watchSessionsError != null) return Stream.error(watchSessionsError!);
-    return Stream.value(sessions);
+    return _watchSessions();
+  }
+
+  // An async* generator yields its first value with the same (short)
+  // timing as the plain `Stream.value(sessions)` this used to be — unlike a
+  // StreamController-based stream, which needs enough extra microtask hops
+  // that a caller doing `await watchSessions().first` right after a
+  // fire-and-forget tap (home_screen.dart's Resume flow) could still be
+  // waiting when a widget test's `pumpAndSettle()` already decided nothing
+  // was scheduled and stopped pumping. Confirmed by reproducing that exact
+  // regression against `test/screens/home_screen_test.dart` with a
+  // StreamController-based implementation, which left the awaited Future
+  // resolving well after the test had already finished and failed.
+  Stream<List<FlashcardSession>> _watchSessions() async* {
+    yield sessions;
+    yield* _sessionUpdates.stream;
   }
 
   @override
@@ -192,5 +219,7 @@ class FakeFlashcardService extends FlashcardService {
     deleteSessionCalls++;
     lastDeletedSessionId = sessionId;
     if (writeError != null) throw writeError!;
+    sessions = sessions.where((s) => s.sessionId != sessionId).toList();
+    _sessionUpdates.add(sessions);
   }
 }

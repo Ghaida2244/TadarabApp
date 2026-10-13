@@ -1192,5 +1192,91 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.byType(SessionStackFocusView), findsOneWidget);
     });
+
+    // Quiz's own baseline for the same geometry contract Flashcards was
+    // found to violate (see flashcard_sessions_screen_test.dart's matching
+    // tests) — Quiz's _SessionCard never carried its own margin, relying
+    // solely on ListView.separated's 12dp gap, so this has always held;
+    // kept here so a future change to either screen or to the shared
+    // SessionStackCard can't silently break it on this side either.
+    testWidgets(
+      "a stacked top card's peek layer sticks out exactly 8dp below the "
+      'visible card',
+      (tester) async {
+        final service = FakeQuizSessionService(
+          sessions: twoCompletedAttempts(),
+        );
+        await _pump(tester, service);
+
+        final stack = find.byType(SessionStackCard);
+        final peekLayer = find.descendant(
+          of: stack,
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is Container &&
+                w.decoration is BoxDecoration &&
+                (w.decoration as BoxDecoration).border?.top.color ==
+                    AppColors.borderDefault,
+          ),
+        );
+        final visibleCard = find.descendant(
+          of: stack,
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is Container &&
+                w.decoration is BoxDecoration &&
+                (w.decoration as BoxDecoration).border?.top.color ==
+                    AppColors.cardTint,
+          ),
+        );
+        expect(peekLayer, findsOneWidget);
+        expect(visibleCard, findsOneWidget);
+
+        final peekBottom = tester.getRect(peekLayer).bottom;
+        final cardBottom = tester.getRect(visibleCard).bottom;
+        expect(peekBottom - cardBottom, 8);
+      },
+    );
+
+    testWidgets(
+      'the gap between a stack and the next card in the same section '
+      "matches a plain card's own list gap (12dp)",
+      (tester) async {
+        final lone = QuizSession(
+          sessionId: 'lone',
+          createdAt: DateTime(2025, 12, 1),
+          isSessionCompleted: true,
+          difficultyLevels: const [DifficultyLevel.medium],
+          email: 'a@b.com',
+          courseId: 'course-1',
+          materialIds: const ['m1'],
+          numberOfQuestions: 7,
+          mode: Mode.exam,
+          correctAnswers: 5,
+        );
+        final service = FakeQuizSessionService(
+          sessions: [...twoCompletedAttempts(), lone],
+        );
+        await _pump(tester, service);
+
+        final stackBottom = tester
+            .getRect(find.byType(SessionStackCard))
+            .bottom;
+        final loneCard = find.ancestor(
+          of: find.text('7 questions'),
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is Container &&
+                w.decoration is BoxDecoration &&
+                (w.decoration as BoxDecoration).border?.top.color ==
+                    AppColors.cardTint,
+          ),
+        );
+        expect(loneCard, findsOneWidget);
+        final loneCardTop = tester.getRect(loneCard).top;
+
+        expect(loneCardTop - stackBottom, 12);
+      },
+    );
   });
 }

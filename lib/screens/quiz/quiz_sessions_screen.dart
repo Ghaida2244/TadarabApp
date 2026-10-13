@@ -9,6 +9,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/dashed_border.dart';
 import '../../widgets/generation_loading_overlay.dart';
+import '../../widgets/retake_label_pill.dart';
 import '../../widgets/scrollable_title_pill.dart';
 import '../../widgets/session_stack_card.dart';
 import '../../widgets/session_stack_focus_view.dart';
@@ -735,7 +736,7 @@ class _SessionCard extends StatelessWidget {
                                   // retake relationship; the logic lives
                                   // in sessionCardRetakeLabel, unchanged
                                   // by this redesign.
-                                  if (label != null) _RetakeLabelPill(label),
+                                  if (label != null) RetakeLabelPill(label),
                                   Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 9,
@@ -890,32 +891,6 @@ class _SessionCard extends StatelessWidget {
   }
 }
 
-/// The "ORIGINAL" / "RETAKE N" pill — SPEC: 'uppercase, 10sp / w900,
-/// tracking .04em, navy #0B0F5B fill, white text, pill radius 999, padding
-/// 4 × 9. Sits before the mode tag.' The label TEXT itself still comes
-/// from [sessionCardRetakeLabel], unchanged by this redesign — only the
-/// rendering (a filled pill inline with the mode badge, instead of plain
-/// grey text on its own line) is new.
-class _RetakeLabelPill extends StatelessWidget {
-  const _RetakeLabelPill(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.navy,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label.toUpperCase(),
-        style: AppTypography.quizBadge.copyWith(color: Colors.white),
-      ),
-    );
-  }
-}
 
 class _DeleteSessionDialog extends StatelessWidget {
   @override
