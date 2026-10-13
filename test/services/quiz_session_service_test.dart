@@ -57,7 +57,7 @@ void main() {
 
       final entries = groupQuizSessions(sessions);
 
-      expect(entries.map((e) => e.session.sessionId), [
+      expect(entries.map((e) => e.group.top.sessionId), [
         'inprogress-1',
         'done-1',
         'done-2',
@@ -91,7 +91,7 @@ void main() {
         _session(id: 'c', completed: false),
       ];
       final entries = groupQuizSessions(sessions);
-      expect(entries.map((e) => e.session.sessionId), ['a', 'b', 'c']);
+      expect(entries.map((e) => e.group.top.sessionId), ['a', 'b', 'c']);
     });
 
     test(
@@ -105,7 +105,7 @@ void main() {
 
         final entries = groupQuizSessions(sessions);
 
-        expect(entries.map((e) => e.session.sessionId), [
+        expect(entries.map((e) => e.group.top.sessionId), [
           'newest',
           'middle',
           'oldest',
@@ -123,7 +123,7 @@ void main() {
 
         final entries = groupQuizSessions(sessions);
 
-        expect(entries.map((e) => e.session.sessionId), ['has-date', 'no-date']);
+        expect(entries.map((e) => e.group.top.sessionId), ['has-date', 'no-date']);
       },
     );
 
@@ -138,7 +138,7 @@ void main() {
 
         final entries = groupQuizSessions(sessions);
 
-        expect(entries.map((e) => e.session.sessionId), [
+        expect(entries.map((e) => e.group.top.sessionId), [
           'newest',
           'middle',
           'oldest',
@@ -224,35 +224,37 @@ void main() {
     });
   });
 
-  group('resultMoodFor', () {
-    test('normal case: 90% is the top tier', () {
-      expect(resultMoodFor(correct: 9, total: 10), ResultMood.great);
+  // The result-mood/message logic moved to a shared
+  // `lib/logic/performance_tier.dart` (NOTE 6), used by both Quiz and
+  // Flashcards — see test/logic/performance_tier_test.dart.
+
+  group('batchWriteSizes', () {
+    test('normal: fewer operations than the cap fit in a single batch', () {
+      expect(batchWriteSizes(totalOperations: 42), [42]);
     });
 
-    test('edge case: exactly 80% is still the top tier (inclusive boundary)', () {
-      expect(resultMoodFor(correct: 8, total: 10), ResultMood.great);
+    test('edge: exactly the cap fits in a single batch', () {
+      expect(batchWriteSizes(totalOperations: 500), [500]);
     });
 
-    test('edge case: exactly 50% is the middle tier (inclusive boundary)', () {
-      expect(resultMoodFor(correct: 5, total: 10), ResultMood.solid);
+    test('normal: one more than the cap splits into two batches', () {
+      expect(batchWriteSizes(totalOperations: 501), [500, 1]);
     });
 
-    test('normal case: below 50% is the lowest tier', () {
-      expect(resultMoodFor(correct: 2, total: 10), ResultMood.keepPractising);
+    test(
+      'normal: a large count splits into as many full batches as needed, '
+      'plus a smaller remainder',
+      () {
+        expect(batchWriteSizes(totalOperations: 1042), [500, 500, 42]);
+      },
+    );
+
+    test('edge: zero operations needs no batches at all', () {
+      expect(batchWriteSizes(totalOperations: 0), isEmpty);
     });
 
-    test('failure case: a zero total does not throw, falls back to lowest tier', () {
-      expect(resultMoodFor(correct: 0, total: 0), ResultMood.keepPractising);
-    });
-  });
-
-  group('resultMessageFor', () {
-    test('every tier has distinct, non-empty copy', () {
-      final messages = ResultMood.values.map(resultMessageFor).toSet();
-      expect(messages.length, ResultMood.values.length);
-      for (final m in messages) {
-        expect(m, isNotEmpty);
-      }
+    test('failure-adjacent: a custom maxPerBatch is respected', () {
+      expect(batchWriteSizes(totalOperations: 25, maxPerBatch: 10), [10, 10, 5]);
     });
   });
 }

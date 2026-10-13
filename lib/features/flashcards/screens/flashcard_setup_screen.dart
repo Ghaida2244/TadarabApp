@@ -7,9 +7,30 @@ import '../../../services/flashcard_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/app_button.dart';
 import '../../../widgets/app_error_banner.dart';
+import '../../../widgets/generation_loading_overlay.dart';
 import '../widgets/header_circle_button.dart';
 import '../widgets/limit_dialog.dart';
 import 'flashcard_flip_deck_screen.dart';
+
+/// NOTE 8's wording for the Flashcards setup's generating overlay. Retake's
+/// own wording isn't implemented yet (a later task) — this config only
+/// covers a fresh generation.
+const kFlashcardLoadingConfig = GenerationLoadingConfig(
+  sentence: 'Preparing your flashcards...',
+  tip: 'Say the answer out loud before you flip the card.',
+  longWaitMessage:
+      "Thanks for your patience. We're still putting it together.",
+);
+
+/// Retake's own wording for the Flashcards generating overlay — same tip
+/// and long-wait message as a fresh generation, just a different opening
+/// line (see flashcard_sessions_screen.dart's `_retake`).
+const kFlashcardRetakeLoadingConfig = GenerationLoadingConfig(
+  sentence: 'Creating new flashcards for you...',
+  tip: 'Say the answer out loud before you flip the card.',
+  longWaitMessage:
+      "Thanks for your patience. We're still putting it together.",
+);
 
 const _kMinCount = 5;
 const _kMaxCount = 150;
@@ -64,9 +85,10 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
       .fetchMaterials();
 
   final Set<String> _selectedMaterialIds = {};
-  // Medium is selected by default so a first-time user isn't blocked purely
-  // on difficulty; still freely changeable/deselectable like any other chip.
-  final Set<DifficultyLevel> _selectedDifficulties = {DifficultyLevel.medium};
+  // Easy is selected by default (NOTE 13a, matching Quiz setup) so a
+  // first-time user isn't blocked purely on difficulty; still freely
+  // changeable/deselectable like any other chip.
+  final Set<DifficultyLevel> _selectedDifficulties = {DifficultyLevel.easy};
   int _count = _kDefaultCount;
   final _promptController = TextEditingController();
 
@@ -110,14 +132,21 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
       if (!mounted) return;
       setState(() => _generating = false);
 
+      if (result.note != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.note!)),
+        );
+      }
+
       if (result.items.length == _count) {
-        await _startSession(materials, result.items);
+        await _startSession(materials, result.items, result.coveredTopics);
       } else {
         await showFewerCardsDialog(
           context,
           actualCount: result.items.length,
           requestedCount: _count,
-          onStartWithActual: () => _startSession(materials, result.items),
+          onStartWithActual: () =>
+              _startSession(materials, result.items, result.coveredTopics),
           onChangeSetup: () {},
         );
       }
@@ -139,6 +168,7 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
   Future<void> _startSession(
     List<StudyMaterial> materials,
     List<FlashcardGenerationItem> items,
+    List<String> coveredTopics,
   ) async {
     final selected = materials
         .where((m) => _selectedMaterialIds.contains(m.materialId))
@@ -153,6 +183,7 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
             ? null
             : _promptController.text.trim(),
         items: items,
+        coveredTopics: coveredTopics,
       );
       final flashcards = await _service.fetchFlashcards(sessionId);
       if (!mounted) return;
@@ -284,7 +315,15 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
                   ),
                 ],
               ),
-              if (_generating) _GeneratingOverlay(count: _count),
+              if (_generating)
+                GenerationLoadingOverlay(
+                  config: kFlashcardLoadingConfig,
+                  fixedLine: buildGenerationFixedLine(
+                    count: _count,
+                    noun: 'flashcards',
+                    difficulties: _selectedDifficulties,
+                  ),
+                ),
             ],
           );
         },
@@ -877,39 +916,3 @@ class _Footer extends StatelessWidget {
   }
 }
 
-class _GeneratingOverlay extends StatelessWidget {
-  const _GeneratingOverlay({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned.fill(
-      child: Container(
-        color: const Color(0xE60B0F5B), // navy @ 90% alpha, per the handoff
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(
-                width: 46,
-                height: 46,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 5),
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              const Text(
-                'Reading your material...',
-                style: TextStyle(fontFamily: 'Nunito', fontSize: 19, fontWeight: FontWeight.w900, color: Colors.white),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Aiming for $count cards',
-                style: const TextStyle(fontFamily: 'Nunito', fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xB3FFFFFF)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

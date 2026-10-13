@@ -125,7 +125,6 @@ class _FlashcardFlipDeckScreenState extends State<FlashcardFlipDeckScreen> {
       context,
       reviewedCount: _knownCount + _needsReviewCount,
       total: _total,
-      resumeCardNumber: _currentIndex + 1,
       onSaveAndLeave: () => Navigator.of(context).pop(),
     );
   }

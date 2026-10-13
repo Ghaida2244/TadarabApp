@@ -85,7 +85,6 @@ class _CoursesListScreenState extends State<CoursesListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.homeBackground,
       body: SafeArea(
         bottom: false,
         child: FutureBuilder<List<CourseListItem>>(
@@ -160,22 +159,28 @@ class _Header extends StatelessWidget {
                 ),
             ],
           ),
-          GestureDetector(
-            onTap: onAdd,
-            child: Container(
-              width: 44,
-              height: 44,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: AppColors.red,
-                borderRadius: BorderRadius.all(Radius.circular(14)),
-                boxShadow: [
-                  BoxShadow(color: AppColors.redShadow, offset: Offset(0, 4)),
-                ],
+          // Hidden at zero courses — the big "Add your first course" button
+          // in the empty state is the only add action there, per the
+          // design note. Also hidden while courseCount is still unknown
+          // (loading/error), since it's not yet known whether there's a
+          // course to count.
+          if (courseCount != null && courseCount! > 0)
+            GestureDetector(
+              onTap: onAdd,
+              child: Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: AppColors.red,
+                  borderRadius: BorderRadius.all(Radius.circular(14)),
+                  boxShadow: [
+                    BoxShadow(color: AppColors.redShadow, offset: Offset(0, 4)),
+                  ],
+                ),
+                child: const Icon(Icons.add, size: 24, color: Colors.white),
               ),
-              child: const Icon(Icons.add, size: 24, color: Colors.white),
             ),
-          ),
         ],
       ),
     );

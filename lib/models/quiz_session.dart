@@ -16,6 +16,10 @@ class QuizSession extends Session {
     required super.email,
     required super.courseId,
     required super.materialIds,
+    super.rootSessionId,
+    super.retakeNumber,
+    super.retakeOfSessionId,
+    super.coveredTopics,
     this.numberOfQuestions = 0,
     required this.mode,
     this.correctAnswers = 0,
@@ -42,7 +46,7 @@ class QuizSession extends Session {
     DocumentSnapshot<Map<String, dynamic>> doc,
   ) {
     final data = doc.data()!;
-    final shared = SessionFields.fromMap(data);
+    final shared = SessionFields.fromMap(data, sessionId: doc.id);
     return QuizSession(
       sessionId: doc.id,
       createdAt: shared.createdAt,
@@ -54,6 +58,10 @@ class QuizSession extends Session {
       email: shared.email,
       courseId: shared.courseId,
       materialIds: shared.materialIds,
+      rootSessionId: shared.rootSessionId,
+      retakeNumber: shared.retakeNumber,
+      retakeOfSessionId: shared.retakeOfSessionId,
+      coveredTopics: shared.coveredTopics,
       numberOfQuestions: (data['numberOfQuestions'] as num?)?.toInt() ?? 0,
       mode: ModeJson.fromJson(data['mode'] as String),
       correctAnswers: (data['correctAnswers'] as num?)?.toInt() ?? 0,

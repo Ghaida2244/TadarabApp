@@ -26,6 +26,7 @@ class AppButton extends StatefulWidget {
     this.shadowColor,
     this.disabledBackgroundColor,
     this.disabledRemovesShadow = false,
+    this.fontSize,
 
   });
 
@@ -68,6 +69,10 @@ class AppButton extends StatefulWidget {
   /// Paired with [disabledBackgroundColor]: drops the button's shadow
   /// entirely while disabled-not-loading, per the same design rule.
   final bool disabledRemovesShadow;
+
+  /// Overrides the variant's default label font size (e.g. the Retake
+  /// Stacks design's smaller side-by-side completed-session buttons).
+  final double? fontSize;
 
 
   @override
@@ -169,8 +174,14 @@ class _AppButtonState extends State<AppButton> {
     final style =
         widget.variant == AppButtonVariant.outlinedBrand ||
             widget.variant == AppButtonVariant.outlinedNeutral
-        ? AppTypography.buttonSecondary.copyWith(color: colors.text)
-        : AppTypography.button.copyWith(color: colors.text);
+        ? AppTypography.buttonSecondary.copyWith(
+            color: colors.text,
+            fontSize: widget.fontSize,
+          )
+        : AppTypography.button.copyWith(
+            color: colors.text,
+            fontSize: widget.fontSize,
+          );
     return Text(widget.label, style: style);
   }
 

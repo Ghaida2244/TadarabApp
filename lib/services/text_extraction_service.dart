@@ -75,8 +75,22 @@ String _extractPptx(Uint8List bytes) {
 /// `ppt/presentation.xml`'s `<p:sldIdLst>` and the matching relationship
 /// file — rather than assuming `slide1.xml, slide2.xml, ...` matches
 /// display order (it usually does, but isn't guaranteed, and a wrong order
-/// here would silently produce wrong `sourceLocation`s).
+/// here would silently produce wrong `sourceLocation`s). Falls back to
+/// [_numericFallbackSlidePaths] when the relationship data can't be
+/// resolved at all, or resolves to paths that don't actually exist in this
+/// archive (seen in the wild: some decks use absolute relationship targets,
+/// e.g. `Target="/ppt/slides/slide1.xml"` rather than the usual relative
+/// `Target="slides/slide1.xml"` — [_resolveRelationshipTarget] handles
+/// both, but the fallback stays as a safety net for anything else).
 List<String> _orderedSlidePaths(Archive archive) {
+  final resolved = _relationshipOrderedSlidePaths(archive);
+  if (resolved.isNotEmpty && resolved.any((p) => archive.findFile(p) != null)) {
+    return resolved;
+  }
+  return _numericFallbackSlidePaths(archive);
+}
+
+List<String> _relationshipOrderedSlidePaths(Archive archive) {
   final presentationFile = archive.findFile('ppt/presentation.xml');
   final relsFile = archive.findFile('ppt/_rels/presentation.xml.rels');
   if (presentationFile == null || relsFile == null) return const [];
@@ -98,9 +112,46 @@ List<String> _orderedSlidePaths(Archive archive) {
   for (final sldId in presentationDoc.findAllElements('p:sldId')) {
     final rId = sldId.getAttribute('r:id');
     final target = rId == null ? null : targetByRId[rId];
-    if (target != null) paths.add('ppt/$target');
+    if (target != null) paths.add(_resolveRelationshipTarget(target));
   }
   return paths;
+}
+
+/// Resolves a relationship `Target` attribute (from `presentation.xml.rels`)
+/// to an archive path. Per OOXML, `Target` may be absolute (starts with
+/// `/`, relative to the package root — e.g. `/ppt/slides/slide1.xml`) or
+/// relative to the referencing part's own folder (here always `ppt/`,
+/// since this is only ever used for `ppt/presentation.xml`'s own
+/// relationships — e.g. `slides/slide1.xml`, or `../slides/slide1.xml`).
+String _resolveRelationshipTarget(String target) {
+  if (target.startsWith('/')) return target.substring(1);
+
+  final segments = <String>[];
+  for (final segment in ['ppt', ...target.split('/')]) {
+    if (segment.isEmpty || segment == '.') continue;
+    if (segment == '..') {
+      if (segments.isNotEmpty) segments.removeLast();
+    } else {
+      segments.add(segment);
+    }
+  }
+  return segments.join('/');
+}
+
+/// Fallback slide order when the relationship-based resolution in
+/// [_relationshipOrderedSlidePaths] can't be used: every
+/// `ppt/slides/slideN.xml` present in the archive, sorted numerically by
+/// N. Not guaranteed to match the deck's real display order, but far
+/// better than extracting nothing.
+List<String> _numericFallbackSlidePaths(Archive archive) {
+  final slideFilePattern = RegExp(r'^ppt/slides/slide(\d+)\.xml$');
+  final numbered = <MapEntry<int, String>>[
+    for (final file in archive.files)
+      if (slideFilePattern.firstMatch(file.name) case final match?)
+        MapEntry(int.parse(match.group(1)!), file.name),
+  ];
+  numbered.sort((a, b) => a.key.compareTo(b.key));
+  return [for (final entry in numbered) entry.value];
 }
 
 class _SlideSection {

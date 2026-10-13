@@ -1,6 +1,4 @@
-import 'dart:math';
-
-import '../../../models/flashcard.dart';
+import '../../../models/flashcard_session.dart';
 
 /// Points awarded per flashcard marked "I Know It" at session (or Retake)
 /// completion — see CLAUDE.md's Points system section.
@@ -11,26 +9,6 @@ const kPointsPerKnownFlashcard = 2;
 int calculateEarnedPoints({required int knownCount}) {
   assert(knownCount >= 0, 'knownCount cannot be negative');
   return knownCount * kPointsPerKnownFlashcard;
-}
-
-/// The three Performance Summary message-block tiers.
-enum PerformanceTier { mastery, developing, needsReview }
-
-/// Selects the Performance Summary tier from the knownCount/total ratio:
-/// >= 0.80 mastery, [0.50, 0.80) developing, below that (including a
-/// zero-known session) needsReview. A zero-card session (total == 0) can't
-/// happen in practice but is treated as needsReview rather than dividing by
-/// zero.
-PerformanceTier performanceTierFor({
-  required int knownCount,
-  required int total,
-}) {
-  assert(knownCount >= 0, 'knownCount cannot be negative');
-  assert(total >= 0, 'total cannot be negative');
-  final ratio = total == 0 ? 0.0 : knownCount / total;
-  if (ratio >= 0.80) return PerformanceTier.mastery;
-  if (ratio >= 0.50) return PerformanceTier.developing;
-  return PerformanceTier.needsReview;
 }
 
 /// Clamps a stored `currentFlashcardIndex` into the valid `[0, total - 1]`
@@ -44,49 +22,67 @@ int resumeIndexFor({required int currentFlashcardIndex, required int total}) {
   return currentFlashcardIndex;
 }
 
-/// The Session-document fields a Retake resets, alongside the reshuffled
-/// deck — see CLAUDE.md's Retake section for the exact list.
-typedef RetakeSessionFields = ({
-  int knownCount,
-  int needsReviewCount,
-  int currentFlashcardIndex,
-  bool isSessionCompleted,
-  DateTime? completedAt,
-  int earnedPoints,
+/// What a Retake-via-Worker outcome gives back to the UI: the fresh card
+/// count, how many were actually requested (so the caller can tell if it
+/// fell short, same as [FlashcardGenerationResult.requestedCount]), the
+/// Worker's own `note` if it sent one, and the id of the brand-new session
+/// the retake created (a retake no longer overwrites the session it was
+/// started from — see [FlashcardService.retake]).
+typedef RetakeOutcome = ({
+  int requestedCount,
+  int actualCount,
+  String? note,
+  String newSessionId,
 });
 
-const kRetakeSessionFields = (
-  knownCount: 0,
-  needsReviewCount: 0,
-  currentFlashcardIndex: 0,
-  isSessionCompleted: false,
-  completedAt: null,
-  earnedPoints: 0,
-);
+/// Retake's card-write plan for its new session's cards, given how many
+/// cards that new session already had (always 0 — it's brand new) and how
+/// many the Worker generated this time. Kept in this shape (rather than a
+/// plain "write N new docs") so [FlashcardService.retake] reuses the exact
+/// same write-planning function it did before the new-session-per-retake
+/// redesign. See [FlashcardService.retake].
+typedef RetakeCardWritePlan = ({int overwriteCount, int addCount, int deleteCount});
 
-/// Result of [prepareRetake]: the same cards in a freshly-shuffled order
-/// (new [Flashcard.cardIndex] per card, [Flashcard.reviewStatus] cleared)
-/// plus the session-document fields to reset alongside them. Pure — the
-/// caller (FlashcardService) persists both to Firestore.
-typedef RetakeResult = ({
-  List<Flashcard> flashcards,
-  RetakeSessionFields sessionFields,
-});
-
-/// Reshuffles the same session's existing flashcards into a new random
-/// order and clears every card's review status, per the Retake spec.
-/// [random] is injectable so tests can assert on a fixed shuffle.
-RetakeResult prepareRetake({
-  required List<Flashcard> flashcards,
-  Random? random,
+RetakeCardWritePlan planRetakeCardWrites({
+  required int existingCount,
+  required int newCount,
 }) {
-  final shuffled = List<Flashcard>.from(flashcards)
-    ..shuffle(random ?? Random());
-  final reset = [
-    for (var i = 0; i < shuffled.length; i++)
-      shuffled[i].copyWith(reviewStatus: () => null, cardIndex: i),
-  ];
-  return (flashcards: reset, sessionFields: kRetakeSessionFields);
+  assert(existingCount >= 0, 'existingCount cannot be negative');
+  assert(newCount >= 0, 'newCount cannot be negative');
+  final overwriteCount = existingCount < newCount ? existingCount : newCount;
+  return (
+    overwriteCount: overwriteCount,
+    addCount: newCount - overwriteCount,
+    deleteCount: existingCount - overwriteCount,
+  );
+}
+
+/// Splits [totalOperations] Firestore writes into batches of at most
+/// [maxPerBatch] (Firestore's hard per-batch cap is 500) — returns each
+/// batch's size, e.g. 1042 operations at the default cap -> [500, 500, 42].
+List<int> batchSizes({required int totalOperations, int maxPerBatch = 500}) {
+  assert(totalOperations >= 0, 'totalOperations cannot be negative');
+  assert(maxPerBatch > 0, 'maxPerBatch must be positive');
+  final sizes = <int>[];
+  var remaining = totalOperations;
+  while (remaining > 0) {
+    final size = remaining < maxPerBatch ? remaining : maxPerBatch;
+    sizes.add(size);
+    remaining -= size;
+  }
+  return sizes;
+}
+
+/// Sorts a course's flashcard sessions newest first. Pulled out as a pure
+/// function (rather than a Firestore `orderBy('createdAt')`) so
+/// [FlashcardService.watchSessions] doesn't need a composite index for its
+/// `where('courseId', ...)` + ordering — and so the sort itself is directly
+/// unit-testable without a real or fake Firestore.
+List<FlashcardSession> sortSessionsNewestFirst(
+  List<FlashcardSession> sessions,
+) {
+  return List<FlashcardSession>.from(sessions)
+    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 }
 
 /// The Delete-session dialog's body text, which differs for a completed vs.

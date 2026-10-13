@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/enums.dart';
 import '../../models/study_material.dart';
@@ -6,8 +7,29 @@ import '../../services/quiz_generation_client.dart' show GenerationFailure;
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
+import '../../widgets/generation_loading_overlay.dart';
 import 'quiz_play_screen.dart';
 import 'widgets/quiz_icon_button.dart';
+
+/// NOTE 8's wording for the Quiz setup's generating overlay. Retake's own
+/// wording isn't implemented yet (a later task) — this config only covers
+/// a fresh generation.
+const kQuizLoadingConfig = GenerationLoadingConfig(
+  sentence: 'Preparing your quiz...',
+  tip: 'Try to answer before you look at the options.',
+  longWaitMessage:
+      "Thanks for your patience. We're still putting it together.",
+);
+
+/// Retake's own wording for the Quiz generating overlay — same tip and
+/// long-wait message as a fresh generation, just a different opening line
+/// (see quiz_sessions_screen.dart's `_retake`).
+const kQuizRetakeLoadingConfig = GenerationLoadingConfig(
+  sentence: 'Creating new questions for you...',
+  tip: 'Try to answer before you look at the options.',
+  longWaitMessage:
+      "Thanks for your patience. We're still putting it together.",
+);
 
 /// Materials (multi-select), difficulty (multi-select), question-count
 /// stepper (min 5, no cap, +/- and direct numeric entry), mode, and an
@@ -29,6 +51,8 @@ class QuizSetupScreen extends StatefulWidget {
 }
 
 const int _minQuestionCount = 5;
+const int _maxQuestionCount = 150;
+const int _defaultQuestionCount = 10;
 const List<String> _promptChips = [
   'Include an example with each question',
   'Focus on definitions',
@@ -38,12 +62,15 @@ const List<String> _promptChips = [
 class _QuizSetupScreenState extends State<QuizSetupScreen> {
   late Future<List<StudyMaterial>> _materialsFuture;
   final Set<String> _selectedMaterialIds = {};
-  bool _materialsOpen = false;
-  final Set<DifficultyLevel> _selectedDifficulties = {DifficultyLevel.medium};
-  int _count = _minQuestionCount;
+  // Open by default, matching the Flashcards setup screen — the materials
+  // list is immediately reachable rather than needing an extra tap.
+  bool _materialsOpen = true;
+  // Easy is selected by default on both setup screens (NOTE 13a); still
+  // freely changeable/deselectable like any other chip.
+  final Set<DifficultyLevel> _selectedDifficulties = {DifficultyLevel.easy};
+  int _count = _defaultQuestionCount;
   Mode _mode = Mode.exam;
   final _promptController = TextEditingController();
-  final _countController = TextEditingController(text: '$_minQuestionCount');
   bool _generating = false;
   String? _errorMessage;
 
@@ -57,19 +84,7 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
   @override
   void dispose() {
     _promptController.dispose();
-    _countController.dispose();
     super.dispose();
-  }
-
-  void _setCount(int next) {
-    final clamped = next < _minQuestionCount ? _minQuestionCount : next;
-    setState(() {
-      _count = clamped;
-      _countController.text = '$clamped';
-      _countController.selection = TextSelection.collapsed(
-        offset: _countController.text.length,
-      );
-    });
   }
 
   Future<void> _generate(List<StudyMaterial> allMaterials) async {
@@ -296,7 +311,15 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                 ),
               ],
             ),
-            if (_generating) _GeneratingOverlay(count: _count, difficulties: _selectedDifficulties),
+            if (_generating)
+              GenerationLoadingOverlay(
+                config: kQuizLoadingConfig,
+                fixedLine: buildGenerationFixedLine(
+                  count: _count,
+                  noun: 'questions',
+                  difficulties: _selectedDifficulties,
+                ),
+              ),
           ],
         ),
       ),
@@ -451,71 +474,15 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
   }
 
   Widget _buildCountSection() {
-    final fill = (_count / 20).clamp(0.0, 1.0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('QUESTIONS TO AIM FOR', style: AppTypography.quizEyebrow),
         const SizedBox(height: 9),
-        Row(
-          children: [
-            _StepperButton(
-              icon: Icons.remove,
-              enabled: _count > _minQuestionCount,
-              onTap: () => _setCount(_count - 1),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                children: [
-                  SizedBox(
-                    width: 70,
-                    child: TextField(
-                      controller: _countController,
-                      textAlign: TextAlign.center,
-                      keyboardType: TextInputType.number,
-                      style: AppTypography.quizOption(FontWeight.w900).copyWith(fontSize: 30),
-                      decoration: const InputDecoration(border: InputBorder.none, isDense: true),
-                      onChanged: (value) {
-                        final parsed = int.tryParse(value);
-                        if (parsed != null) {
-                          setState(() => _count = parsed < _minQuestionCount ? _minQuestionCount : parsed);
-                        }
-                      },
-                      onSubmitted: (_) => _setCount(_count),
-                    ),
-                  ),
-                  const SizedBox(height: 7),
-                  Container(
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: AppColors.cardTint,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: FractionallySizedBox(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: fill,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.navy,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 14),
-            _StepperButton(
-              icon: Icons.add,
-              enabled: true,
-              onTap: () => _setCount(_count + 1),
-            ),
-          ],
+        _CountStepper(
+          count: _count,
+          onChanged: (value) => setState(() => _count = value),
         ),
-        const SizedBox(height: 6),
-        Text('Minimum $_minQuestionCount — no upper limit.', style: AppTypography.quizEmptyBody),
       ],
     );
   }
@@ -706,6 +673,105 @@ class _StepperButton extends StatelessWidget {
   }
 }
 
+/// NOTE 13d: mirrors FlashcardSetupScreen's `_CountStepper` exactly (same
+/// [_minQuestionCount]/[_maxQuestionCount] bounds, same commit-on-blur/
+/// submit behavior, same digits-only input, same invalid/empty-input
+/// fallback to the last valid count) — kept Quiz-local rather than
+/// extracted into a cross-feature shared widget, so this file doesn't need
+/// to touch or depend on the Flashcards feature's files at all.
+class _CountStepper extends StatefulWidget {
+  const _CountStepper({required this.count, required this.onChanged});
+
+  final int count;
+  final ValueChanged<int> onChanged;
+
+  @override
+  State<_CountStepper> createState() => _CountStepperState();
+}
+
+class _CountStepperState extends State<_CountStepper> {
+  late final TextEditingController _controller = TextEditingController(
+    text: '${widget.count}',
+  );
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  @override
+  void didUpdateWidget(covariant _CountStepper oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Only resync from outside (the +/- buttons) while the field isn't
+    // being actively edited, so mid-typing text is never clobbered.
+    if (widget.count != oldWidget.count && !_focusNode.hasFocus) {
+      _controller.text = '${widget.count}';
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (!_focusNode.hasFocus) _commit();
+  }
+
+  // Invalid or empty input reverts to the last valid count; a valid number
+  // is clamped to the same [_minQuestionCount, _maxQuestionCount] range as
+  // the +/- buttons.
+  void _commit() {
+    final parsed = int.tryParse(_controller.text);
+    final next = parsed == null
+        ? widget.count
+        : parsed.clamp(_minQuestionCount, _maxQuestionCount);
+    _controller.text = '$next';
+    if (next != widget.count) widget.onChanged(next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final atMin = widget.count <= _minQuestionCount;
+    final atMax = widget.count >= _maxQuestionCount;
+
+    return Row(
+      children: [
+        _StepperButton(
+          icon: Icons.remove,
+          enabled: !atMin,
+          onTap: () => widget.onChanged(widget.count - 1),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: TextField(
+            key: const ValueKey('count-field'),
+            controller: _controller,
+            focusNode: _focusNode,
+            textAlign: TextAlign.center,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            onSubmitted: (_) => _focusNode.unfocus(),
+            style: AppTypography.quizOption(FontWeight.w900).copyWith(fontSize: 30),
+            decoration: const InputDecoration(border: InputBorder.none, isDense: true),
+          ),
+        ),
+        const SizedBox(width: 14),
+        _StepperButton(
+          icon: Icons.add,
+          enabled: !atMax,
+          onTap: () => widget.onChanged(widget.count + 1),
+        ),
+      ],
+    );
+  }
+}
+
 class _ModeCard extends StatelessWidget {
   const _ModeCard({
     required this.icon,
@@ -760,44 +826,6 @@ class _ModeCard extends StatelessWidget {
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GeneratingOverlay extends StatelessWidget {
-  const _GeneratingOverlay({required this.count, required this.difficulties});
-
-  final int count;
-  final Set<DifficultyLevel> difficulties;
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned.fill(
-      child: Container(
-        color: const Color(0xE60B0F5B),
-        padding: const EdgeInsets.all(34),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const SizedBox(
-              width: 46,
-              height: 46,
-              child: CircularProgressIndicator(
-                strokeWidth: 5,
-                valueColor: AlwaysStoppedAnimation(Colors.white),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Text('Reading your material…', style: AppTypography.quizHeaderTitle.copyWith(fontSize: 19), textAlign: TextAlign.center),
-            const SizedBox(height: 13),
-            Text(
-              'Aiming for $count questions · ${difficulties.map((d) => d.name).join(' + ')}',
-              style: AppTypography.quizEmptyBody.copyWith(color: Colors.white.withValues(alpha: 0.7)),
-              textAlign: TextAlign.center,
             ),
           ],
         ),

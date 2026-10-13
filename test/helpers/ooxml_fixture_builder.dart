@@ -10,9 +10,18 @@ void _addTextFile(Archive archive, String path, String content) {
 }
 
 /// A PPTX with one slide per entry in [slideBodies] (raw `<p:sp>...</p:sp>`
-/// shape XML), in that display order.
-Uint8List buildPptxBytes(List<String> slideBodies) {
+/// shape XML), in that display order. Each slide's relationship `Target`
+/// defaults to the usual form relative to `ppt/` (e.g. `slides/slide1.xml`)
+/// — pass [relationshipTarget] to build a fixture with a different target
+/// style instead (e.g. an absolute `/ppt/slides/slide1.xml`, or one that
+/// doesn't resolve to any real archive entry, to exercise the numeric
+/// fallback).
+Uint8List buildPptxBytes(
+  List<String> slideBodies, {
+  String Function(int slideNumber)? relationshipTarget,
+}) {
   final archive = Archive();
+  final target = relationshipTarget ?? (n) => 'slides/slide$n.xml';
 
   final sldIdEntries = StringBuffer();
   final relEntries = StringBuffer();
@@ -23,7 +32,7 @@ Uint8List buildPptxBytes(List<String> slideBodies) {
     relEntries.writeln(
       '<Relationship Id="$rId" '
       'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" '
-      'Target="slides/slide$n.xml"/>',
+      'Target="${target(n)}"/>',
     );
 
     _addTextFile(

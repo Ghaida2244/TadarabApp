@@ -37,6 +37,7 @@ class AppTextField extends StatelessWidget {
     this.enabled = true,
     this.focusNode,
     this.onChanged,
+    this.borderColorOverride,
   });
 
   final String label;
@@ -59,7 +60,16 @@ class AppTextField extends StatelessWidget {
   final FocusNode? focusNode;
   final ValueChanged<String>? onChanged;
 
+  /// Overrides just the border color, leaving background/icon color driven
+  /// by [state] as usual — for a case like "this field live-matches
+  /// another field" that needs a green border without the full
+  /// [AppFieldState.success] look (light-green background, green icon).
+  /// Null (the default) leaves [state] in full control, so every existing
+  /// call site is unaffected.
+  final Color? borderColorOverride;
+
   Color get _borderColor {
+    if (borderColorOverride != null) return borderColorOverride!;
     if (!enabled) return AppColors.borderDefault;
     switch (state) {
       case AppFieldState.empty:
@@ -137,6 +147,7 @@ class AppTextField extends StatelessWidget {
                     hintText: hintText,
                     hintStyle: AppTypography.fieldInput.copyWith(
                       color: AppColors.placeholder,
+                      letterSpacing: 0,
                     ),
                   ),
                 ),
