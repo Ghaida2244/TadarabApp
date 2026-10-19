@@ -22,40 +22,70 @@ questions or flashcards.
   proves identity.
 - **Request validation.** `type` (`"quiz"` or `"flashcard"`), `count`
   (positive integer), `materials` (non-empty array of `{ title, sourceText
-  }`), `difficulty` (a single level or a list of them), and an optional
+  }`), `difficulty` (a single level or a list of them), an optional
   `customPrompt` (server-side capped at 300 characters — a backup to the
-  Flutter-side `maxLength`, since a client-only check is bypassable) are all
-  validated before anything is sent to Claude. Anything invalid →
+  Flutter-side `maxLength`, since a client-only check is bypassable), and
+  an optional `isRetake`/`previousTopics` pair (see **Retakes** below) are
+  all validated before anything is sent to Claude. Anything invalid →
   `400 Bad Request` with a specific message, never a silent failure.
-- **The prompt logic.** `src/generation.js` builds the exact prompt text
-  Claude receives — content, wording, difficulty distribution, the
-  options-vs-front/back-text shape per `type`, explanation and
-  source-location rules, multi-material handling, and how an optional
-  student `customPrompt` gets folded in — all per
-  `quiz_flashcard_generation_spec.md` at the project root, which is the
-  actual source of truth (this README only summarizes it).
+- **The prompt logic.** `src/generation.js`'s `buildPrompt` builds the exact
+  prompt text Claude receives — content, wording/language, the
+  no-material-citing rule, difficulty distribution (across levels and, for
+  multi-material requests, across materials too), the
+  options-vs-back-text shape per `type`, the explanation rule (quiz only),
+  distinctness, how the retake rule and an optional student `customPrompt`
+  get folded in, and the source-tag/`sourceLocation` rules — all per
+  `quiz_flashcard_generation_spec.md` at the project root, which stays the
+  readable paraphrase of this file's actual, current prompt text (this
+  README only summarizes it further).
 - **Structured output, not parsed text.** Claude is called with **Tool
   Use** and a strict per-type JSON schema (quiz items require exactly 4
   `options` + `correctAnswer` + `explanation` + `sourceLocation` +
   `difficulty`; flashcard items require `frontText`/`backText` instead —
-  no `options`/`correctAnswer` at all), so the response is guaranteed
-  well-formed instead of relying on Claude to return valid JSON as plain
-  text.
+  no `options`/`correctAnswer` at all), plus an optional response-level
+  `note` and `coveredTopics` (see **Response shape** below), so the
+  response is guaranteed well-formed instead of relying on Claude to
+  return valid JSON as plain text.
 - **Model + token budget.** Pinned to `claude-haiku-4-5-20251001` (not the
   default/latest, so behavior can't shift under us on a model update).
-  `max_tokens` is computed per request (`500 + count×350` for quiz,
-  `500 + count×200` for flashcard) and capped at that model's real max
-  output (64,000).
+  `max_tokens` is a flat cap at that model's real max output (64,000) on
+  every request, regardless of `type`/`count` — there's no retry-on-
+  `max_tokens` logic anywhere else, so the Worker always grants Claude the
+  full available budget rather than a per-item estimate that could fall
+  short (see `computeMaxTokens` in `src/generation.js`).
 - **Server-side shuffle.** For quizzes, `src/generation.js` shuffles each
   question's option order itself (Fisher–Yates) after Claude responds —
   Claude is never asked to randomize its own output, which it can't be
   trusted to do well.
+- **Retakes.** The app sends `isRetake: true` plus `previousTopics` (an
+  array of short topic strings) when the student retakes a session. This
+  is **soft guidance only, sent fresh per request and never stored by the
+  Worker**: the prompt asks Claude to prefer ideas/terms/concepts not in
+  `previousTopics`, and if nothing new is left, to cover them from a
+  different angle (a different aspect, example, or way of asking) rather
+  than ever producing fewer items. `previousTopics` is built by the app
+  from the *retaken session's own* stored `coveredTopics` only — never a
+  union across its whole retake chain — and is capped/sanitized again
+  server-side (`normalizePreviousTopics`) regardless of what the app sent.
 - **Response shape.** On success:
-  `{ "uid": "...", "type": "quiz", "items": [...], "note": null }`. `note`
-  is only ever a non-null string when Claude generated fewer items than
-  requested (or none) and explains why — the app should show that directly
-  to the student rather than a generic error, per the "never pad with
-  low-quality items" rule in CLAUDE.md.
+  `{ "uid": "...", "type": "quiz", "items": [...], "note": null,
+  "coveredTopics": [...] }`. `note` is only ever a non-null string when
+  Claude generated fewer items than requested (or none) and explains why —
+  the app should show that directly to the student rather than a generic
+  error, per the "never pad with low-quality items" rule in CLAUDE.md.
+  `coveredTopics` is Claude's own short list of the concepts/terms the
+  generated items cover (sanitized/capped via `normalizeCoveredTopics`) —
+  the app stores it on the session and later feeds it back as that
+  session's own retake's `previousTopics`.
+- **Grounding check (monitoring only).** Before responding, the Worker
+  checks each item's `sourceLocation` against the real bracketed tags
+  extracted from the request's own source text
+  (`extractLocationTags`/`filterGroundedItems`). An ungrounded item is
+  **never dropped or regenerated** — it's logged (`console.log`, a count
+  plus each ungrounded item's truncated `sourceLocation`, no question/
+  answer/source text) so the prompt can keep being tuned, per CLAUDE.md's
+  grounding rule: a slightly imprecise `sourceLocation` shown to the
+  student is acceptable, losing a valid item is not.
 - **Status: deployed and live** at
   `https://tadarab-ai-worker.tadarab.workers.dev`. Verified against the real
   deployment with a throwaway Firebase test account: no `Authorization`
@@ -75,8 +105,9 @@ ever receives text that's already been extracted, in the request body.
   the Firebase token, validates the request body, calls the Claude API, and
   maps everything to a JSON response. No business logic of its own.
 - `src/generation.js` — the actual, pure, unit-tested logic: prompt
-  building, the Tool Use schemas, `customPrompt`/`difficulty` validation,
-  the `max_tokens` formula, and option shuffling. Pure functions in and out
+  building, the Tool Use schemas, `customPrompt`/`difficulty`/
+  `previousTopics` validation and normalization, the `max_tokens` cap,
+  option shuffling, and the grounding check. Pure functions in and out
   (no `fetch`, no `env`), which is what makes it testable without mocking
   the network.
 - `test/generation.test.js` — unit tests for everything in `generation.js`.
@@ -121,12 +152,47 @@ required. Body:
   "count": 10,
   "difficulty": "easy",
   "customPrompt": "optional, ≤300 characters",
-  "materials": [{ "title": "Lecture 1", "sourceText": "[Slide 1]\n..." }]
+  "materials": [{ "title": "Lecture 1", "sourceText": "[Slide 1]\n..." }],
+  "isRetake": false,
+  "previousTopics": ["BPM lifecycle", "SLA"]
 }
 ```
 
 `type` is `"quiz"` or `"flashcard"`. `difficulty` accepts a single level or a
-list (`["easy","hard"]`).
+list (`["easy","hard"]`). Each entry in `materials` needs a non-empty
+`title` and `sourceText` — the source text is expected to already carry the
+upload-time location tags (`[Slide N: Title]`, `[Heading N: Text]`,
+`[Paragraph N]`); the Worker itself wraps each material in its own
+`[Material: Title]` header before sending it to Claude. `isRetake` and
+`previousTopics` are both optional and default to `false`/`[]` — see
+**Retakes** above.
+
+Response on success:
+
+```json
+{
+  "uid": "<the caller's Firebase uid>",
+  "type": "quiz",
+  "items": [
+    {
+      "questionText": "...",
+      "options": ["...", "...", "...", "..."],
+      "correctAnswer": "...",
+      "explanation": "...",
+      "sourceLocation": "Lecture 1 - Introduction | Slide 5: Processes Everywhere",
+      "difficulty": "medium"
+    }
+  ],
+  "note": null,
+  "coveredTopics": ["Process lifecycle", "..."]
+}
+```
+
+A flashcard item has `frontText`/`backText` instead of `options`/
+`correctAnswer`/`explanation`. `sourceLocation` is always `<material title>
+| <tag text>`; an item that draws on more than one location joins them with
+`"; "` (see `quiz_flashcard_generation_spec.md`'s SOURCE TAGS rule for the
+exact format and an example).
 
 ## Tests
 
@@ -136,8 +202,12 @@ npm install
 npm test
 ```
 
-Covers the pure logic in `src/generation.js` (prompt building, the Tool Use
-schemas, `customPrompt`/`difficulty` validation, the dynamic `max_tokens`
-formula and its cap, and option shuffling) — not the HTTP handler itself,
-which has no real caller yet (Phase C's Quiz/Flashcard generation UI isn't
-built).
+Covers the pure logic in `src/generation.js` (prompt building for both
+types and for a retake, the Tool Use schemas, `customPrompt`/`difficulty`/
+`previousTopics` validation and normalization, the `max_tokens` cap,
+option shuffling, and the grounding check) — not `src/index.js`'s HTTP
+handler itself, which has no automated test coverage here (it was verified
+once by hand against the live deployment — see **Status** above). The app
+now has real callers for `POST /generate` on both sides —
+`QuizGenerationClient` (Quiz) and `FlashcardService.generateFlashcards`
+(Flashcards) each make the real HTTP call.

@@ -67,6 +67,129 @@ void main() {
     expect(result.note, isNull);
   });
 
+  test(
+    'normal case: parses coveredTopics from the response',
+    () async {
+      final mock = MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'items': [],
+            'note': null,
+            'coveredTopics': ['Normalization', 'ACID'],
+          }),
+          200,
+        );
+      });
+
+      final result = await client(mock).generateQuiz(
+        count: 5,
+        difficulties: [DifficultyLevel.easy],
+        materials: materials,
+      );
+
+      expect(result.coveredTopics, ['Normalization', 'ACID']);
+    },
+  );
+
+  test(
+    'failure case: a missing coveredTopics field defaults to empty, not a crash',
+    () async {
+      final mock = MockClient((request) async {
+        return http.Response(jsonEncode({'items': [], 'note': null}), 200);
+      });
+
+      final result = await client(mock).generateQuiz(
+        count: 5,
+        difficulties: [DifficultyLevel.easy],
+        materials: materials,
+      );
+
+      expect(result.coveredTopics, isEmpty);
+    },
+  );
+
+  test(
+    'failure case: a non-list coveredTopics field defaults to empty, not a crash',
+    () async {
+      final mock = MockClient((request) async {
+        return http.Response(
+          jsonEncode({'items': [], 'note': null, 'coveredTopics': 'oops'}),
+          200,
+        );
+      });
+
+      final result = await client(mock).generateQuiz(
+        count: 5,
+        difficulties: [DifficultyLevel.easy],
+        materials: materials,
+      );
+
+      expect(result.coveredTopics, isEmpty);
+    },
+  );
+
+  test(
+    'normal case: sends previousTopics in the request body when isRetake '
+    'and non-empty',
+    () async {
+      Map<String, dynamic>? capturedBody;
+      final mock = MockClient((request) async {
+        capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
+        return http.Response(jsonEncode({'items': [], 'note': null}), 200);
+      });
+
+      await client(mock).generateQuiz(
+        count: 5,
+        difficulties: [DifficultyLevel.easy],
+        materials: materials,
+        isRetake: true,
+        previousTopics: ['Normalization', 'ACID'],
+      );
+
+      expect(capturedBody?['previousTopics'], ['Normalization', 'ACID']);
+    },
+  );
+
+  test(
+    'edge case: previousTopics is omitted when empty, even if isRetake is true',
+    () async {
+      Map<String, dynamic>? capturedBody;
+      final mock = MockClient((request) async {
+        capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
+        return http.Response(jsonEncode({'items': [], 'note': null}), 200);
+      });
+
+      await client(mock).generateQuiz(
+        count: 5,
+        difficulties: [DifficultyLevel.easy],
+        materials: materials,
+        isRetake: true,
+      );
+
+      expect(capturedBody?.containsKey('previousTopics'), isFalse);
+    },
+  );
+
+  test(
+    'edge case: previousTopics is omitted when isRetake is false, even if given',
+    () async {
+      Map<String, dynamic>? capturedBody;
+      final mock = MockClient((request) async {
+        capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
+        return http.Response(jsonEncode({'items': [], 'note': null}), 200);
+      });
+
+      await client(mock).generateQuiz(
+        count: 5,
+        difficulties: [DifficultyLevel.easy],
+        materials: materials,
+        previousTopics: ['Normalization'],
+      );
+
+      expect(capturedBody?.containsKey('previousTopics'), isFalse);
+    },
+  );
+
   test('normal case: an omitted customPrompt is not sent at all', () async {
     final mock = MockClient((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;

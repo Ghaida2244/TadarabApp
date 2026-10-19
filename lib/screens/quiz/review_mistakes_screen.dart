@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/question.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
+import '../../widgets/draggable_overflow_text.dart';
 import 'widgets/quiz_icon_button.dart';
 
 /// Exam Mode's post-summary accordion of wrong answers: question, the
@@ -217,9 +218,10 @@ class _MistakeCard extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(height: 2),
-                              Text(
-                                question.sourceLocation,
+                              DraggableOverflowText(
+                                text: question.sourceLocation,
                                 style: AppTypography.quizSourceValue.copyWith(fontSize: 12),
+                                fadeColor: AppColors.navy,
                               ),
                             ],
                           ),

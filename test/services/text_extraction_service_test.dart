@@ -81,6 +81,62 @@ void main() {
       expect(text, isEmpty);
     });
 
+    test(
+      'absolute relationship targets (e.g. Target="/ppt/slides/slide1.xml") '
+      'still resolve, not just the usual relative form',
+      () {
+        final bytes = buildPptxBytes(
+          [
+            pptxTitleShape('First'),
+            pptxTitleShape('Second'),
+          ],
+          relationshipTarget: (n) => '/ppt/slides/slide$n.xml',
+        );
+
+        final text = extractText(bytes: bytes, type: 'pptx');
+
+        expect(text, contains('[Slide 1: First]'));
+        expect(text, contains('[Slide 2: Second]'));
+      },
+    );
+
+    test(
+      'the usual relative relationship targets (e.g. Target="slides/slide1.xml") '
+      'resolve as before',
+      () {
+        final bytes = buildPptxBytes([
+          pptxTitleShape('First'),
+          pptxTitleShape('Second'),
+        ]);
+
+        final text = extractText(bytes: bytes, type: 'pptx');
+
+        expect(text, contains('[Slide 1: First]'));
+        expect(text, contains('[Slide 2: Second]'));
+      },
+    );
+
+    test(
+      'relationship targets that resolve to nothing in the archive fall '
+      'back to ppt/slides/slideN.xml sorted numerically',
+      () {
+        final bytes = buildPptxBytes(
+          [
+            pptxTitleShape('First'),
+            pptxTitleShape('Second'),
+            pptxTitleShape('Third'),
+          ],
+          relationshipTarget: (n) => 'does-not-exist/slide$n.xml',
+        );
+
+        final text = extractText(bytes: bytes, type: 'pptx');
+
+        expect(text, contains('[Slide 1: First]'));
+        expect(text, contains('[Slide 2: Second]'));
+        expect(text, contains('[Slide 3: Third]'));
+      },
+    );
+
     test('a real lecture deck extracts with the exact tag format and real '
         'known content', () {
       final file = File('docs/Lecture1.pptx');

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/features/flashcards/widgets/flashcard_card.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
+import 'package:tadarab_app/widgets/draggable_overflow_text.dart';
 
 Widget _wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
@@ -88,8 +89,9 @@ void main() {
           .widget<Text>(find.text('A collection of related data.'))
           .style!;
 
-      expect(answerStyle.fontSize, 22);
-      expect(answerStyle.fontWeight, FontWeight.w900);
+      // NOTE 10: fontSize 20 / w800 (was 22 / w900).
+      expect(answerStyle.fontSize, 20);
+      expect(answerStyle.fontWeight, FontWeight.w800);
       expect(answerStyle.color, AppColors.navy);
       expect(answerStyle.fontSize, questionStyle.fontSize);
       expect(answerStyle.fontWeight, questionStyle.fontWeight);
@@ -265,29 +267,93 @@ void main() {
     );
 
     testWidgets(
-      'a location too long to fit is truncated with an ellipsis, not '
-      'wrapped to a second line',
+      'NOTE 9: a location too long to fit is manually drag-scrollable '
+      '(via DraggableOverflowText) instead of being truncated with an '
+      'ellipsis, and does not move by itself',
       (tester) async {
-        await tester.pumpWidget(
-          flipped(
+        const longLocation =
             'Lecture 12 - Introduction to Advanced Relational Database '
-            'Design Concepts and Normalization Theory - Slide 47',
-          ),
-        );
-        await tester.pumpAndSettle();
+            'Design Concepts and Normalization Theory - Slide 47';
+        await tester.pumpWidget(flipped(longLocation));
+        await tester.pump();
+        await tester.pump();
 
-        final locationText = tester.widget<Text>(
+        expect(tester.takeException(), isNull);
+        // The full text is present (not truncated) — DraggableOverflowText
+        // renders it at its real, untruncated width, scrollable by drag.
+        expect(find.text(longLocation), findsOneWidget);
+        expect(
           find.descendant(
             of: find.byKey(const ValueKey('source-strip')),
-            matching: find.text(
-              'Lecture 12 - Introduction to Advanced Relational Database '
-              'Design Concepts and Normalization Theory - Slide 47',
+            matching: find.byType(DraggableOverflowText),
+          ),
+          findsOneWidget,
+        );
+        // Genuinely in scroll mode, not silently falling back to static —
+        // the inner scroll view only exists once real overflow is
+        // measured.
+        final scrollFinder = find.descendant(
+          of: find.byKey(const ValueKey('source-strip')),
+          matching: find.byKey(const ValueKey('draggable-overflow-scroll')),
+        );
+        expect(scrollFinder, findsOneWidget);
+
+        // No automatic movement: holding still (no drag) for a while
+        // leaves the scroll position at 0.
+        final scrollable = tester.state<ScrollableState>(
+          find.descendant(of: scrollFinder, matching: find.byType(Scrollable)),
+        );
+        expect(scrollable.position.pixels, 0);
+        await tester.pump(const Duration(seconds: 3));
+        expect(scrollable.position.pixels, 0);
+      },
+    );
+
+    testWidgets(
+      'gesture priority: a horizontal drag starting on the chip scrolls '
+      'it and does NOT flip the card — the card\'s own onTap is never '
+      'invoked',
+      (tester) async {
+        const longLocation =
+            'Lecture 12 - Introduction to Advanced Relational Database '
+            'Design Concepts and Normalization Theory - Slide 47';
+        var tapCount = 0;
+        await tester.pumpWidget(
+          _wrap(
+            FlashcardCard(
+              frontText: 'Q',
+              backText: 'A',
+              sourceLocation: longLocation,
+              flipped: true,
+              onTap: () => tapCount++,
             ),
           ),
         );
+        await tester.pump();
+        await tester.pump();
 
-        expect(locationText.maxLines, 1);
-        expect(locationText.overflow, TextOverflow.ellipsis);
+        final scrollFinder = find.byKey(
+          const ValueKey('draggable-overflow-scroll'),
+        );
+        final scrollable = tester.state<ScrollableState>(
+          find.descendant(of: scrollFinder, matching: find.byType(Scrollable)),
+        );
+        expect(scrollable.position.pixels, 0);
+
+        await tester.drag(scrollFinder, const Offset(-80, 0));
+        await tester.pump();
+
+        expect(
+          scrollable.position.pixels,
+          greaterThan(0),
+          reason: 'the chip itself must have actually scrolled',
+        );
+        expect(
+          tapCount,
+          0,
+          reason: "the card's onTap (flip) must not fire from a drag that "
+              'started on the chip',
+        );
       },
     );
 

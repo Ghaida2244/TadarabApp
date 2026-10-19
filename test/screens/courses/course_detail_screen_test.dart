@@ -52,6 +52,78 @@ void main() {
         expect(find.text('Quiz sessions'), findsNothing);
       },
     );
+
+    testWidgets(
+      'the empty "Add your first material" card centers vertically in the '
+      'space below Study Tools (roughly equal slack above and below)',
+      (tester) async {
+        // The default 800x600 test surface is too short for the card's
+        // natural content to leave any slack to center into (it fills or
+        // exceeds the available space, so the scroll fallback — not
+        // centering — legitimately takes over). Use a taller viewport,
+        // closer to a real device, so there's genuine room to center.
+        tester.view.physicalSize = const Size(800, 1600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+
+        await pump(tester, FakeCoursesService());
+
+        final available = tester.getRect(find.byType(LayoutBuilder));
+        final card = tester.getRect(
+          find.byWidgetPredicate(
+            (w) => w.runtimeType.toString() == '_EmptyMaterials',
+          ),
+        );
+
+        final topSlack = card.top - available.top;
+        final bottomSlack = available.bottom - card.bottom;
+
+        expect(topSlack, greaterThan(20));
+        expect(bottomSlack, greaterThan(20));
+        expect((topSlack - bottomSlack).abs(), lessThan(40));
+      },
+    );
+
+    testWidgets(
+      'the populated materials list renders from the top instead of '
+      'centering, even on the same tall viewport',
+      (tester) async {
+        tester.view.physicalSize = const Size(800, 1600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+
+        await pump(
+          tester,
+          FakeCoursesService(
+            materialsByCourse: {
+              'c1': [
+                StudyMaterial(
+                  materialId: 'm1',
+                  title: 'Lecture 1',
+                  type: 'pptx',
+                  document: 'd',
+                  courseId: 'c1',
+                  extractedText: 't',
+                ),
+              ],
+            },
+          ),
+        );
+
+        // The type-filter tabs below also scroll horizontally in their own
+        // nested SingleChildScrollView — `.first` is this screen's outer
+        // one (the materials list's own scroll area), its ancestor.
+        final available = tester.getRect(
+          find.byType(SingleChildScrollView).first,
+        );
+        final heading = tester.getTopLeft(find.text('Course materials'));
+
+        // Hugs the top of the available area (just Study Tools' own
+        // height above it) — nowhere near the ~half-of-available offset
+        // centering would produce on this 1600px-tall viewport.
+        expect(heading.dy - available.top, lessThan(available.height * 0.3));
+      },
+    );
   });
 
   group('unlocked (has materials)', () {

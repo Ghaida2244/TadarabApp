@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../logic/performance_tier.dart';
+import '../../logic/practice_shuffle.dart';
 import '../../models/enums.dart';
 import '../../models/question.dart';
 import '../../models/quiz_session.dart';
@@ -81,7 +83,15 @@ class _PerformanceSummaryScreenState extends State<PerformanceSummaryScreen> {
     // submitted — the first question would show the old pick pre-selected,
     // and every question after it would jump straight to the revealed
     // state with no chance to answer. Practice must start completely fresh.
-    final freshQuestions = data.mistakes.map((q) => q.asUnanswered()).toList();
+    //
+    // shuffleQuestionsForPractice also reorders the questions themselves
+    // and each one's own options (guaranteeing the correct option's
+    // position differs from the original attempt whenever it has 2+
+    // options) — a practice round should never look identical to the
+    // original, question-for-question and option-for-option.
+    final freshQuestions = shuffleQuestionsForPractice(
+      data.mistakes.map((q) => q.asUnanswered()).toList(),
+    );
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => QuizPlayScreen(
@@ -120,7 +130,10 @@ class _PerformanceSummaryScreenState extends State<PerformanceSummaryScreen> {
               );
             }
             final data = snapshot.data!;
-            final mood = resultMoodFor(correct: data.correct, total: data.total);
+            final tier = performanceTierFor(
+              numerator: data.correct,
+              denominator: data.total,
+            );
             final wrong = data.total - data.correct;
 
             return Column(
@@ -176,7 +189,7 @@ class _PerformanceSummaryScreenState extends State<PerformanceSummaryScreen> {
                           ],
                         ),
                         const SizedBox(height: 18),
-                        _MoodBanner(mood: mood),
+                        _MoodBanner(tier: tier),
                         if (!widget.isPracticeResult) ...[
                           const SizedBox(height: 18),
                           _PointsStrip(points: data.session!.earnedPoints),
@@ -208,12 +221,21 @@ class _PerformanceSummaryScreenState extends State<PerformanceSummaryScreen> {
     if (widget.isPracticeResult) {
       actions.add(
         AppButton(
-          label: 'Back to Sessions',
+          label: 'Done',
           variant: AppButtonVariant.accent,
           height: 56,
           borderRadius: 16,
           shadowColor: AppColors.navy.withValues(alpha: 0.10),
-          onPressed: () => popToQuizSessions(context),
+          // This screen only ever sits on top of the ORIGINAL session's
+          // Performance Summary (see QuizPlayScreen._finish's practice
+          // branch: a pushReplacement over the Practice Now play screen,
+          // which was itself pushed on top of the original summary) — a
+          // plain pop lands exactly there, showing its stored score/points
+          // unchanged. This used to call popToQuizSessions, which skipped
+          // straight past that original summary to the Sessions list —
+          // wrong destination, and also a misleading "Back to Sessions"
+          // label for a button that's really just leaving this one screen.
+          onPressed: () => Navigator.of(context).maybePop(),
         ),
       );
       return actions;
@@ -317,27 +339,27 @@ class _CountCard extends StatelessWidget {
 }
 
 class _MoodBanner extends StatelessWidget {
-  const _MoodBanner({required this.mood});
+  const _MoodBanner({required this.tier});
 
-  final ResultMood mood;
+  final PerformanceTier tier;
 
   @override
   Widget build(BuildContext context) {
     final Color bg;
     final Color ink;
     final IconData icon;
-    switch (mood) {
-      case ResultMood.great:
+    switch (tier) {
+      case PerformanceTier.excellent:
         bg = AppColors.successBackgroundStrong;
         ink = AppColors.successDark;
         icon = Icons.emoji_events_outlined;
         break;
-      case ResultMood.solid:
+      case PerformanceTier.nice:
         bg = AppColors.cardTint;
         ink = AppColors.navy;
         icon = Icons.star_outline;
         break;
-      case ResultMood.keepPractising:
+      case PerformanceTier.needsWork:
         bg = AppColors.errorBannerBackground;
         ink = AppColors.errorBannerBody;
         icon = Icons.trending_up;
@@ -357,7 +379,7 @@ class _MoodBanner extends StatelessWidget {
           ),
           const SizedBox(width: 14),
           Expanded(
-            child: Text(resultMessageFor(mood), style: AppTypography.quizResultLine(ink)),
+            child: Text(performanceTierMessage(tier), style: AppTypography.quizResultLine(ink)),
           ),
         ],
       ),

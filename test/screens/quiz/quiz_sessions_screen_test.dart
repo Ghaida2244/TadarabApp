@@ -9,8 +9,25 @@ import 'package:tadarab_app/models/study_material.dart';
 import 'package:tadarab_app/screens/quiz/quiz_navigation.dart';
 import 'package:tadarab_app/screens/quiz/quiz_sessions_screen.dart';
 import 'package:tadarab_app/services/quiz_session_service.dart';
+import 'package:tadarab_app/theme/app_theme.dart';
+import 'package:tadarab_app/widgets/app_button.dart';
+import 'package:tadarab_app/widgets/generation_loading_overlay.dart';
+import 'package:tadarab_app/widgets/scrollable_title_pill.dart';
+import 'package:tadarab_app/widgets/session_stack_card.dart';
+import 'package:tadarab_app/widgets/session_stack_focus_view.dart';
 
 import '../../helpers/fake_quiz_session_service.dart';
+
+AppButton _retakeButton(WidgetTester tester) => tester.widget<AppButton>(
+  find.byWidgetPredicate((w) => w is AppButton && w.label == 'Retake'),
+);
+
+/// Matches a "Retake N" chain label specifically — not the "Retake"
+/// button, which would otherwise make a plain
+/// `find.textContaining('Retake')` ambiguous for this.
+final Finder _retakeChainLabel = find.byWidgetPredicate(
+  (w) => w is Text && RegExp(r'^RETAKE \d+$').hasMatch(w.data ?? ''),
+);
 
 QuizSession _session({
   required String id,
@@ -18,6 +35,9 @@ QuizSession _session({
   Mode mode = Mode.exam,
   int currentQuestionIndex = 3,
   int correctAnswers = 8,
+  int retakeNumber = 0,
+  String? rootSessionId,
+  String? retakeOfSessionId,
 }) {
   return QuizSession(
     sessionId: id,
@@ -31,6 +51,9 @@ QuizSession _session({
     mode: mode,
     currentQuestionIndex: currentQuestionIndex,
     correctAnswers: correctAnswers,
+    retakeNumber: retakeNumber,
+    rootSessionId: rootSessionId,
+    retakeOfSessionId: retakeOfSessionId,
   );
 }
 
@@ -77,8 +100,29 @@ void main() {
       expect(find.text('IN PROGRESS'), findsOneWidget);
       expect(find.text('COMPLETED'), findsOneWidget);
       expect(find.text('Resume at question 5'), findsOneWidget);
-      expect(find.text('View performance summary'), findsOneWidget);
-      expect(find.text('Retake quiz'), findsOneWidget);
+      expect(find.text('View summary'), findsOneWidget);
+      expect(find.text('Retake'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'the in-progress Resume button uses the same compact metrics as the '
+    'completed row\'s buttons (40dp height, 12dp radius, 13sp font) — '
+    'confirmed to apply here too, not just on completed cards',
+    (tester) async {
+      final service = FakeQuizSessionService(
+        sessions: [
+          _session(id: 's1', completed: false, currentQuestionIndex: 4),
+        ],
+      );
+      await _pump(tester, service);
+
+      final resumeButton = tester.widget<AppButton>(
+        find.widgetWithText(AppButton, 'Resume at question 5'),
+      );
+      expect(resumeButton.height, 40);
+      expect(resumeButton.borderRadius, 12);
+      expect(resumeButton.fontSize, 13);
     },
   );
 
@@ -90,7 +134,93 @@ void main() {
     );
     await _pump(tester, service);
 
-    expect(find.text('Retake quiz'), findsNothing);
+    expect(find.text('Retake'), findsNothing);
+  });
+
+  group('retake label', () {
+    testWidgets(
+      'normal case: an original session that already has a loaded retake '
+      'is labeled "Original" — both labels visible inside the resulting '
+      "stack's focus view",
+      (tester) async {
+        final service = FakeQuizSessionService(
+          sessions: [
+            _session(id: 's1', completed: true, retakeNumber: 0),
+            _session(
+              id: 's2',
+              completed: true,
+              retakeNumber: 1,
+              rootSessionId: 's1',
+              retakeOfSessionId: 's1',
+            ),
+          ],
+        );
+        await _pump(tester, service);
+
+        // Two completed attempts sharing a root now collapse into one
+        // stack in the main list — open it to see both labels at once.
+        // The list underneath stays mounted (just visually covered), so
+        // these finders are scoped to inside the focus view specifically
+        // — a bare find.text(...) would also match the still-mounted
+        // collapsed stack's own top card underneath.
+        expect(find.byType(SessionStackCard), findsOneWidget);
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+
+        final focusView = find.byType(SessionStackFocusView);
+        expect(focusView, findsOneWidget);
+        expect(
+          find.descendant(of: focusView, matching: find.text('ORIGINAL')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: focusView, matching: find.text('RETAKE 1')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'edge case: an original session with no retakes currently loaded '
+      'shows no label at all',
+      (tester) async {
+        final service = FakeQuizSessionService(
+          sessions: [_session(id: 's1', completed: true, retakeNumber: 0)],
+        );
+        await _pump(tester, service);
+
+        expect(find.text('ORIGINAL'), findsNothing);
+        expect(_retakeChainLabel, findsNothing);
+      },
+    );
+
+    testWidgets('normal case: a session with retakeNumber 2 is labeled "Retake 2"', (
+      tester,
+    ) async {
+      final service = FakeQuizSessionService(
+        sessions: [_session(id: 's1', completed: true, retakeNumber: 2)],
+      );
+      await _pump(tester, service);
+
+      expect(find.text('RETAKE 2'), findsOneWidget);
+      expect(find.text('ORIGINAL'), findsNothing);
+    });
+
+    testWidgets(
+      'edge case: an old session (default rootSessionId/retakeNumber, as '
+      'if it predates these fields) shows no label at all',
+      (tester) async {
+        // No rootSessionId/retakeOfSessionId passed — same defaults a
+        // document that predates these fields would read as.
+        final service = FakeQuizSessionService(
+          sessions: [_session(id: 's1', completed: true)],
+        );
+        await _pump(tester, service);
+
+        expect(find.text('ORIGINAL'), findsNothing);
+        expect(_retakeChainLabel, findsNothing);
+      },
+    );
   });
 
   testWidgets(
@@ -133,7 +263,7 @@ void main() {
       await _pump(tester, service);
       final loadsBeforeRetake = service.fetchSessionsCalls;
 
-      await tester.tap(find.text('Retake quiz'));
+      await tester.tap(find.text('Retake'));
       await tester.pumpAndSettle();
 
       expect(find.text('Question 1 of 1'), findsOneWidget);
@@ -143,6 +273,277 @@ void main() {
       expect(service.submitExamSessionCalls, 0);
     },
   );
+
+  group('Retake loading state', () {
+    GeneratedSessionResult learningResult(QuizSession original) {
+      return GeneratedSessionResult(
+        session: QuizSession(
+          sessionId: original.sessionId,
+          createdAt: original.createdAt,
+          difficultyLevels: original.difficultyLevels,
+          email: original.email,
+          courseId: original.courseId,
+          materialIds: original.materialIds,
+          numberOfQuestions: 1,
+          mode: Mode.learning,
+        ),
+        note: null,
+        requestedCount: 1,
+        questions: [
+          Question(
+            questionId: 'q1',
+            questionText: 'Fresh question',
+            correctAnswer: 'A',
+            explanation: 'E',
+            sourceLocation: 'Slide 1',
+            options: const ['A', 'B', 'C', 'D'],
+            sessionId: original.sessionId,
+          ),
+        ],
+      );
+    }
+
+    testWidgets(
+      'tapping Retake disables the button and shows the full-screen '
+      'generating overlay',
+      (tester) async {
+        final original = _session(id: 's1', completed: true, mode: Mode.learning);
+        final pending = Completer<GeneratedSessionResult>();
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          pendingRetakeSession: pending,
+        );
+        await _pump(tester, service);
+
+        expect(find.byType(GenerationLoadingOverlay), findsNothing);
+        expect(_retakeButton(tester).onPressed, isNotNull);
+
+        await tester.tap(find.text('Retake'));
+        await tester.pump();
+
+        expect(find.byType(GenerationLoadingOverlay), findsOneWidget);
+        expect(_retakeButton(tester).onPressed, isNull);
+
+        pending.complete(learningResult(original));
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'a second tap while loading does not trigger a second retake call',
+      (tester) async {
+        final original = _session(id: 's1', completed: true, mode: Mode.learning);
+        final pending = Completer<GeneratedSessionResult>();
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          pendingRetakeSession: pending,
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Retake'));
+        await tester.pump();
+        expect(service.retakeCalls, 1);
+
+        // The button is disabled while loading, but tap it again anyway to
+        // prove the guard in _retake() itself (not just the disabled
+        // button) is what prevents a second call.
+        await tester.tap(find.text('Retake'), warnIfMissed: false);
+        await tester.pump();
+
+        expect(service.retakeCalls, 1);
+
+        pending.complete(learningResult(original));
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'loading clears after a successful retake, once popped back to Sessions',
+      (tester) async {
+        // Exam mode, not Learning: a successful Learning retake flips the
+        // session to in-progress, which removes its Retake button entirely
+        // (correct, unrelated to loading) — Exam's retake leaves the
+        // original completed session in the list untouched (see the
+        // existing Exam-retake regression test above), so its Retake
+        // button is still there to check.
+        final original = _session(id: 's1', completed: true); // mode: Mode.exam
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          retakeSessionResult: GeneratedSessionResult(
+            session: QuizSession(
+              sessionId: original.sessionId,
+              createdAt: original.createdAt,
+              difficultyLevels: original.difficultyLevels,
+              email: original.email,
+              courseId: original.courseId,
+              materialIds: original.materialIds,
+              numberOfQuestions: 1,
+              mode: Mode.exam,
+            ),
+            note: null,
+            requestedCount: 1,
+            questions: [
+              Question(
+                questionId: 'q1',
+                questionText: 'Fresh question',
+                correctAnswer: 'A',
+                explanation: 'E',
+                sourceLocation: 'Slide 1',
+                options: const ['A', 'B', 'C', 'D'],
+                sessionId: original.sessionId,
+              ),
+            ],
+          ),
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Retake'));
+        await tester.pumpAndSettle();
+
+        // The Exam draft is pushed (not a replacement), so Sessions is
+        // still mounted underneath — pop back to check it.
+        final navigatorState = tester.state<NavigatorState>(
+          find.byType(Navigator),
+        );
+        navigatorState.pop();
+        await tester.pumpAndSettle();
+
+        expect(find.byType(GenerationLoadingOverlay), findsNothing);
+        expect(_retakeButton(tester).onPressed, isNotNull);
+      },
+    );
+
+    testWidgets(
+      'the overlay clears after a failed retake, and shows the error SnackBar',
+      (tester) async {
+        final original = _session(id: 's1', completed: true, mode: Mode.learning);
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          retakeSessionError: Exception('boom'),
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Retake'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text('Retake failed. Please try again.'), findsOneWidget);
+        expect(find.byType(GenerationLoadingOverlay), findsNothing);
+        expect(_retakeButton(tester).onPressed, isNotNull);
+      },
+    );
+
+    testWidgets(
+      "a successful retake that falls short of the requested count shows "
+      "Flashcards' style of message",
+      (tester) async {
+        final original = _session(id: 's1', completed: true, mode: Mode.learning);
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          retakeSessionResult: GeneratedSessionResult(
+            session: QuizSession(
+              sessionId: original.sessionId,
+              createdAt: original.createdAt,
+              difficultyLevels: original.difficultyLevels,
+              email: original.email,
+              courseId: original.courseId,
+              materialIds: original.materialIds,
+              numberOfQuestions: 1,
+              mode: Mode.learning,
+            ),
+            note: null,
+            requestedCount: 5,
+            questions: [
+              Question(
+                questionId: 'q1',
+                questionText: 'Fresh question',
+                correctAnswer: 'A',
+                explanation: 'E',
+                sourceLocation: 'Slide 1',
+                options: const ['A', 'B', 'C', 'D'],
+                sessionId: original.sessionId,
+              ),
+            ],
+          ),
+          questions: {'s1': []},
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Retake'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text('Generated 1 of 5 requested.'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      "a successful retake with the Worker's own note shows that note "
+      'instead of a generic message',
+      (tester) async {
+        final original = _session(id: 's1', completed: true, mode: Mode.learning);
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          retakeSessionResult: GeneratedSessionResult(
+            session: QuizSession(
+              sessionId: original.sessionId,
+              createdAt: original.createdAt,
+              difficultyLevels: original.difficultyLevels,
+              email: original.email,
+              courseId: original.courseId,
+              materialIds: original.materialIds,
+              numberOfQuestions: 1,
+              mode: Mode.learning,
+            ),
+            note: 'Only easy items were generated this time.',
+            requestedCount: 1,
+            questions: [
+              Question(
+                questionId: 'q1',
+                questionText: 'Fresh question',
+                correctAnswer: 'A',
+                explanation: 'E',
+                sourceLocation: 'Slide 1',
+                options: const ['A', 'B', 'C', 'D'],
+                sessionId: original.sessionId,
+              ),
+            ],
+          ),
+          questions: {'s1': []},
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Retake'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          find.text('Only easy items were generated this time.'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'a successful retake at the full requested count with no note shows '
+      'no SnackBar',
+      (tester) async {
+        final original = _session(id: 's1', completed: true, mode: Mode.learning);
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          retakeSessionResult: learningResult(original),
+          questions: {'s1': []},
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Retake'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.byType(SnackBar), findsNothing);
+      },
+    );
+  });
 
   group('materials badge', () {
     testWidgets(
@@ -225,236 +626,173 @@ void main() {
       },
     );
 
+    // NOTE 12: this bar is now the exact same shared `ScrollableTitlePill`
+    // the Flashcard Sessions screen uses — see
+    // test/features/flashcards/screens/flashcard_sessions_screen_test.dart's
+    // "material-title pill sizing" group for the pill's own tests. Unlike
+    // the old Quiz-only `_MaterialsBadge` (which always rendered a
+    // SingleChildScrollView, even for content that fit, and used a
+    // deliberately oversized 32px hit-target with a right-edge fade),
+    // the shared pill renders *no* SingleChildScrollView at all when the
+    // text already fits — these two tests mirror that real behavior
+    // instead of asserting the old widget's now-superseded internals.
     testWidgets(
-      'regression: a label longer than the available space genuinely overflows and can scroll',
+      'a short label that already fits has nothing to scroll — no '
+      'SingleChildScrollView is introduced at all',
       (tester) async {
-        final longTitleMaterials = List.generate(
-          6,
-          (i) => StudyMaterial(
-            materialId: 'm$i',
-            title: 'A Genuinely Long Lecture Title Number $i',
-            type: 'pptx',
-            document: '',
-            courseId: 'course-1',
-            extractedText: '',
-          ),
-        );
-        final session = QuizSession(
-          sessionId: 's1',
-          createdAt: DateTime(2026, 1, 1),
-          isSessionCompleted: true,
-          difficultyLevels: const [DifficultyLevel.medium],
-          email: 'a@b.com',
-          courseId: 'course-1',
-          materialIds: longTitleMaterials.map((m) => m.materialId).toList(),
-          numberOfQuestions: 10,
-          mode: Mode.exam,
-          correctAnswers: 8,
-        );
         final service = FakeQuizSessionService(
-          sessions: [session],
-          materials: longTitleMaterials,
-        );
-        await _pump(tester, service);
-
-        // Scoped to the badge's own SingleChildScrollView specifically, and
-        // read via its ScrollableState directly (not Scrollable.of(), which
-        // searches *ancestors* — starting from the Scrollable's own element
-        // would find the outer sessions ListView's scrollable instead).
-        final scrollableFinder = find.descendant(
-          of: find.byType(SingleChildScrollView),
-          matching: find.byType(Scrollable),
-        );
-        final position = tester
-            .state<ScrollableState>(scrollableFinder)
-            .position;
-        expect(
-          position.maxScrollExtent,
-          greaterThan(0),
-          reason: 'the label is far longer than the card — there must be real overflow to scroll',
-        );
-      },
-    );
-
-    testWidgets(
-      'regression: a real horizontal drag on the badge actually moves it, inside the real vertical sessions list',
-      (tester) async {
-        // maxScrollExtent > 0 only proves the content overflows — it says
-        // nothing about whether a real drag gesture actually reaches this
-        // Scrollable instead of being claimed by the outer vertical
-        // ListView (a gesture-arena conflict, not a layout one). This
-        // drives an actual drag through the widget tester's real gesture
-        // pipeline — the same arena-resolution code a live app uses — to
-        // verify the touch genuinely lands on and moves this scrollable,
-        // sitting inside its real ListView.separated context (not pumped
-        // in isolation).
-        final longTitleMaterials = List.generate(
-          6,
-          (i) => StudyMaterial(
-            materialId: 'm$i',
-            title: 'A Genuinely Long Lecture Title Number $i',
-            type: 'pptx',
-            document: '',
-            courseId: 'course-1',
-            extractedText: '',
-          ),
-        );
-        final session = QuizSession(
-          sessionId: 's1',
-          createdAt: DateTime(2026, 1, 1),
-          isSessionCompleted: true,
-          difficultyLevels: const [DifficultyLevel.medium],
-          email: 'a@b.com',
-          courseId: 'course-1',
-          materialIds: longTitleMaterials.map((m) => m.materialId).toList(),
-          numberOfQuestions: 10,
-          mode: Mode.exam,
-          correctAnswers: 8,
-        );
-        final service = FakeQuizSessionService(
-          sessions: [session],
-          materials: longTitleMaterials,
-        );
-        await _pump(tester, service);
-
-        final scrollableFinder = find.descendant(
-          of: find.byType(SingleChildScrollView),
-          matching: find.byType(Scrollable),
-        );
-        final position = tester
-            .state<ScrollableState>(scrollableFinder)
-            .position;
-        expect(position.pixels, 0);
-
-        // Drag starting from the badge's own on-screen center — a point
-        // that's actually inside the clipped, visible viewport (not the
-        // Text's full unclipped geometry, which can extend far outside it).
-        final badgeCenter = tester.getCenter(
-          find.byType(SingleChildScrollView).first,
-        );
-        await tester.dragFrom(badgeCenter, const Offset(-80, 0));
-        await tester.pump();
-
-        expect(
-          position.pixels,
-          greaterThan(0),
-          reason:
-              'a real horizontal drag on the badge must move its own scroll position, not be '
-              'swallowed by the outer vertical list',
-        );
-      },
-    );
-
-    testWidgets(
-      'regression: the badge itself is genuinely 32px tall, and a drag near its edge still works',
-      (tester) async {
-        // Two other approaches were tried and confirmed (by failing
-        // tests, not just reasoning) not to work: an invisible
-        // SizedOverflowBox-based hit-slop can't extend hit-testing at
-        // all, and wrapping the small pill in a taller SizedBox+Center
-        // hits the same wall one level up (Center still hit-tests against
-        // the *child's own* size). The only thing that actually works is
-        // the pill itself genuinely being 32px — settled on with the user
-        // after confirming that and that matching the nearby EXAM/
-        // LEARNING badge's 22px wouldn't meet the reliability floor.
-        //
-        // Uses several long titles (not just one) to guarantee genuine
-        // overflow — a single title, even a long one, can fit within the
-        // available card width and never overflow, which would make this
-        // test pass for the wrong reason (nothing to scroll, so "no
-        // movement" is vacuously true regardless of where the drag starts).
-        final longTitleMaterials = List.generate(
-          6,
-          (i) => StudyMaterial(
-            materialId: 'm$i',
-            title: 'A Genuinely Long Lecture Title Number $i',
-            type: 'pptx',
-            document: '',
-            courseId: 'course-1',
-            extractedText: '',
-          ),
-        );
-        final service = FakeQuizSessionService(
-          sessions: [
-            QuizSession(
-              sessionId: 's1',
-              createdAt: DateTime(2026, 1, 1),
-              isSessionCompleted: true,
-              difficultyLevels: const [DifficultyLevel.medium],
-              email: 'a@b.com',
+          sessions: [_session(id: 's1', completed: true)], // materialIds: ['m1']
+          materials: [
+            StudyMaterial(
+              materialId: 'm1',
+              title: 'L1',
+              type: 'pptx',
+              document: '',
               courseId: 'course-1',
-              materialIds: longTitleMaterials.map((m) => m.materialId).toList(),
-              numberOfQuestions: 10,
-              mode: Mode.exam,
-              correctAnswers: 8,
+              extractedText: '',
             ),
           ],
-          materials: longTitleMaterials,
         );
         await _pump(tester, service);
-
-        final pillSize = tester.getSize(
-          find.byType(SingleChildScrollView).first,
-        );
-        expect(pillSize.height, 32.0);
-
-        final scrollableFinder = find.descendant(
-          of: find.byType(SingleChildScrollView),
-          matching: find.byType(Scrollable),
-        );
-        final position = tester
-            .state<ScrollableState>(scrollableFinder)
-            .position;
-        expect(position.pixels, 0);
-        expect(
-          position.maxScrollExtent,
-          greaterThan(0),
-          reason: 'the setup must force real overflow, or this test would pass vacuously',
-        );
-
-        // Start the drag right at the pill's own top edge — under the old
-        // ~18px pill this would have been well outside it; now it's
-        // genuinely inside the real, hit-testable 32px pill.
-        final pillTopLeft = tester.getTopLeft(
-          find.byType(SingleChildScrollView).first,
-        );
-        final nearTopEdge = pillTopLeft + Offset(pillSize.width / 2, 4);
-        await tester.dragFrom(nearTopEdge, const Offset(-80, 0));
         await tester.pump();
 
-        expect(
-          position.pixels,
-          greaterThan(0),
-          reason: 'a drag starting near the top edge of the 32px pill must still move it',
-        );
+        expect(find.text('L1'), findsOneWidget);
+        expect(find.byType(SingleChildScrollView), findsNothing);
       },
     );
 
-    testWidgets('a short label that already fits has nothing to scroll', (
-      tester,
-    ) async {
-      final service = FakeQuizSessionService(
-        sessions: [_session(id: 's1', completed: true)], // materialIds: ['m1']
-        materials: [
-          StudyMaterial(
-            materialId: 'm1',
-            title: 'L1',
+    testWidgets(
+      'regression: a label longer than the available space becomes '
+      'exactly that width and is genuinely drag-scrollable — not '
+      'wrapped, not truncated',
+      (tester) async {
+        final longTitleMaterials = List.generate(
+          6,
+          (i) => StudyMaterial(
+            materialId: 'm$i',
+            title: 'A Genuinely Long Lecture Title That Goes On And On, Number $i',
             type: 'pptx',
             document: '',
             courseId: 'course-1',
             extractedText: '',
           ),
-        ],
-      );
-      await _pump(tester, service);
+        );
+        final session = QuizSession(
+          sessionId: 's1',
+          createdAt: DateTime(2026, 1, 1),
+          isSessionCompleted: true,
+          difficultyLevels: const [DifficultyLevel.medium],
+          email: 'a@b.com',
+          courseId: 'course-1',
+          materialIds: longTitleMaterials.map((m) => m.materialId).toList(),
+          numberOfQuestions: 10,
+          mode: Mode.exam,
+          correctAnswers: 8,
+        );
+        final service = FakeQuizSessionService(
+          sessions: [session],
+          materials: longTitleMaterials,
+        );
+        await _pump(tester, service);
+        await tester.pump();
+        await tester.pump();
 
-      final scrollableFinder = find.descendant(
-        of: find.byType(SingleChildScrollView),
-        matching: find.byType(Scrollable),
-      );
-      final position = tester.state<ScrollableState>(scrollableFinder).position;
-      expect(position.maxScrollExtent, 0);
-    });
+        final joined = longTitleMaterials.map((m) => m.title).join(', ');
+        expect(find.text(joined), findsOneWidget);
+
+        final scrollFinder = find.byType(SingleChildScrollView);
+        expect(scrollFinder, findsOneWidget);
+        expect(
+          tester.widget<SingleChildScrollView>(scrollFinder).scrollDirection,
+          Axis.horizontal,
+        );
+
+        // Genuinely draggable, not just present: a drag actually moves the
+        // scroll position away from zero — the same real-gesture check as
+        // Flashcards' own equivalent test, run here inside the real
+        // vertical ListView.separated context (not pumped in isolation),
+        // confirming the drag genuinely reaches this inner Scrollable
+        // rather than being claimed by the outer vertical list.
+        final scrollableState = tester.state<ScrollableState>(
+          find.descendant(of: scrollFinder, matching: find.byType(Scrollable)),
+        );
+        expect(scrollableState.position.pixels, 0.0);
+
+        await tester.drag(scrollFinder, const Offset(-80, 0));
+        await tester.pump();
+
+        expect(
+          scrollableState.position.pixels,
+          greaterThan(0.0),
+          reason: 'Dragging the pill did not move its scroll position — it '
+              "isn't actually scrollable.",
+        );
+      },
+    );
+
+    testWidgets(
+      'NOTE 12: the pill\'s rendered size on Quiz Sessions is pixel-'
+      'identical to the Flashcard Sessions one for the same title and '
+      'the same available width — both now build the exact same '
+      'ScrollableTitlePill widget',
+      (tester) async {
+        const title = 'Lecture 1 — Introduction';
+
+        final quizService = FakeQuizSessionService(
+          sessions: [_session(id: 's1', completed: true)], // materialIds: ['m1']
+          materials: [
+            StudyMaterial(
+              materialId: 'm1',
+              title: title,
+              type: 'pptx',
+              document: '',
+              courseId: 'course-1',
+              extractedText: '',
+            ),
+          ],
+        );
+        await _pump(tester, quizService);
+        await tester.pump();
+
+        final quizPillSize = tester.getSize(
+          find
+              .byWidgetPredicate((w) => w.runtimeType.toString() == 'ScrollableTitlePill')
+              .first,
+        );
+
+        // Wrapped in a hugging Column, same as how both real screens'
+        // cards actually place this pill — a bare Scaffold body gives it
+        // a full-screen *tight* height instead of letting it hug its own
+        // content, which would make this comparison meaningless.
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 300,
+                    child: ScrollableTitlePill(
+                      text: title,
+                      style: AppTypography.helper.copyWith(color: AppColors.navy),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        final referencePillSize = tester.getSize(
+          find.byType(ScrollableTitlePill),
+        );
+
+        expect(quizPillSize.height, referencePillSize.height);
+      },
+    );
   });
 
   testWidgets(
@@ -627,4 +965,318 @@ void main() {
       expect(service.fetchSessionsCalls, callsOnFirstLoad + 1);
     },
   );
+
+  group('Retake Stacks: focus view', () {
+    List<QuizSession> twoCompletedAttempts() => [
+      _session(
+        id: 'original',
+        completed: true,
+        retakeNumber: 0,
+        correctAnswers: 6,
+      ),
+      _session(
+        id: 'retake-1',
+        completed: true,
+        retakeNumber: 1,
+        rootSessionId: 'original',
+        retakeOfSessionId: 'original',
+        correctAnswers: 8,
+      ),
+    ];
+
+    List<QuizSession> twoInProgressAttempts() => [
+      _session(
+        id: 'original',
+        completed: false,
+        retakeNumber: 0,
+        currentQuestionIndex: 1,
+      ),
+      _session(
+        id: 'retake-1',
+        completed: false,
+        retakeNumber: 1,
+        rootSessionId: 'original',
+        retakeOfSessionId: 'original',
+        currentQuestionIndex: 3,
+      ),
+    ];
+
+    testWidgets(
+      'inside the focus view, an in-progress attempt\'s Resume button also '
+      'uses the compact metrics (40dp height, 12dp radius, 13sp font)',
+      (tester) async {
+        final service = FakeQuizSessionService(
+          sessions: twoInProgressAttempts(),
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+
+        final focusView = find.byType(SessionStackFocusView);
+        final resumeButtons = tester.widgetList<AppButton>(
+          find.descendant(
+            of: focusView,
+            matching: find.byWidgetPredicate(
+              (w) => w is AppButton && w.label.startsWith('Resume at question'),
+            ),
+          ),
+        );
+        expect(resumeButtons, hasLength(2));
+        for (final button in resumeButtons) {
+          expect(button.height, 40);
+          expect(button.borderRadius, 12);
+          expect(button.fontSize, 13);
+        }
+      },
+    );
+
+    testWidgets('tapping a stack opens its focus view', (tester) async {
+      final service = FakeQuizSessionService(sessions: twoCompletedAttempts());
+      await _pump(tester, service);
+
+      expect(find.byType(SessionStackFocusView), findsNothing);
+      await tester.tap(find.byType(SessionStackCard));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SessionStackFocusView), findsOneWidget);
+      expect(find.text('2 attempts · Completed'), findsOneWidget);
+    });
+
+    testWidgets('the × button closes the focus view', (tester) async {
+      final service = FakeQuizSessionService(sessions: twoCompletedAttempts());
+      await _pump(tester, service);
+
+      await tester.tap(find.byType(SessionStackCard));
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionStackFocusView), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SessionStackFocusView), findsNothing);
+    });
+
+    testWidgets('tapping the dimmed backdrop closes the focus view', (
+      tester,
+    ) async {
+      final service = FakeQuizSessionService(sessions: twoCompletedAttempts());
+      await _pump(tester, service);
+
+      await tester.tap(find.byType(SessionStackCard));
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionStackFocusView), findsOneWidget);
+
+      // Tap near the very top-left corner — outside the header/list
+      // content, onto the dimmed backdrop itself.
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SessionStackFocusView), findsNothing);
+    });
+
+    testWidgets(
+      'every attempt inside the focus view has its own full card: Retake '
+      'is present on completed attempts, and each has its own delete',
+      (tester) async {
+        final service = FakeQuizSessionService(sessions: twoCompletedAttempts());
+        await _pump(tester, service);
+
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+
+        final focusView = find.byType(SessionStackFocusView);
+        expect(
+          find.descendant(of: focusView, matching: find.text('View summary')),
+          findsNWidgets(2),
+        );
+        expect(
+          find.descendant(of: focusView, matching: find.text('Retake')),
+          findsNWidgets(2),
+        );
+        expect(
+          find.descendant(
+            of: focusView,
+            matching: find.byIcon(Icons.delete_outline),
+          ),
+          findsNWidgets(2),
+        );
+      },
+    );
+
+    testWidgets(
+      'deleting an attempt inside the focus view down to one closes it '
+      'and leaves a plain card behind, keeping its own label',
+      (tester) async {
+        final service = FakeQuizSessionService(sessions: twoCompletedAttempts());
+        await _pump(tester, service);
+
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+
+        final focusView = find.byType(SessionStackFocusView);
+        await tester.tap(
+          find
+              .descendant(
+                of: focusView,
+                matching: find.byIcon(Icons.delete_outline),
+              )
+              .first,
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Delete this session?'), findsOneWidget);
+        await tester.tap(find.text('Delete session'));
+        await tester.pumpAndSettle();
+
+        expect(service.deleteCalls, 1);
+        // Down to one attempt: the focus view closes itself, and the
+        // remaining attempt renders as a plain (non-stack) card.
+        expect(find.byType(SessionStackFocusView), findsNothing);
+        expect(find.byType(SessionStackCard), findsNothing);
+        expect(find.textContaining('RETAKE'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'reduced motion: the stack and its focus view render without error',
+      (tester) async {
+        final service = FakeQuizSessionService(sessions: twoCompletedAttempts());
+        await tester.pumpWidget(
+          MediaQuery(
+            data: const MediaQueryData(disableAnimations: true),
+            child: MaterialApp(
+              home: QuizSessionsScreen(
+                courseId: 'course-1',
+                courseName: 'IS230',
+                service: service,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.byType(SessionStackFocusView), findsOneWidget);
+
+        await tester.tap(find.byIcon(Icons.close));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.byType(SessionStackFocusView), findsNothing);
+      },
+    );
+
+    testWidgets('RTL: the stack and its focus view render without error', (
+      tester,
+    ) async {
+      final service = FakeQuizSessionService(sessions: twoCompletedAttempts());
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Directionality(
+            textDirection: TextDirection.rtl,
+            child: QuizSessionsScreen(
+              courseId: 'course-1',
+              courseName: 'IS230',
+              service: service,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byType(SessionStackCard));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byType(SessionStackFocusView), findsOneWidget);
+    });
+
+    // Quiz's own baseline for the same geometry contract Flashcards was
+    // found to violate (see flashcard_sessions_screen_test.dart's matching
+    // tests) — Quiz's _SessionCard never carried its own margin, relying
+    // solely on ListView.separated's 12dp gap, so this has always held;
+    // kept here so a future change to either screen or to the shared
+    // SessionStackCard can't silently break it on this side either.
+    testWidgets(
+      "a stacked top card's peek layer sticks out exactly 8dp below the "
+      'visible card',
+      (tester) async {
+        final service = FakeQuizSessionService(
+          sessions: twoCompletedAttempts(),
+        );
+        await _pump(tester, service);
+
+        final stack = find.byType(SessionStackCard);
+        final peekLayer = find.descendant(
+          of: stack,
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is Container &&
+                w.decoration is BoxDecoration &&
+                (w.decoration as BoxDecoration).border?.top.color ==
+                    AppColors.borderDefault,
+          ),
+        );
+        final visibleCard = find.descendant(
+          of: stack,
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is Container &&
+                w.decoration is BoxDecoration &&
+                (w.decoration as BoxDecoration).border?.top.color ==
+                    AppColors.cardTint,
+          ),
+        );
+        expect(peekLayer, findsOneWidget);
+        expect(visibleCard, findsOneWidget);
+
+        final peekBottom = tester.getRect(peekLayer).bottom;
+        final cardBottom = tester.getRect(visibleCard).bottom;
+        expect(peekBottom - cardBottom, 8);
+      },
+    );
+
+    testWidgets(
+      'the gap between a stack and the next card in the same section '
+      "matches a plain card's own list gap (12dp)",
+      (tester) async {
+        final lone = QuizSession(
+          sessionId: 'lone',
+          createdAt: DateTime(2025, 12, 1),
+          isSessionCompleted: true,
+          difficultyLevels: const [DifficultyLevel.medium],
+          email: 'a@b.com',
+          courseId: 'course-1',
+          materialIds: const ['m1'],
+          numberOfQuestions: 7,
+          mode: Mode.exam,
+          correctAnswers: 5,
+        );
+        final service = FakeQuizSessionService(
+          sessions: [...twoCompletedAttempts(), lone],
+        );
+        await _pump(tester, service);
+
+        final stackBottom = tester
+            .getRect(find.byType(SessionStackCard))
+            .bottom;
+        final loneCard = find.ancestor(
+          of: find.text('7 questions'),
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is Container &&
+                w.decoration is BoxDecoration &&
+                (w.decoration as BoxDecoration).border?.top.color ==
+                    AppColors.cardTint,
+          ),
+        );
+        expect(loneCard, findsOneWidget);
+        final loneCardTop = tester.getRect(loneCard).top;
+
+        expect(loneCardTop - stackBottom, 12);
+      },
+    );
+  });
 }

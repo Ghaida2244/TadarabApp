@@ -39,10 +39,61 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
   bool _saving = false;
   String? _errorMessage;
 
+  /// Key on the scrollable content's own `Column`, used once (see
+  /// [_recordBaseContentHeight]) to measure its real rendered height so
+  /// [_gapFor] can turn "how much room is actually free" into a gap size.
+  final _contentKey = GlobalKey();
+
+  static const _compactGap = 22.0;
+  static const _maxGap = 56.0;
+
+  /// The content's true height *excluding* the two section gaps — derived
+  /// once from a real layout pass (see [_recordBaseContentHeight]), then
+  /// reused as a pure input to [_gapFor] for any available height
+  /// afterwards (including a shrunk viewport once the keyboard opens),
+  /// with no further measuring needed.
+  double? _baseContentHeight;
+  bool _measurementScheduled = false;
+
   @override
   void dispose() {
     _nameController.dispose();
     super.dispose();
+  }
+
+  /// How big to make each of the two inter-section gaps, given the real
+  /// bounded height actually available (from the outer `LayoutBuilder`,
+  /// not the `SingleChildScrollView`'s always-unbounded child slot).
+  /// Distributes a quarter of whatever's left over after the content's
+  /// own height into the gaps, within [_compactGap]..[_maxGap] — so a
+  /// short viewport (free space negative or small) falls back to
+  /// [_compactGap], and the page is always still inside a
+  /// `SingleChildScrollView` regardless, so it can never overflow even if
+  /// this guesses too generously.
+  double _gapFor(double availableHeight) {
+    final base = _baseContentHeight;
+    if (base == null) return _compactGap;
+    final freeSpace = availableHeight - base;
+    return (_compactGap + freeSpace * 0.25).clamp(_compactGap, _maxGap);
+  }
+
+  /// Schedules a one-time measurement of the content's real height (at
+  /// whatever gap was in effect for that first layout — always
+  /// [_compactGap], since [_gapFor] returns that until [_baseContentHeight]
+  /// is known) right after the current frame, then backs out the
+  /// gap-free baseline and triggers the one rebuild that applies the real
+  /// gap. A no-op once [_baseContentHeight] is set, or while a prior call
+  /// is already waiting on its callback.
+  void _recordBaseContentHeight() {
+    if (_baseContentHeight != null || _measurementScheduled) return;
+    _measurementScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _measurementScheduled = false;
+      if (!mounted) return;
+      final height = _contentKey.currentContext?.size?.height;
+      if (height == null) return;
+      setState(() => _baseContentHeight = height - 2 * _compactGap);
+    });
   }
 
   String get _name => _nameController.text.trim();
@@ -96,87 +147,117 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.homeBackground,
       body: SafeArea(
         child: Column(
           children: [
             _Header(onClose: () => Navigator.of(context).pop(false)),
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Course name',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
-                    ),
-                    const SizedBox(height: 8),
-                    _NameField(
-                      controller: _nameController,
-                      hasError: _isDuplicateName,
-                      onChanged: (_) => setState(() {}),
-                    ),
-                    if (_isDuplicateName) ...[
-                      const SizedBox(height: 8),
-                      const Text(
-                        'You already have a course named this',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.errorText,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 22),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              // LayoutBuilder sits outside the SingleChildScrollView so
+              // `constraints.maxHeight` is the real, bounded viewport
+              // height (the scroll view itself would report unbounded
+              // height for anything measured from inside its child slot).
+              // `_gapFor` turns that into a proportional gap once the
+              // content's own height is known (see
+              // `_recordBaseContentHeight`); until then, and on any short
+              // viewport, it falls back to the original compact spacing.
+              // The content is still inside a SingleChildScrollView either
+              // way, so neither choice can ever overflow.
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final sectionGap = _gapFor(constraints.maxHeight);
+                  _recordBaseContentHeight();
+                  return SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      key: _contentKey,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'Course color',
+                          'Course name',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
+                        const SizedBox(height: 8),
+                        _NameField(
+                          controller: _nameController,
+                          hasError: _isDuplicateName,
+                          onChanged: (_) => setState(() {}),
+                        ),
+                        if (_isDuplicateName) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                            'You already have a course named this',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.errorText,
+                            ),
+                          ),
+                        ],
+                        SizedBox(
+                          key: const ValueKey('section-gap-1'),
+                          height: sectionGap,
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Course color',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            Text(
+                              'Any color',
+                              style: AppTypography.subtitle.copyWith(
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        _ColorGrid(
+                          selectedColor: _selectedColor,
+                          existingCourses: widget.existingCourses,
+                          onPick: _pickColor,
+                          onPickCustom: _pickCustomColor,
+                        ),
+                        const SizedBox(height: 10),
                         Text(
-                          'Any color',
+                          'Colors already used by another course are locked.',
                           style: AppTypography.subtitle.copyWith(fontSize: 12),
                         ),
+                        SizedBox(
+                          key: const ValueKey('section-gap-2'),
+                          height: sectionGap,
+                        ),
+                        const Text(
+                          'Preview',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _PreviewCard(name: _name, colorHex: _selectedColor),
+                        if (_errorMessage != null) ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            _errorMessage!,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.errorText,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    _ColorGrid(
-                      selectedColor: _selectedColor,
-                      existingCourses: widget.existingCourses,
-                      onPick: _pickColor,
-                      onPickCustom: _pickCustomColor,
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Colors already used by another course are locked.',
-                      style: AppTypography.subtitle.copyWith(fontSize: 12),
-                    ),
-                    const SizedBox(height: 22),
-                    const Text(
-                      'Preview',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
-                    ),
-                    const SizedBox(height: 10),
-                    _PreviewCard(name: _name, colorHex: _selectedColor),
-                    if (_errorMessage != null) ...[
-                      const SizedBox(height: 16),
-                      Text(
-                        _errorMessage!,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.errorText,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+                  );
+                },
               ),
             ),
             Container(
@@ -270,6 +351,7 @@ class _NameField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      key: const ValueKey('course-name-field-box'),
       height: 54,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
@@ -280,18 +362,36 @@ class _NameField extends StatelessWidget {
           width: 2,
         ),
       ),
-      child: TextField(
-        controller: controller,
-        onChanged: onChanged,
-        style: AppTypography.fieldInput,
-        decoration: InputDecoration(
-          isCollapsed: true,
-          border: InputBorder.none,
-          hintText: 'e.g. IS230',
-          hintStyle: AppTypography.fieldInput.copyWith(
-            color: AppColors.placeholder,
+      // A bare `TextField` as this Container's direct child has nothing to
+      // center *within* — `textAlignVertical` alone doesn't fix it, since
+      // (per Container.build()'s own widget composition, with `alignment`
+      // left unset here) there's no `Align` inserted around the child, so
+      // the field just paints at its own natural single-line height
+      // starting from this box's top edge. `AppTextField` avoids this by
+      // wrapping its `TextField` in a `Row` (default `crossAxisAlignment:
+      // center`) — mirroring that exact, already-working structure here
+      // centers both the hint and the typed text in the field's full
+      // height, regardless of what `textAlignVertical` does on its own.
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              onChanged: onChanged,
+              style: AppTypography.fieldInput,
+              textAlignVertical: TextAlignVertical.center,
+              decoration: InputDecoration(
+                isCollapsed: true,
+                border: InputBorder.none,
+                hintText: 'e.g. IS230',
+                hintStyle: AppTypography.fieldInput.copyWith(
+                  color: AppColors.placeholder,
+                ),
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

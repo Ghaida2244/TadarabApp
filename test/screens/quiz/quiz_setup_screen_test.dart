@@ -107,8 +107,6 @@ void main() {
       );
       await _pump(tester, service);
 
-      await tester.tap(find.text('Select materials'));
-      await tester.pumpAndSettle();
       await tester.tap(find.text('Lecture 1 — Intro'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Generate quiz'));
@@ -127,7 +125,8 @@ void main() {
     },
   );
 
-  testWidgets('materials expand/select, difficulty and count all drive Generate', (tester) async {
+  testWidgets('materials list is already open on entry, and selecting a '
+      'material there drives Generate', (tester) async {
     final service = FakeQuizSessionService(
       materials: [_material],
       createSessionResult: GeneratedSessionResult(
@@ -139,12 +138,9 @@ void main() {
     );
     await _pump(tester, service);
 
-    // Materials collapsed by default.
+    // NOTE 13e: open immediately, matching the Flashcards setup screen —
+    // no need to tap the summary row first to reveal the material.
     expect(find.text('Select materials'), findsOneWidget);
-    expect(find.text('Lecture 1 — Intro'), findsNothing);
-
-    await tester.tap(find.text('Select materials'));
-    await tester.pumpAndSettle();
     expect(find.text('Lecture 1 — Intro'), findsOneWidget);
 
     await tester.tap(find.text('Lecture 1 — Intro'));
@@ -156,43 +152,89 @@ void main() {
     expect(find.text('Quiz setup'), findsNothing); // navigated away (pushReplacement)
   });
 
+  testWidgets(
+    'the materials list still opens on entry even when the course has no '
+    'materials yet, showing the empty-state message',
+    (tester) async {
+      await _pump(tester, FakeQuizSessionService(materials: const []));
+
+      expect(
+        find.text('No materials available for this course yet.'),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets('edge case: the last selected difficulty cannot be deselected', (tester) async {
     await _pump(tester, FakeQuizSessionService(materials: [_material]));
 
-    // Medium is selected by default; tapping it again should not clear it.
-    await tester.tap(find.text('Medium'));
+    // Easy is selected by default (NOTE 13a); tapping it again should not
+    // clear it.
+    await tester.tap(find.text('Easy'));
     await tester.pumpAndSettle();
 
-    final mediumContainer = tester.widget<Container>(
+    final easyContainer = tester.widget<Container>(
       find
-          .ancestor(of: find.text('Medium'), matching: find.byType(Container))
+          .ancestor(of: find.text('Easy'), matching: find.byType(Container))
           .first,
     );
-    final decoration = mediumContainer.decoration! as BoxDecoration;
+    final decoration = easyContainer.decoration! as BoxDecoration;
     // Still selected (navy fill), not deselected to white.
     expect(decoration.color, isNot(Colors.white));
   });
 
-  testWidgets('normal case: the count stepper respects the minimum of 5', (tester) async {
+  testWidgets('normal case: default count is 10, and the stepper respects '
+      'the minimum of 5', (tester) async {
     await _pump(tester, FakeQuizSessionService(materials: [_material]));
 
-    expect(find.text('5'), findsOneWidget);
+    // NOTE 13b: default count is 10 on both setup screens.
+    expect(find.text('10'), findsOneWidget);
     for (var i = 0; i < 5; i++) {
       await tester.tap(find.byIcon(Icons.remove));
       await tester.pump();
     }
+    expect(find.text('5'), findsOneWidget);
+    // At the minimum, the decrement button is disabled (matching the
+    // Flashcards counter — no further taps change anything).
+    await tester.tap(find.byIcon(Icons.remove));
+    await tester.pump();
     expect(find.text('5'), findsOneWidget); // never drops below 5
   });
 
-  testWidgets('normal case: incrementing the stepper has no upper cap', (tester) async {
-    await _pump(tester, FakeQuizSessionService(materials: [_material]));
+  testWidgets(
+    'normal case: the stepper now has an upper cap of 150, matching the '
+    'Flashcards counter (no more "no upper limit")',
+    (tester) async {
+      await _pump(tester, FakeQuizSessionService(materials: [_material]));
 
-    for (var i = 0; i < 20; i++) {
+      // NOTE 13c: the "Minimum 5 — no upper limit" helper text is gone.
+      expect(find.textContaining('no upper limit'), findsNothing);
+
+      await tester.enterText(find.byKey(const ValueKey('count-field')), '150');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(find.text('150'), findsOneWidget);
+
+      // At the maximum, the increment button is disabled.
       await tester.tap(find.byIcon(Icons.add));
       await tester.pump();
-    }
-    expect(find.text('25'), findsOneWidget);
-  });
+      expect(find.text('150'), findsOneWidget); // never exceeds 150
+    },
+  );
+
+  testWidgets(
+    'invalid or empty typed input reverts to the last valid count once '
+    'committed, matching the Flashcards counter',
+    (tester) async {
+      await _pump(tester, FakeQuizSessionService(materials: [_material]));
+
+      await tester.enterText(find.byKey(const ValueKey('count-field')), '');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+
+      expect(find.text('10'), findsOneWidget); // reverted, not left empty
+    },
+  );
 
   testWidgets('extra instructions: counter warns approaching, then at, the 300 limit', (tester) async {
     await _pump(tester, FakeQuizSessionService(materials: [_material]));
@@ -232,8 +274,6 @@ void main() {
     );
     await _pump(tester, service);
 
-    await tester.tap(find.text('Select materials'));
-    await tester.pumpAndSettle();
     await tester.tap(find.text('Lecture 1 — Intro'));
     await tester.pumpAndSettle();
 
@@ -266,8 +306,6 @@ void main() {
       );
       await _pump(tester, service);
 
-      await tester.tap(find.text('Select materials'));
-      await tester.pumpAndSettle();
       await tester.tap(find.text('Lecture 1 — Intro'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Generate quiz'));
@@ -297,8 +335,6 @@ void main() {
       );
       await _pump(tester, service);
 
-      await tester.tap(find.text('Select materials'));
-      await tester.pumpAndSettle();
       await tester.tap(find.text('Lecture 1 — Intro'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Generate quiz'));
@@ -327,8 +363,6 @@ void main() {
       );
       await _pump(tester, service);
 
-      await tester.tap(find.text('Select materials'));
-      await tester.pumpAndSettle();
       await tester.tap(find.text('Lecture 1 — Intro'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Generate quiz'));
@@ -354,8 +388,6 @@ void main() {
       );
       await _pump(tester, service);
 
-      await tester.tap(find.text('Select materials'));
-      await tester.pumpAndSettle();
       await tester.tap(find.text('Lecture 1 — Intro'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Generate quiz'));
@@ -377,8 +409,6 @@ void main() {
     );
     await _pump(tester, service);
 
-    await tester.tap(find.text('Select materials'));
-    await tester.pumpAndSettle();
     await tester.tap(find.text('Lecture 1 — Intro'));
     await tester.pumpAndSettle();
 
@@ -401,8 +431,6 @@ void main() {
     );
     await _pump(tester, service);
 
-    await tester.tap(find.text('Select materials'));
-    await tester.pumpAndSettle();
     await tester.tap(find.text('Lecture 1 — Intro'));
     await tester.pumpAndSettle();
 

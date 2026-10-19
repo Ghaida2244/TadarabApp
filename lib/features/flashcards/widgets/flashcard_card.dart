@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/app_theme.dart';
+import '../../../widgets/draggable_overflow_text.dart';
 
 /// Colors from `Tadarab Phase 2b - Flashcards.dc.html`'s flip-card face,
 /// not in `AppColors` (Flashcards-only, avoids touching the shared frozen
@@ -92,10 +93,11 @@ class FlashcardCard extends StatelessWidget {
         Text(
           frontText,
           textAlign: TextAlign.center,
+          // NOTE 10: fontSize 20 / w800 (was 22 / w900).
           style: const TextStyle(
             fontFamily: 'Nunito',
-            fontSize: 22,
-            fontWeight: FontWeight.w900,
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
             height: 1.4,
             color: AppColors.navy,
           ),
@@ -122,10 +124,13 @@ class FlashcardCard extends StatelessWidget {
         Text(
           backText,
           textAlign: TextAlign.center,
+          // NOTE 10: fontSize 20 / w800 (was 22 / w900) — matches _front()'s
+          // question text style, per the existing "answer matches question
+          // style" invariant.
           style: const TextStyle(
             fontFamily: 'Nunito',
-            fontSize: 22,
-            fontWeight: FontWeight.w900,
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
             height: 1.4,
             color: AppColors.navy,
           ),
@@ -166,16 +171,15 @@ class FlashcardCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      sourceLocation,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    DraggableOverflowText(
+                      text: sourceLocation,
                       style: const TextStyle(
                         fontFamily: 'Nunito',
                         fontSize: 13,
                         fontWeight: FontWeight.w900,
                         color: Colors.white,
                       ),
+                      fadeColor: AppColors.navy,
                     ),
                   ],
                 ),

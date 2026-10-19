@@ -63,6 +63,30 @@ void main() {
       final stillAnswered = q.copyWith(studentAnswer: null);
       expect(stillAnswered.studentAnswer, 'A programming language');
     });
+
+    test(
+      'normal case: options replaces the whole option list, e.g. a '
+      'practice-round reshuffle',
+      () {
+        final q = aQuestion();
+        final reordered = q.copyWith(
+          options: const ['A programming language', 'A collection of related data'],
+        );
+
+        expect(reordered.options, [
+          'A programming language',
+          'A collection of related data',
+        ]);
+        expect(reordered.correctAnswer, q.correctAnswer);
+        expect(reordered.questionId, q.questionId);
+      },
+    );
+
+    test('edge case: omitting options preserves the existing order', () {
+      final q = aQuestion();
+      final flagged = q.copyWith(isReported: true);
+      expect(flagged.options, q.options);
+    });
   });
 
   group('asUnanswered', () {
