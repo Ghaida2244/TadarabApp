@@ -1,7 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../features/flashcards/flashcard_navigation.dart';
 import '../../features/flashcards/screens/flashcard_sessions_screen.dart';
+import '../../logic/materials_search.dart';
 import '../../models/course.dart';
 import '../../models/study_material.dart';
 import '../../services/courses_service.dart';
@@ -51,7 +54,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     widget.uid,
     widget.course.courseId,
   );
-  String? _typeFilter;
   bool _changed = false;
   bool _deleting = false;
 
@@ -59,6 +61,34 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   /// screen-wide flag like [_deleting]) so deleting one material doesn't
   /// freeze the rest of the list.
   final Set<String> _deletingMaterialIds = {};
+
+  // Search/sort are deliberately plain State fields, not persisted
+  // anywhere — leaving this screen (it's always pushed, never kept alive
+  // in an IndexedStack the way Home's tabs are) disposes this whole State,
+  // so "reset when leaving the screen" falls out of the normal widget
+  // lifecycle with no extra code needed.
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  MaterialSortOrder _sortOrder = MaterialSortOrder.newestFirst;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    setState(() => _searchQuery = value);
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() => _searchQuery = '');
+  }
+
+  void _onSortChanged(MaterialSortOrder order) {
+    setState(() => _sortOrder = order);
+  }
 
   void _reload() {
     setState(() {
@@ -202,28 +232,19 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                         : hasError
                         ? _ErrorState(onRetry: _reload)
                         : hasMaterials
-                        ? SingleChildScrollView(
-                            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _StudyTools(
-                                  unlocked: true,
-                                  onQuizTap: _openQuiz,
-                                  onFlashcardsTap: _openFlashcards,
-                                ),
-                                const SizedBox(height: 18),
-                                _MaterialsSection(
-                                  materials: materials,
-                                  typeFilter: _typeFilter,
-                                  onTypeFilterChanged: (f) =>
-                                      setState(() => _typeFilter = f),
-                                  onUpload: () => _openUpload(materials),
-                                  onDeleteMaterial: _confirmDeleteMaterial,
-                                  deletingMaterialIds: _deletingMaterialIds,
-                                ),
-                              ],
-                            ),
+                        ? _MaterialsScrollView(
+                            materials: materials,
+                            searchController: _searchController,
+                            searchQuery: _searchQuery,
+                            onSearchChanged: _onSearchChanged,
+                            onClearSearch: _clearSearch,
+                            sortOrder: _sortOrder,
+                            onSortChanged: _onSortChanged,
+                            onUpload: () => _openUpload(materials),
+                            onDeleteMaterial: _confirmDeleteMaterial,
+                            deletingMaterialIds: _deletingMaterialIds,
+                            onQuizTap: _openQuiz,
+                            onFlashcardsTap: _openFlashcards,
                           )
                         // No materials yet: Study Tools stays fixed at the
                         // top (locked, as always); the "Add your first
@@ -274,19 +295,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                               padding: const EdgeInsets.all(
                                                 20,
                                               ),
-                                              child: _MaterialsSection(
-                                                materials: materials,
-                                                typeFilter: _typeFilter,
-                                                onTypeFilterChanged: (f) =>
-                                                    setState(
-                                                      () => _typeFilter = f,
-                                                    ),
+                                              child: _EmptyMaterials(
                                                 onUpload: () =>
                                                     _openUpload(materials),
-                                                onDeleteMaterial:
-                                                    _confirmDeleteMaterial,
-                                                deletingMaterialIds:
-                                                    _deletingMaterialIds,
                                               ),
                                             ),
                                           ],
@@ -535,157 +546,541 @@ class _StudyToolTile extends StatelessWidget {
   }
 }
 
-class _MaterialsSection extends StatelessWidget {
-  const _MaterialsSection({
+/// The "has materials" state's whole scrollable body: Study Tools and the
+/// "Course materials"/Upload row scroll away normally, while the search +
+/// sort row stays pinned under the course header (courses_material_
+/// upload_spec's materials-search redesign, variant 1a "Filled pill" —
+/// docs/mockups/design-handoff_MaterialsShearch/). A single outer
+/// GestureDetector dismisses the keyboard on any tap that isn't claimed by
+/// something more specific first (the search field itself, the sort
+/// button, a row's delete button, ...) — `translucent` so it still lets
+/// those claim the tap rather than racing them.
+class _MaterialsScrollView extends StatelessWidget {
+  const _MaterialsScrollView({
     required this.materials,
-    required this.typeFilter,
-    required this.onTypeFilterChanged,
+    required this.searchController,
+    required this.searchQuery,
+    required this.onSearchChanged,
+    required this.onClearSearch,
+    required this.sortOrder,
+    required this.onSortChanged,
     required this.onUpload,
     required this.onDeleteMaterial,
     required this.deletingMaterialIds,
+    required this.onQuizTap,
+    required this.onFlashcardsTap,
   });
 
   final List<StudyMaterial> materials;
-  final String? typeFilter;
-  final ValueChanged<String?> onTypeFilterChanged;
+  final TextEditingController searchController;
+  final String searchQuery;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onClearSearch;
+  final MaterialSortOrder sortOrder;
+  final ValueChanged<MaterialSortOrder> onSortChanged;
   final VoidCallback onUpload;
   final ValueChanged<StudyMaterial> onDeleteMaterial;
   final Set<String> deletingMaterialIds;
+  final VoidCallback onQuizTap;
+  final VoidCallback onFlashcardsTap;
 
   @override
   Widget build(BuildContext context) {
-    if (materials.isEmpty) {
-      return _EmptyMaterials(onUpload: onUpload);
-    }
+    final visible = sortMaterials(
+      filterMaterialsByQuery(materials, searchQuery),
+      sortOrder,
+    );
+    // Scales with the system text size (not just a fixed 46dp) so the
+    // pinned row can't clip/overflow under a large accessibility font —
+    // 46 is the design's own value at the default (1.0) scale.
+    final scaledFontSize = MediaQuery.textScalerOf(
+      context,
+    ).scale(_kSearchFieldFontSize);
+    final fieldHeight = math.max(46.0, scaledFontSize * 1.6 + 20.0);
+    final headerExtent = 12 + fieldHeight + 10;
 
-    final filtered = typeFilter == null
-        ? materials
-        : materials.where((m) => m.type == typeFilter).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'Course materials',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
-            ),
-            GestureDetector(
-              onTap: onUpload,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                decoration: BoxDecoration(
-                  color: AppColors.navy,
-                  borderRadius: BorderRadius.circular(999),
-                  boxShadow: const [
-                    BoxShadow(color: AppColors.navyShadow, offset: Offset(0, 3)),
-                  ],
-                ),
-                child: const Text(
-                  '+ Upload',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      behavior: HitTestBehavior.translucent,
+      child: CustomScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _StudyTools(
+                    unlocked: true,
+                    onQuizTap: onQuizTap,
+                    onFlashcardsTap: onFlashcardsTap,
                   ),
-                ),
+                  const SizedBox(height: 18),
+                  _MaterialsSectionHeader(onUpload: onUpload),
+                ],
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _TypeFilterTabs(
-          materials: materials,
-          selected: typeFilter,
-          onChanged: onTypeFilterChanged,
-        ),
-        const SizedBox(height: 12),
-        for (final material in filtered) ...[
-          _MaterialRow(
-            material: material,
-            onDelete: () => onDeleteMaterial(material),
-            isDeleting: deletingMaterialIds.contains(material.materialId),
           ),
-          const SizedBox(height: 10),
-        ],
-      ],
-    );
-  }
-}
-
-class _TypeFilterTabs extends StatelessWidget {
-  const _TypeFilterTabs({
-    required this.materials,
-    required this.selected,
-    required this.onChanged,
-  });
-
-  final List<StudyMaterial> materials;
-  final String? selected;
-  final ValueChanged<String?> onChanged;
-
-  int _countFor(String? type) => type == null
-      ? materials.length
-      : materials.where((m) => m.type == type).length;
-
-  @override
-  Widget build(BuildContext context) {
-    const types = <String?>[null, 'pptx', 'docx', 'txt'];
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (final type in types) ...[
-            _FilterChip(
-              label: type == null ? 'All' : type.toUpperCase(),
-              count: _countFor(type),
-              active: selected == type,
-              onTap: () => onChanged(type),
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _SearchSortHeaderDelegate(
+              extent: headerExtent,
+              child: _SearchSortRow(
+                controller: searchController,
+                query: searchQuery,
+                onChanged: onSearchChanged,
+                onClear: onClearSearch,
+                sortOrder: sortOrder,
+                onSortChanged: onSortChanged,
+                fieldHeight: fieldHeight,
+              ),
             ),
-            const SizedBox(width: 8),
-          ],
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+            sliver: visible.isEmpty
+                ? SliverToBoxAdapter(
+                    child: _NoResultsCard(
+                      query: searchQuery,
+                      onClear: onClearSearch,
+                    ),
+                  )
+                : SliverList.separated(
+                    itemCount: visible.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, i) {
+                      final material = visible[i];
+                      return _MaterialRow(
+                        material: material,
+                        query: searchQuery,
+                        onDelete: () => onDeleteMaterial(material),
+                        isDeleting: deletingMaterialIds.contains(
+                          material.materialId,
+                        ),
+                      );
+                    },
+                  ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _FilterChip extends StatelessWidget {
-  const _FilterChip({
-    required this.label,
-    required this.count,
-    required this.active,
-    required this.onTap,
-  });
+const _kSearchFieldFontSize = 15.0;
 
-  final String label;
-  final int count;
-  final bool active;
-  final VoidCallback onTap;
+/// Fixed-height sliver that pins the search + sort row under the header —
+/// [extent] is computed by the caller (see [_MaterialsScrollView]) from the
+/// current text scale, so it's never a compile-time constant here.
+class _SearchSortHeaderDelegate extends SliverPersistentHeaderDelegate {
+  _SearchSortHeaderDelegate({required this.extent, required this.child});
+
+  final double extent;
+  final Widget child;
+
+  @override
+  double get minExtent => extent;
+
+  @override
+  double get maxExtent => extent;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 10),
+      child: child,
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _SearchSortHeaderDelegate oldDelegate) {
+    return extent != oldDelegate.extent || child != oldDelegate.child;
+  }
+}
+
+class _MaterialsSectionHeader extends StatelessWidget {
+  const _MaterialsSectionHeader({required this.onUpload});
+
+  final VoidCallback onUpload;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: active ? AppColors.navy : Colors.white,
-          borderRadius: BorderRadius.circular(999),
-          border: active
-              ? null
-              : Border.all(color: AppColors.borderDefault, width: 2),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text(
+          'Course materials',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
         ),
-        child: Text(
-          '$label $count',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w900,
-            color: active ? Colors.white : AppColors.disabledMuted,
+        GestureDetector(
+          onTap: onUpload,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            decoration: BoxDecoration(
+              color: AppColors.navy,
+              borderRadius: BorderRadius.circular(999),
+              boxShadow: const [
+                BoxShadow(color: AppColors.navyShadow, offset: Offset(0, 3)),
+              ],
+            ),
+            child: const Text(
+              '+ Upload',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+              ),
+            ),
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// The filled-pill search field + round sort button (variant 1a). Owns its
+/// own [FocusNode] purely for the field's focused-vs-not visual state
+/// (border/background) — the query text itself is fully controlled by the
+/// caller via [controller]/[onChanged], so nothing here is lost if this
+/// widget rebuilds.
+class _SearchSortRow extends StatefulWidget {
+  const _SearchSortRow({
+    required this.controller,
+    required this.query,
+    required this.onChanged,
+    required this.onClear,
+    required this.sortOrder,
+    required this.onSortChanged,
+    required this.fieldHeight,
+  });
+
+  final TextEditingController controller;
+  final String query;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+  final MaterialSortOrder sortOrder;
+  final ValueChanged<MaterialSortOrder> onSortChanged;
+  final double fieldHeight;
+
+  @override
+  State<_SearchSortRow> createState() => _SearchSortRowState();
+}
+
+class _SearchSortRowState extends State<_SearchSortRow> {
+  final FocusNode _focusNode = FocusNode();
+  bool _focused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_handleFocusChange);
+  }
+
+  void _handleFocusChange() {
+    if (_focused != _focusNode.hasFocus) {
+      setState(() => _focused = _focusNode.hasFocus);
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_handleFocusChange);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasQuery = widget.query.isNotEmpty;
+    final iconInk = _focused || hasQuery
+        ? AppColors.navy
+        : AppColors.placeholder;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Container(
+            height: widget.fieldHeight,
+            padding: const EdgeInsets.only(left: 14, right: 8),
+            decoration: BoxDecoration(
+              color: _focused ? Colors.white : AppColors.chipBackground,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: _focused ? AppColors.navy : Colors.transparent,
+                width: 2,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.search, size: 18, color: iconInk),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Semantics(
+                    label: 'Search materials',
+                    textField: true,
+                    child: TextField(
+                      controller: widget.controller,
+                      focusNode: _focusNode,
+                      onChanged: widget.onChanged,
+                      style: const TextStyle(
+                        fontFamily: 'Nunito',
+                        fontSize: _kSearchFieldFontSize,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.navy,
+                      ),
+                      decoration: const InputDecoration(
+                        hintText: 'Search materials',
+                        hintStyle: TextStyle(
+                          fontFamily: 'Nunito',
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.placeholder,
+                        ),
+                        isDense: true,
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ),
+                ),
+                if (hasQuery) ...[
+                  const SizedBox(width: 6),
+                  Semantics(
+                    button: true,
+                    label: 'Clear search',
+                    child: GestureDetector(
+                      onTap: widget.onClear,
+                      child: Container(
+                        width: 26,
+                        height: 26,
+                        alignment: Alignment.center,
+                        decoration: const BoxDecoration(
+                          color: AppColors.borderLight,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          size: 12,
+                          color: AppColors.navy,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        _SortButton(
+          sortOrder: widget.sortOrder,
+          onSortChanged: widget.onSortChanged,
+          size: widget.fieldHeight,
+        ),
+      ],
+    );
+  }
+}
+
+const _kSortOptionLabels = {
+  MaterialSortOrder.newestFirst: 'Newest first',
+  MaterialSortOrder.oldestFirst: 'Oldest first',
+  MaterialSortOrder.aToZ: 'A to Z',
+};
+
+class _SortButton extends StatelessWidget {
+  const _SortButton({
+    required this.sortOrder,
+    required this.onSortChanged,
+    required this.size,
+  });
+
+  final MaterialSortOrder sortOrder;
+  final ValueChanged<MaterialSortOrder> onSortChanged;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    // "Applied" state (1a): the default (newestFirst) looks like the
+    // field's own idle fill; any other choice turns the button solid navy
+    // — no red dot (that's the outlined variant's own cue, not this one's).
+    final applied = sortOrder != MaterialSortOrder.newestFirst;
+
+    return Semantics(
+      label: 'Sort materials',
+      button: true,
+      child: PopupMenuButton<MaterialSortOrder>(
+        tooltip: '',
+        initialValue: sortOrder,
+        onSelected: onSortChanged,
+        offset: Offset(0, size + 8),
+        color: Colors.white,
+        padding: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: const BorderSide(color: AppColors.cardTint, width: 2),
+        ),
+        itemBuilder: (context) => [
+          const PopupMenuItem<MaterialSortOrder>(
+            enabled: false,
+            height: 30,
+            child: Text(
+              'SORT BY',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.06 * 11,
+                color: AppColors.placeholder,
+              ),
+            ),
+          ),
+          for (final order in MaterialSortOrder.values)
+            PopupMenuItem<MaterialSortOrder>(
+              value: order,
+              padding: EdgeInsets.zero,
+              child: _SortMenuRow(
+                label: _kSortOptionLabels[order]!,
+                selected: order == sortOrder,
+              ),
+            ),
+        ],
+        child: Container(
+          width: size,
+          height: size,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: applied ? AppColors.navy : AppColors.chipBackground,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Icon(
+            Icons.sort,
+            size: 19,
+            color: applied ? Colors.white : AppColors.navy,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SortMenuRow extends StatelessWidget {
+  const _SortMenuRow({required this.label, required this.selected});
+
+  final String label;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      selected: selected,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        height: 44,
+        decoration: BoxDecoration(
+          color: selected ? AppColors.cardTint : null,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontFamily: 'Nunito',
+                  fontSize: 14,
+                  fontWeight: selected ? FontWeight.w900 : FontWeight.w800,
+                  color: AppColors.navy,
+                ),
+              ),
+            ),
+            if (selected)
+              const Icon(Icons.check, size: 17, color: AppColors.navy),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The "5 · No results" state: a search query that matched nothing. Same
+/// dashed-border, calm-empty-state look as [_EmptyMaterials] (reuses
+/// [AppColors.textOnDisabled] for the border, not a new color).
+class _NoResultsCard extends StatelessWidget {
+  const _NoResultsCard({required this.query, required this.onClear});
+
+  final String query;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 22),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.textOnDisabled, width: 2),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.cardTint,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Icon(
+              Icons.search,
+              size: 26,
+              color: AppColors.navy,
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'No materials match',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 230),
+            child: Text(
+              'Nothing in this course has "${query.trim()}" in its name. '
+              'Check the spelling or try a shorter word.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textSecondary,
+                height: 1.5,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          GestureDetector(
+            onTap: onClear,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+              child: Text(
+                'Clear search',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.red,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -694,16 +1089,38 @@ class _FilterChip extends StatelessWidget {
 class _MaterialRow extends StatelessWidget {
   const _MaterialRow({
     required this.material,
+    required this.query,
     required this.onDelete,
     required this.isDeleting,
   });
 
   final StudyMaterial material;
+  final String query;
   final VoidCallback onDelete;
   final bool isDeleting;
 
+  static const _titleStyle = TextStyle(
+    fontSize: 15,
+    fontWeight: FontWeight.w900,
+    height: 1.25,
+  );
+
   @override
   Widget build(BuildContext context) {
+    final highlight = highlightMatch(material.title, query);
+    final titleSpan = highlight == null
+        ? TextSpan(text: material.title, style: _titleStyle)
+        : TextSpan(
+            children: [
+              TextSpan(text: highlight.before, style: _titleStyle),
+              TextSpan(
+                text: highlight.match,
+                style: _titleStyle.copyWith(color: AppColors.red),
+              ),
+              TextSpan(text: highlight.after, style: _titleStyle),
+            ],
+          );
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
@@ -733,16 +1150,7 @@ class _MaterialRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              material.title,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
-                height: 1.25,
-              ),
-            ),
-          ),
+          Expanded(child: Text.rich(titleSpan)),
           const SizedBox(width: 8),
           if (isDeleting)
             const Padding(
