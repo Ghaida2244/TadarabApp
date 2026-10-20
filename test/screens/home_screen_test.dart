@@ -29,22 +29,29 @@ void main() {
     FakeCoursesService? coursesService,
     FakeFlashcardService? flashcardService,
     VoidCallback? onSignOut,
+    bool reducedMotion = false,
   }) async {
+    final home = HomeScreen(
+      uid: 'uid-1',
+      homeDataService: dataService ?? FakeHomeDataService(),
+      coursesService: coursesService ?? FakeCoursesService(),
+      // A single fake covers every courseId a test uses — scoping by
+      // the real uid/courseId the screen asks for isn't needed here,
+      // since each test only ever deals with one course.
+      flashcardServiceBuilder: flashcardService == null
+          ? null
+          : ({required uid, required courseId}) => flashcardService,
+      now: now,
+      onSignOut: onSignOut,
+    );
     await tester.pumpWidget(
       MaterialApp(
-        home: HomeScreen(
-          uid: 'uid-1',
-          homeDataService: dataService ?? FakeHomeDataService(),
-          coursesService: coursesService ?? FakeCoursesService(),
-          // A single fake covers every courseId a test uses — scoping by
-          // the real uid/courseId the screen asks for isn't needed here,
-          // since each test only ever deals with one course.
-          flashcardServiceBuilder: flashcardService == null
-              ? null
-              : ({required uid, required courseId}) => flashcardService,
-          now: now,
-          onSignOut: onSignOut,
-        ),
+        home: reducedMotion
+            ? MediaQuery(
+                data: const MediaQueryData(disableAnimations: true),
+                child: home,
+              )
+            : home,
       ),
     );
     await tester.pumpAndSettle();
@@ -257,7 +264,9 @@ void main() {
 
   group('weekly progress row', () {
     testWidgets(
-      'past day with data is filled and shows its count; today is filled white; future days are locked',
+      'active days (past or today) are labeled "studied", a day with no '
+      'activity (past or future) is labeled "no activity" — no counts '
+      'shown anywhere',
       (tester) async {
         final progress = aggregateWeeklyProgress(
           weekStart: weekStart,
@@ -266,30 +275,275 @@ void main() {
               date: DateTime(2026, 3, 9),
               questionCount: 5,
               flashcardCount: 0,
-            ), // Monday, past
+            ), // Monday, past, active
             (
               date: DateTime(2026, 3, 11),
               questionCount: 1,
               flashcardCount: 1,
-            ), // Wednesday, today -> combined 2
+            ), // Wednesday, today, active (1 question + 1 flashcard)
           ],
         );
+        final handle = tester.ensureSemantics();
+
         await pumpHome(
           tester,
           // courses: [aCourse] so the Continue/Start card renders instead of
           // the onboarding card — the latter has its own step "2" circle,
-          // which would collide with the weekly row's "2" cell below.
+          // which would collide with the weekly row's cells below.
           dataService: FakeHomeDataService(
             courses: [aCourse],
             weeklyProgress: progress,
           ),
         );
 
-        expect(find.text('5'), findsOneWidget); // Monday's filled red cell
+        // No count text in the row itself any more (the top two "Today's
+        // progress" counters are unchanged and legitimately show "1" for
+        // each of today's question/flashcard counts — just not in the
+        // week row below).
+        expect(find.text('5'), findsNothing);
+        expect(find.text('2'), findsNothing);
+
         expect(
-          find.text('2'),
+          find.bySemanticsLabel('Monday, Mar 9, studied'),
           findsOneWidget,
-        ); // today's filled white cell (1 question + 1 flashcard)
+        );
+        expect(
+          find.bySemanticsLabel('Wednesday, Mar 11, studied'),
+          findsOneWidget,
+        ); // today, active
+        expect(
+          find.bySemanticsLabel('Sunday, Mar 8, no activity'),
+          findsOneWidget,
+        ); // past, missed
+        expect(
+          find.bySemanticsLabel('Saturday, Mar 14, no activity'),
+          findsOneWidget,
+        ); // future, locked — same label as a missed day, per the design
+        handle.dispose();
+      },
+    );
+
+    testWidgets(
+      'today with no activity yet is labeled "no activity" too — it only '
+      'differs from a missed day visually (bright dashed outline), not in '
+      'its semantics label',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(courses: [aCourse]),
+        );
+
+        expect(
+          find.bySemanticsLabel('Wednesday, Mar 11, no activity'),
+          findsOneWidget,
+        );
+        handle.dispose();
+      },
+    );
+
+    testWidgets('each cell is labeled "<weekday letter> <day of month>" on '
+        'one line', (tester) async {
+      await pumpHome(
+        tester,
+        dataService: FakeHomeDataService(courses: [aCourse]),
+      );
+
+      expect(find.text('S 8'), findsOneWidget); // Sunday, weekStart
+      expect(find.text('W 11'), findsOneWidget); // Wednesday, today
+      expect(find.text('S 14'), findsOneWidget); // Saturday, end of week
+    });
+
+    testWidgets(
+      'current week: the header shows just the month, and the "back to '
+      'this week" button is present but invisible and inert',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(courses: [aCourse]),
+        );
+
+        expect(find.text('Mar'), findsOneWidget);
+
+        final opacity = tester.widget<Opacity>(
+          find.ancestor(
+            of: find.byIcon(Icons.keyboard_double_arrow_right),
+            matching: find.byType(Opacity),
+          ),
+        );
+        expect(opacity.opacity, 0);
+        expect(find.bySemanticsLabel('Back to this week'), findsNothing);
+        handle.dispose();
+      },
+    );
+
+    testWidgets(
+      'swiping right once goes back exactly one week: the header shows '
+      'the explicit range and the back button becomes visible and tappable',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(courses: [aCourse]),
+        );
+
+        await tester.drag(find.byType(PageView), const Offset(400, 0));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Mar'), findsNothing);
+        expect(find.text('Mar 1 – Mar 7'), findsOneWidget);
+
+        final opacity = tester.widget<Opacity>(
+          find.ancestor(
+            of: find.byIcon(Icons.keyboard_double_arrow_right),
+            matching: find.byType(Opacity),
+          ),
+        );
+        expect(opacity.opacity, 1);
+        expect(find.bySemanticsLabel('Back to this week'), findsOneWidget);
+        handle.dispose();
+      },
+    );
+
+    testWidgets(
+      'tapping "back to this week" after swiping returns to the current '
+      "week and hides the button again",
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(courses: [aCourse]),
+        );
+
+        await tester.drag(find.byType(PageView), const Offset(400, 0));
+        await tester.pumpAndSettle();
+        expect(find.text('Mar 1 – Mar 7'), findsOneWidget);
+
+        await tester.tap(find.byIcon(Icons.keyboard_double_arrow_right));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Mar'), findsOneWidget);
+        expect(find.text('Mar 1 – Mar 7'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'reduced motion: "back to this week" jumps instantly rather than '
+      'animating — a single pump already shows the current week',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(courses: [aCourse]),
+          reducedMotion: true,
+        );
+
+        await tester.drag(find.byType(PageView), const Offset(400, 0));
+        await tester.pumpAndSettle();
+        expect(find.text('Mar 1 – Mar 7'), findsOneWidget);
+
+        await tester.tap(find.byIcon(Icons.keyboard_double_arrow_right));
+        await tester.pump(); // exactly one pump — no settle
+        expect(tester.takeException(), isNull);
+
+        expect(find.text('Mar'), findsOneWidget);
+        expect(find.text('Mar 1 – Mar 7'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'the current week is the last page: swiping left (toward the '
+      'future) from the current week does nothing',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(courses: [aCourse]),
+        );
+
+        await tester.drag(find.byType(PageView), const Offset(-400, 0));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+
+        expect(find.text('Mar'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'an earlier week is fetched lazily exactly once and cached — '
+      'revisiting it does not re-fetch',
+      (tester) async {
+        final earlierWeek = aggregateWeeklyProgress(
+          weekStart: DateTime(2026, 3, 1),
+          entries: [
+            (date: DateTime(2026, 3, 2), questionCount: 3, flashcardCount: 0),
+          ],
+        );
+        final dataService = FakeHomeDataService(
+          courses: [aCourse],
+          weeklyProgressByWeek: {DateTime(2026, 3, 1): earlierWeek},
+        );
+        final handle = tester.ensureSemantics();
+
+        int callsFor(DateTime week) =>
+            dataService.fetchWeeklyProgressCalls.where((w) => w == week).length;
+
+        await pumpHome(tester, dataService: dataService);
+        // The current week is seeded synchronously from the already-eager
+        // _loadAll fetch — never a *second*, separate fetch from the card
+        // itself.
+        expect(callsFor(DateTime(2026, 3, 8)), 1);
+        // Mar 1 might already have been fetched once here too, if it's
+        // peeking at the current page's left edge — that's fine; the
+        // point of this test is that it's never fetched *more* than once.
+
+        await tester.drag(find.byType(PageView), const Offset(400, 0));
+        await tester.pumpAndSettle();
+
+        expect(find.bySemanticsLabel('Monday, Mar 2, studied'), findsOneWidget);
+        expect(callsFor(DateTime(2026, 3, 1)), 1);
+
+        // Back to current, then back to the same earlier week again.
+        await tester.drag(find.byType(PageView), const Offset(-400, 0));
+        await tester.pumpAndSettle();
+        await tester.drag(find.byType(PageView), const Offset(400, 0));
+        await tester.pumpAndSettle();
+
+        // Still exactly one fetch for Mar 1 — the cached week wasn't
+        // fetched again on revisiting it.
+        expect(callsFor(DateTime(2026, 3, 1)), 1);
+        handle.dispose();
+      },
+    );
+
+    testWidgets(
+      'a failed fetch for an earlier week falls back to an empty week '
+      'instead of crashing or retrying forever',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(
+            courses: [aCourse],
+            // The current week's own initial load must still succeed —
+            // only the *earlier* (unmapped) week this test swipes to
+            // should fail.
+            weeklyProgressByWeek: {weekStart: WeeklyProgress.empty(weekStart)},
+            weeklyProgressError: Exception('failed-precondition'),
+          ),
+        );
+
+        await tester.drag(find.byType(PageView), const Offset(400, 0));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          find.bySemanticsLabel('Monday, Mar 2, no activity'),
+          findsOneWidget,
+        );
+        handle.dispose();
       },
     );
 
@@ -338,6 +592,80 @@ void main() {
 
         expect(find.text('0-day streak'), findsOneWidget);
         expect(find.text('4-day streak'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      "the gap across a week boundary (the peeking previous week's last "
+      "cell to the active week's first cell) equals the gap between cells "
+      'inside one week — the strip reads as one continuously-spaced row',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(courses: [aCourse]),
+        );
+
+        final prevWeekLastCell = tester.getRect(
+          find.bySemanticsLabel('Saturday, Mar 7, no activity'),
+        );
+        final activeWeekFirstCell = tester.getRect(
+          find.bySemanticsLabel('Sunday, Mar 8, no activity'),
+        );
+        final activeWeekSecondCell = tester.getRect(
+          find.bySemanticsLabel('Monday, Mar 9, no activity'),
+        );
+
+        final innerGap = activeWeekSecondCell.left - activeWeekFirstCell.right;
+        final crossBoundaryGap =
+            activeWeekFirstCell.left - prevWeekLastCell.right;
+
+        expect(innerGap, 8);
+        expect(crossBoundaryGap, innerGap);
+        handle.dispose();
+      },
+    );
+
+    testWidgets(
+      "the panel's bottom padding (below the day labels) equals its top "
+      'padding (above the "N-day streak" line) — 14dp each',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(courses: [aCourse]),
+        );
+
+        final panel = tester.getRect(
+          find.byWidgetPredicate(
+            (w) =>
+                w is Container &&
+                w.decoration is BoxDecoration &&
+                (w.decoration as BoxDecoration).color ==
+                    Colors.white.withValues(alpha: 0.1) &&
+                (w.decoration as BoxDecoration).borderRadius ==
+                    BorderRadius.circular(18),
+          ),
+        );
+        // The header Row's own position (not the streak text inside it) —
+        // the Row's height is dictated by its tallest child (the 24dp back
+        // button), so different text inside it can sit a couple of px
+        // lower than the Row's own top edge, purely from cross-axis
+        // centering of text with a different line-height; the Row's own
+        // top is where the Padding actually places it, unaffected by that.
+        final headerRow = tester.getRect(
+          find.ancestor(
+            of: find.text('0-day streak'),
+            matching: find.byType(Row),
+          ).first,
+        );
+        final dayLabel = tester.getRect(find.text('S 8'));
+
+        final topPadding = headerRow.top - panel.top;
+        final bottomPadding = panel.bottom - dayLabel.bottom;
+
+        expect(topPadding, 14);
+        expect(bottomPadding, topPadding);
       },
     );
   });
@@ -438,6 +766,12 @@ void main() {
           ),
         );
 
+        // The streak row's new bottom padding makes this screen's content
+        // tall enough that the button can land under the fixed bottom nav
+        // bar at this test viewport size — ensureVisible scrolls it into
+        // the scrollable area first, same as a real device would need a
+        // real scroll gesture for a long enough Home screen.
+        await tester.ensureVisible(find.text('Resume at card 3'));
         await tester.tap(find.text('Resume at card 3'));
         await tester.pumpAndSettle();
 

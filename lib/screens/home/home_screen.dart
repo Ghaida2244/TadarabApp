@@ -195,6 +195,13 @@ class _HomeTabState extends State<_HomeTab> {
 
   void _reload() => setState(_loadAll);
 
+  /// Fetches one earlier week's data for [TodayProgressCard]'s streak row
+  /// pager — the exact same query `_loadAll` already uses for the current
+  /// week, just for a different week's Sunday. Lazy, per-week, and cached
+  /// by the card itself; this method does no caching of its own.
+  Future<WeeklyProgress> _fetchWeek(DateTime weekStart) =>
+      widget.dataService.fetchWeeklyProgress(widget.uid, now: weekStart);
+
   Future<void> _openAddCourse() async {
     // Only reachable from the zero-courses onboarding card, so the
     // student's current course list is already known to be empty here —
@@ -444,6 +451,7 @@ class _HomeTabState extends State<_HomeTab> {
                                   currentStreak: student?.currentStreak ?? 0,
                                   lastStudyDate: student?.lastStudyDate,
                                   now: widget.now,
+                                  fetchWeek: _fetchWeek,
                                 ),
                                 const SizedBox(height: 16),
                                 ContinueOrStartCard(
