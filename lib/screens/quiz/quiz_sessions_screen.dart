@@ -19,6 +19,20 @@ import 'quiz_setup_screen.dart';
 import 'performance_summary_screen.dart';
 import 'widgets/quiz_icon_button.dart';
 
+/// Extra horizontal inset added around the card's button area (Resume, or
+/// the Results/Retake row) on top of the card's own 15dp content padding —
+/// placing the buttons at 15 + _kButtonSideInset dp from the card's left/
+/// right edges, narrower than the card's full content width. Mirrors
+/// flashcard_sessions_screen.dart's identical constant — keep both in
+/// sync.
+const _kButtonSideInset = 9.0;
+
+/// Height of the button area's AppButton(s) — Resume, or Results/Retake —
+/// taller than AppButton's usual compact height used elsewhere. Mirrors
+/// flashcard_sessions_screen.dart's identical constant — keep both in
+/// sync.
+const _kButtonHeight = 46.0;
+
 /// materialId -> title lookup for [session]'s own materials, comma-joined
 /// — or "Material removed" if none resolve. Shared by [_SessionCard] and
 /// the focus view's header subtitle, so both read the exact same label.
@@ -825,60 +839,64 @@ class _SessionCard extends StatelessWidget {
                     // view, where every attempt has its own full buttons.
                     if (!isStackTop) ...[
                       const SizedBox(height: 12),
-                      if (complete)
-                        // "Completed buttons: Side by side" (approved
-                        // configuration) — a shorter pair of buttons in a
-                        // row, per the hand-off's exact compact-button
-                        // metrics (40dp height, 12dp radius, 13sp labels,
-                        // 1.35:1 flex ratio) and shortened labels.
-                        Row(
-                          children: [
-                            Expanded(
-                              flex: 135,
-                              child: AppButton(
-                                label: 'View summary',
+                      // Narrower than the content above: extra
+                      // _kButtonSideInset on each side on top of the
+                      // card's own 15dp content padding.
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: _kButtonSideInset,
+                        ),
+                        child: complete
+                            ? // "Completed buttons: Side by side" (approved
+                              // configuration) — a taller, narrower, equal-
+                              // width pair of buttons in a row.
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: AppButton(
+                                      label: 'Results',
+                                      onPressed: onAct,
+                                      height: _kButtonHeight,
+                                      borderRadius: 12,
+                                      fontSize: 13,
+                                      shadowColor: AppColors.navy.withValues(
+                                        alpha: 0.10,
+                                      ),
+                                    ),
+                                  ),
+                                  if (onRetake != null) ...[
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: AppButton(
+                                        label: 'Retake',
+                                        variant: AppButtonVariant.outlinedBrand,
+                                        onPressed:
+                                            isRetaking ? null : onRetake,
+                                        height: _kButtonHeight,
+                                        borderRadius: 12,
+                                        fontSize: 13,
+                                        shadowColor: AppColors.navy.withValues(
+                                          alpha: 0.10,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              )
+                            : // Same metrics as the completed row's
+                              // buttons — confirmed to apply here too.
+                              AppButton(
+                                label:
+                                    'Resume at question ${session.currentQuestionIndex + 1}',
                                 onPressed: onAct,
-                                height: 40,
+                                height: _kButtonHeight,
                                 borderRadius: 12,
                                 fontSize: 13,
                                 shadowColor: AppColors.navy.withValues(
                                   alpha: 0.10,
                                 ),
                               ),
-                            ),
-                            if (onRetake != null) ...[
-                              const SizedBox(width: 8),
-                              Expanded(
-                                flex: 100,
-                                child: AppButton(
-                                  label: 'Retake',
-                                  variant: AppButtonVariant.outlinedBrand,
-                                  onPressed: isRetaking ? null : onRetake,
-                                  height: 40,
-                                  borderRadius: 12,
-                                  fontSize: 13,
-                                  shadowColor: AppColors.navy.withValues(
-                                    alpha: 0.10,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        )
-                      else
-                        // Same compact metrics as the completed row's
-                        // buttons (SessionStackCard.dc.html: btnH/btnR/
-                        // btnFs depend only on compactButtons, not on
-                        // a.done) — confirmed to apply here too.
-                        AppButton(
-                          label:
-                              'Resume at question ${session.currentQuestionIndex + 1}',
-                          onPressed: onAct,
-                          height: 40,
-                          borderRadius: 12,
-                          fontSize: 13,
-                          shadowColor: AppColors.navy.withValues(alpha: 0.10),
-                        ),
+                      ),
                     ],
                   ],
                 ),

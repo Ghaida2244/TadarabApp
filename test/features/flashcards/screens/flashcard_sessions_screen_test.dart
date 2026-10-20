@@ -11,6 +11,7 @@ import 'package:tadarab_app/services/flashcard_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
 import 'package:tadarab_app/widgets/generation_loading_overlay.dart';
+import 'package:tadarab_app/widgets/scrollable_title_pill.dart';
 import 'package:tadarab_app/widgets/session_stack_card.dart';
 import 'package:tadarab_app/widgets/session_stack_focus_view.dart';
 
@@ -255,9 +256,107 @@ void main() {
 
     expect(find.text('COMPLETED'), findsOneWidget);
     expect(find.text('10 cards'), findsOneWidget);
-    expect(find.text('View summary'), findsOneWidget);
+    expect(find.text('Results'), findsOneWidget);
     expect(find.text('Retake'), findsOneWidget);
   });
+
+  testWidgets(
+    'the Results and Retake buttons on a completed session are equal width',
+    (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          FakeFlashcardService(
+            sessions: [_session(id: 's1', completed: true)],
+          ),
+        ),
+      );
+      // Not pumpAndSettle() — see the note above the singular-count test.
+      await tester.pump();
+
+      final resultsWidth = tester
+          .getSize(find.widgetWithText(AppButton, 'Results'))
+          .width;
+      final retakeWidth = tester
+          .getSize(find.widgetWithText(AppButton, 'Retake'))
+          .width;
+      expect(resultsWidth, retakeWidth);
+    },
+  );
+
+  testWidgets(
+    'the in-progress Resume button sits 24dp from the card edges, '
+    "narrower than the text content's 15dp inset",
+    (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          FakeFlashcardService(
+            sessions: [
+              _session(
+                id: 's1',
+                completed: false,
+                currentFlashcardIndex: 3,
+              ),
+            ],
+          ),
+        ),
+      );
+      // Not pumpAndSettle() — see the note above the singular-count test.
+      await tester.pump();
+
+      // The single Padding carrying the card's own 15dp content inset —
+      // shared ancestor of both the text content and the button area, so
+      // measuring against its rect isolates each one's own extra inset.
+      final contentBox = find.byWidgetPredicate(
+        (w) =>
+            w is Padding &&
+            w.padding == const EdgeInsets.fromLTRB(15, 15, 15, 19),
+      );
+      final contentRect = tester.getRect(contentBox);
+      final titleRect = tester.getRect(find.byType(ScrollableTitlePill));
+      final buttonRect = tester.getRect(
+        find.widgetWithText(AppButton, 'Resume at card 4'),
+      );
+
+      expect(titleRect.left - contentRect.left, 15);
+      expect(buttonRect.left - contentRect.left, 24);
+      expect(contentRect.right - buttonRect.right, 24);
+    },
+  );
+
+  testWidgets(
+    'the Resume button, and the Results/Retake buttons, are 46dp tall',
+    (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          FakeFlashcardService(
+            sessions: [
+              _session(id: 's1', completed: true),
+              _session(id: 's2', completed: false, currentFlashcardIndex: 3),
+            ],
+          ),
+        ),
+      );
+      // Not pumpAndSettle() — see the note above the singular-count test.
+      await tester.pump();
+
+      expect(
+        tester.widget<AppButton>(find.widgetWithText(AppButton, 'Results')).height,
+        46,
+      );
+      expect(
+        tester.widget<AppButton>(find.widgetWithText(AppButton, 'Retake')).height,
+        46,
+      );
+      expect(
+        tester
+            .widget<AppButton>(
+              find.widgetWithText(AppButton, 'Resume at card 4'),
+            )
+            .height,
+        46,
+      );
+    },
+  );
 
   group('retake label', () {
     testWidgets(
@@ -612,7 +711,7 @@ void main() {
 
         final focusView = find.byType(SessionStackFocusView);
         expect(
-          find.descendant(of: focusView, matching: find.text('View summary')),
+          find.descendant(of: focusView, matching: find.text('Results')),
           findsNWidgets(2),
         );
         expect(
@@ -669,7 +768,7 @@ void main() {
 
     testWidgets(
       "a plain in-progress card's Resume button uses the same compact "
-      'metrics as Quiz\'s (40dp height, 12dp radius, 13sp font)',
+      'metrics as Quiz\'s (46dp height, 12dp radius, 13sp font)',
       (tester) async {
         await tester.pumpWidget(
           _wrap(
@@ -684,7 +783,7 @@ void main() {
         final resumeButton = tester.widget<AppButton>(
           find.widgetWithText(AppButton, 'Resume at card 1'),
         );
-        expect(resumeButton.height, 40);
+        expect(resumeButton.height, 46);
         expect(resumeButton.borderRadius, 12);
         expect(resumeButton.fontSize, 13);
       },
@@ -714,7 +813,7 @@ void main() {
         );
         expect(resumeButtons, hasLength(2));
         for (final button in resumeButtons) {
-          expect(button.height, 40);
+          expect(button.height, 46);
           expect(button.borderRadius, 12);
           expect(button.fontSize, 13);
         }
