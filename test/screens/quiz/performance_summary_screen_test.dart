@@ -93,6 +93,45 @@ void main() {
     expect(find.text('+28'), findsOneWidget);
   });
 
+  testWidgets(
+    'regression: Review mistakes labels each card with its original '
+    'position in the session, not its position in the mistakes list — '
+    'questions 2 and 5 of 5 read "QUESTION 2" and "QUESTION 5"',
+    (tester) async {
+      // Mistakes at (1-based) positions 2 and 5; every other question
+      // correct — deliberately not the first N questions, so a label that
+      // (wrongly) counted only mistakes would read "QUESTION 1"/"QUESTION
+      // 2" instead.
+      final questions = List.generate(5, (i) {
+        final position = i + 1;
+        final isWrong = position == 2 || position == 5;
+        return Question(
+          questionId: 'q$i',
+          questionText: 'Question text $position',
+          correctAnswer: 'Right',
+          explanation: 'Because.',
+          sourceLocation: 'Slide $position',
+          studentAnswer: isWrong ? 'Wrong' : 'Right',
+          options: const ['Right', 'Wrong', 'Other', 'Another'],
+          sessionId: 's1',
+        );
+      });
+      final service = FakeQuizSessionService(
+        sessions: [_completedSession(mode: Mode.exam, correct: 3, total: 5)],
+        questions: {'s1': questions},
+      );
+      await _pumpReal(tester, service);
+
+      await tester.tap(find.text('Review mistakes'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('QUESTION 2'), findsOneWidget);
+      expect(find.text('QUESTION 5'), findsOneWidget);
+      expect(find.text('QUESTION 1'), findsNothing);
+      expect(find.text('QUESTION 3'), findsNothing);
+    },
+  );
+
   testWidgets('Learning mode with mistakes shows Practice Now, not Review mistakes', (tester) async {
     final service = FakeQuizSessionService(
       sessions: [_completedSession(mode: Mode.learning, correct: 4, total: 10)],

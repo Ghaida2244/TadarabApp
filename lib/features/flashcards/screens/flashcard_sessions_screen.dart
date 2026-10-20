@@ -24,6 +24,18 @@ import 'flashcard_setup_screen.dart';
 const _kSectionDividerColor = Color(0xFFE6E9F7);
 const _kEmptyStateDashColor = Color(0xFFC9CEE8);
 
+/// Extra horizontal inset added around the card's button area (Resume, or
+/// the Results/Retake row) on top of the card's own 15dp content padding —
+/// placing the buttons at 15 + _kButtonSideInset dp from the card's left/
+/// right edges, narrower than the card's full content width. Mirrors
+/// quiz_sessions_screen.dart's identical constant — keep both in sync.
+const _kButtonSideInset = 9.0;
+
+/// Height of the button area's AppButton(s) — Resume, or Results/Retake —
+/// taller than AppButton's usual compact height used elsewhere. Mirrors
+/// quiz_sessions_screen.dart's identical constant — keep both in sync.
+const _kButtonHeight = 46.0;
+
 /// Screen 1: every flashcard session for one course, split into "IN
 /// PROGRESS" and "COMPLETED" sections.
 class FlashcardSessionsScreen extends StatefulWidget {
@@ -781,62 +793,67 @@ class _SessionRow extends StatelessWidget {
                     // view, where every attempt has its own full buttons.
                     if (!isStackTop) ...[
                       const SizedBox(height: 12),
-                      if (session.isSessionCompleted)
-                        // "Completed buttons: Side by side" (approved
-                        // configuration) — a shorter pair of buttons in a
-                        // row, per the hand-off's exact compact-button
-                        // metrics (40dp height, 12dp radius, 13sp labels,
-                        // 1.35:1 flex ratio) and shortened labels — same
-                        // as Quiz's completed row.
-                        Row(
-                          children: [
-                            Expanded(
-                              flex: 135,
-                              child: AppButton(
-                                label: 'View summary',
-                                height: 40,
+                      // Narrower than the content above: extra
+                      // _kButtonSideInset on each side on top of the
+                      // card's own 15dp content padding.
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: _kButtonSideInset,
+                        ),
+                        child: session.isSessionCompleted
+                            // "Completed buttons: Side by side" (approved
+                            // configuration) — a taller, narrower, equal-
+                            // width pair of buttons in a row — same as
+                            // Quiz's completed row.
+                            ? Row(
+                                children: [
+                                  Expanded(
+                                    child: AppButton(
+                                      label: 'Results',
+                                      height: _kButtonHeight,
+                                      borderRadius: 12,
+                                      fontSize: 13,
+                                      shadowColor: AppColors.navyShadow
+                                          .withValues(alpha: 0.6),
+                                      onPressed: onViewSummary,
+                                    ),
+                                  ),
+                                  if (onRetake != null) ...[
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: AppButton(
+                                        label: 'Retake',
+                                        variant:
+                                            AppButtonVariant.outlinedBrand,
+                                        height: _kButtonHeight,
+                                        borderRadius: 12,
+                                        fontSize: 13,
+                                        shadowColor: AppColors.navy
+                                            .withValues(alpha: 0.18),
+                                        onPressed: isRetaking
+                                            ? null
+                                            : onRetake,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              )
+                            // Same metrics as the completed row's buttons
+                            // (confirmed to apply to the in-progress
+                            // button too, matching Quiz's own Resume
+                            // button).
+                            : AppButton(
+                                label:
+                                    'Resume at card ${session.currentFlashcardIndex + 1}',
+                                height: _kButtonHeight,
                                 borderRadius: 12,
                                 fontSize: 13,
                                 shadowColor: AppColors.navyShadow.withValues(
                                   alpha: 0.6,
                                 ),
-                                onPressed: onViewSummary,
+                                onPressed: onResume,
                               ),
-                            ),
-                            if (onRetake != null) ...[
-                              const SizedBox(width: 8),
-                              Expanded(
-                                flex: 100,
-                                child: AppButton(
-                                  label: 'Retake',
-                                  variant: AppButtonVariant.outlinedBrand,
-                                  height: 40,
-                                  borderRadius: 12,
-                                  fontSize: 13,
-                                  shadowColor: AppColors.navy.withValues(
-                                    alpha: 0.18,
-                                  ),
-                                  onPressed: isRetaking ? null : onRetake,
-                                ),
-                              ),
-                            ],
-                          ],
-                        )
-                      else
-                        // Same compact metrics as the completed row's
-                        // buttons (confirmed to apply to the in-progress
-                        // button too, matching Quiz's own Resume button).
-                        AppButton(
-                          label:
-                              'Resume at card ${session.currentFlashcardIndex + 1}',
-                          height: 40,
-                          borderRadius: 12,
-                          fontSize: 13,
-                          shadowColor: AppColors.navyShadow.withValues(
-                            alpha: 0.6,
-                          ),
-                          onPressed: onResume,
-                        ),
+                      ),
                     ],
                   ],
                 ),

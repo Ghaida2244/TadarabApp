@@ -124,7 +124,8 @@ class FakeCoursesService extends CoursesService {
     if (uploadGate != null) await uploadGate!.future;
     if (uploadMaterialError != null) throw uploadMaterialError!;
     onProgress?.call(1);
-    return uploadMaterialResult ??
+    final result =
+        uploadMaterialResult ??
         StudyMaterial(
           materialId: 'new-material',
           title: title,
@@ -132,6 +133,13 @@ class FakeCoursesService extends CoursesService {
           document: 'users/$uid/courses/$courseId/materials/new-material.$type',
           courseId: courseId,
           extractedText: '[Paragraph 1]\nSome text.',
+          createdAt: DateTime.now(),
         );
+    // Mutates in place, like deleteMaterial/createCourse above, so a
+    // caller's own reload (e.g. CourseDetailScreen's _reload() after a
+    // successful upload) sees the new material without needing to also
+    // update materialsByCourse itself by hand.
+    materialsByCourse[courseId]?.add(result);
+    return result;
   }
 }

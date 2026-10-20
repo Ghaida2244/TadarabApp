@@ -6,6 +6,12 @@ import '../../widgets/app_button.dart';
 import '../../widgets/draggable_overflow_text.dart';
 import 'widgets/quiz_icon_button.dart';
 
+/// A mistake paired with its 1-based position in the *full*, unfiltered
+/// question list the session was played in — not its position within the
+/// mistakes list itself. "QUESTION 4" must always mean the 4th question of
+/// the session, even if it's the first (or only) mistake shown here.
+typedef NumberedQuestion = ({Question question, int number});
+
 /// Exam Mode's post-summary accordion of wrong answers: question, the
 /// student's (red) pick, and — on expand — the correct answer (green) plus
 /// the explanation and source.
@@ -16,7 +22,7 @@ class ReviewMistakesScreen extends StatefulWidget {
     required this.totalQuestions,
   });
 
-  final List<Question> mistakes;
+  final List<NumberedQuestion> mistakes;
 
   /// Total questions in the session these mistakes came from — the count
   /// label reads "N wrong out of {totalQuestions}", not out of the
@@ -79,10 +85,11 @@ class _ReviewMistakesScreenState extends State<ReviewMistakesScreen> {
                       itemCount: widget.mistakes.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 12),
                       itemBuilder: (context, index) {
-                        final q = widget.mistakes[index];
+                        final q = widget.mistakes[index].question;
+                        final number = widget.mistakes[index].number;
                         final open = _open.contains(q.questionId);
                         return _MistakeCard(
-                          index: index,
+                          number: number,
                           question: q,
                           open: open,
                           onToggle: () => setState(() {
@@ -105,13 +112,15 @@ class _ReviewMistakesScreenState extends State<ReviewMistakesScreen> {
 
 class _MistakeCard extends StatelessWidget {
   const _MistakeCard({
-    required this.index,
+    required this.number,
     required this.question,
     required this.open,
     required this.onToggle,
   });
 
-  final int index;
+  /// This question's 1-based position in the full session, not its
+  /// position in the mistakes list.
+  final int number;
   final Question question;
   final bool open;
   final VoidCallback onToggle;
@@ -138,7 +147,7 @@ class _MistakeCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(999),
             ),
             child: Text(
-              'QUESTION ${index + 1}',
+              'QUESTION $number',
               style: AppTypography.quizBadge.copyWith(color: AppColors.errorBannerBody),
             ),
           ),

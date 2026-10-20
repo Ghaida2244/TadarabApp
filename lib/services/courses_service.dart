@@ -321,9 +321,21 @@ class CoursesService {
       document: storagePath,
       courseId: courseId,
       extractedText: extractedText,
+      // A local stand-in for the caller's immediate use (e.g. an optimistic
+      // UI update) — never relied on for sorting, since the screen always
+      // re-fetches from Firestore after a successful upload, picking up
+      // the real, authoritative value written below.
+      createdAt: DateTime.now(),
     );
     try {
-      await docRef.set(material.toFirestore()).timeout(_networkTimeout);
+      await docRef
+          .set({
+            ...material.toFirestore(),
+            // The actual stored value: the server's own clock, not this
+            // device's — avoids any client clock skew affecting sort order.
+            'createdAt': FieldValue.serverTimestamp(),
+          })
+          .timeout(_networkTimeout);
     } on FirebaseException {
       await _deleteQuietly(ref);
       throw CoursesFailure(_networkFailureMessage);

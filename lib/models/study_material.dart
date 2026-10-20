@@ -14,6 +14,7 @@ class StudyMaterial {
     required this.document,
     required this.courseId,
     required this.extractedText,
+    this.createdAt,
   });
 
   /// Firestore document ID.
@@ -38,6 +39,15 @@ class StudyMaterial {
   /// the tagging format is a fixed contract, not a display detail.
   final String extractedText;
 
+  /// When this material was uploaded — added for the materials-search/sort
+  /// feature's "Newest first"/"Oldest first" options, not in the original
+  /// Attributes Dictionary Table (approved deviation, same pattern as
+  /// [extractedText]). Optional: a document uploaded before this field
+  /// existed simply has none, tolerated as `null` rather than a migration.
+  /// Written as a Firestore server timestamp (see
+  /// `CoursesService.uploadMaterial`), never the client clock.
+  final DateTime? createdAt;
+
   factory StudyMaterial.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> doc,
   ) {
@@ -49,6 +59,7 @@ class StudyMaterial {
       document: data['document'] as String,
       courseId: data['courseId'] as String,
       extractedText: data['extractedText'] as String,
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -59,6 +70,7 @@ class StudyMaterial {
       'document': document,
       'courseId': courseId,
       'extractedText': extractedText,
+      if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
     };
   }
 }

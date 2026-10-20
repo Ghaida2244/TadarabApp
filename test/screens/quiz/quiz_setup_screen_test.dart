@@ -7,6 +7,8 @@ import 'package:tadarab_app/models/study_material.dart';
 import 'package:tadarab_app/screens/quiz/quiz_setup_screen.dart';
 import 'package:tadarab_app/services/quiz_generation_client.dart';
 import 'package:tadarab_app/services/quiz_session_service.dart';
+import 'package:tadarab_app/theme/app_theme.dart';
+import 'package:tadarab_app/widgets/app_button.dart';
 
 import '../../helpers/fake_quiz_session_service.dart';
 
@@ -182,6 +184,37 @@ void main() {
     // Still selected (navy fill), not deselected to white.
     expect(decoration.color, isNot(Colors.white));
   });
+
+  testWidgets(
+    'the subtle shadow appears only on the selected difficulty button',
+    (tester) async {
+      await _pump(tester, FakeQuizSessionService(materials: [_material]));
+
+      final easyContainer = tester.widget<Container>(
+        find
+            .ancestor(of: find.text('Easy'), matching: find.byType(Container))
+            .first,
+      );
+      final easyShadow =
+          (easyContainer.decoration! as BoxDecoration).boxShadow!.single;
+      expect(easyShadow.color, AppColors.navy.withValues(alpha: 0.15));
+      expect(easyShadow.blurRadius, 6);
+      expect(easyShadow.offset, const Offset(0, 2));
+
+      final mediumContainer = tester.widget<Container>(
+        find
+            .ancestor(
+              of: find.text('Medium'),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      expect(
+        (mediumContainer.decoration! as BoxDecoration).boxShadow,
+        isNull,
+      );
+    },
+  );
 
   testWidgets('normal case: default count is 10, and the stepper respects '
       'the minimum of 5', (tester) async {
@@ -442,4 +475,48 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'the footer matches Flashcards setup\'s own footer: top corners '
+    'radius 26, and the button\'s shadow is red when enabled and none '
+    'when disabled',
+    (tester) async {
+      await _pump(tester, FakeQuizSessionService(materials: [_material]));
+
+      final footerContainer = tester.widget<Container>(
+        find
+            .ancestor(
+              of: find.text('Generate quiz'),
+              matching: find.byType(Container),
+            )
+            .last,
+      );
+      final footerDecoration = footerContainer.decoration! as BoxDecoration;
+      expect(
+        footerDecoration.borderRadius,
+        const BorderRadius.vertical(top: Radius.circular(26)),
+      );
+
+      // No material/difficulty selected yet: Generate is disabled, so its
+      // shadow is fully transparent (none), not just dim.
+      final disabledButton = tester.widget<AppButton>(
+        find.byWidgetPredicate(
+          (w) => w is AppButton && w.label == 'Generate quiz',
+        ),
+      );
+      expect(disabledButton.shadowColor, Colors.transparent);
+      expect(disabledButton.onPressed, isNull);
+
+      await tester.tap(find.text('Lecture 1 — Intro'));
+      await tester.pumpAndSettle();
+
+      final enabledButton = tester.widget<AppButton>(
+        find.byWidgetPredicate(
+          (w) => w is AppButton && w.label == 'Generate quiz',
+        ),
+      );
+      expect(enabledButton.shadowColor, AppColors.redShadow.withValues(alpha: 0.6));
+      expect(enabledButton.onPressed, isNotNull);
+    },
+  );
 }

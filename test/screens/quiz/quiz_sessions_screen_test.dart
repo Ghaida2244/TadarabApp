@@ -100,14 +100,93 @@ void main() {
       expect(find.text('IN PROGRESS'), findsOneWidget);
       expect(find.text('COMPLETED'), findsOneWidget);
       expect(find.text('Resume at question 5'), findsOneWidget);
-      expect(find.text('View summary'), findsOneWidget);
+      expect(find.text('Results'), findsOneWidget);
       expect(find.text('Retake'), findsOneWidget);
     },
   );
 
   testWidgets(
+    'the Results and Retake buttons on a completed session are equal width',
+    (tester) async {
+      final service = FakeQuizSessionService(
+        sessions: [_session(id: 's1', completed: true)],
+      );
+      await _pump(tester, service);
+
+      final resultsWidth = tester
+          .getSize(find.widgetWithText(AppButton, 'Results'))
+          .width;
+      final retakeWidth = tester
+          .getSize(find.widgetWithText(AppButton, 'Retake'))
+          .width;
+      expect(resultsWidth, retakeWidth);
+    },
+  );
+
+  testWidgets(
+    'the in-progress Resume button sits 24dp from the card edges, '
+    "narrower than the text content's 15dp inset",
+    (tester) async {
+      final service = FakeQuizSessionService(
+        sessions: [
+          _session(id: 's1', completed: false, currentQuestionIndex: 4),
+        ],
+      );
+      await _pump(tester, service);
+
+      // The single Padding carrying the card's own 15dp content inset —
+      // shared ancestor of both the text content and the button area, so
+      // measuring against its rect isolates each one's own extra inset.
+      final contentBox = find.byWidgetPredicate(
+        (w) =>
+            w is Padding &&
+            w.padding == const EdgeInsets.fromLTRB(15, 15, 15, 19),
+      );
+      final contentRect = tester.getRect(contentBox);
+      final titleRect = tester.getRect(find.byType(ScrollableTitlePill));
+      final buttonRect = tester.getRect(
+        find.widgetWithText(AppButton, 'Resume at question 5'),
+      );
+
+      expect(titleRect.left - contentRect.left, 15);
+      expect(buttonRect.left - contentRect.left, 24);
+      expect(contentRect.right - buttonRect.right, 24);
+    },
+  );
+
+  testWidgets(
+    'the Resume button, and the Results/Retake buttons, are 46dp tall',
+    (tester) async {
+      final service = FakeQuizSessionService(
+        sessions: [
+          _session(id: 's1', completed: true),
+          _session(id: 's2', completed: false, currentQuestionIndex: 4),
+        ],
+      );
+      await _pump(tester, service);
+
+      expect(
+        tester.widget<AppButton>(find.widgetWithText(AppButton, 'Results')).height,
+        46,
+      );
+      expect(
+        tester.widget<AppButton>(find.widgetWithText(AppButton, 'Retake')).height,
+        46,
+      );
+      expect(
+        tester
+            .widget<AppButton>(
+              find.widgetWithText(AppButton, 'Resume at question 5'),
+            )
+            .height,
+        46,
+      );
+    },
+  );
+
+  testWidgets(
     'the in-progress Resume button uses the same compact metrics as the '
-    'completed row\'s buttons (40dp height, 12dp radius, 13sp font) — '
+    'completed row\'s buttons (46dp height, 12dp radius, 13sp font) — '
     'confirmed to apply here too, not just on completed cards',
     (tester) async {
       final service = FakeQuizSessionService(
@@ -120,7 +199,7 @@ void main() {
       final resumeButton = tester.widget<AppButton>(
         find.widgetWithText(AppButton, 'Resume at question 5'),
       );
-      expect(resumeButton.height, 40);
+      expect(resumeButton.height, 46);
       expect(resumeButton.borderRadius, 12);
       expect(resumeButton.fontSize, 13);
     },
@@ -1003,7 +1082,7 @@ void main() {
 
     testWidgets(
       'inside the focus view, an in-progress attempt\'s Resume button also '
-      'uses the compact metrics (40dp height, 12dp radius, 13sp font)',
+      'uses the compact metrics (46dp height, 12dp radius, 13sp font)',
       (tester) async {
         final service = FakeQuizSessionService(
           sessions: twoInProgressAttempts(),
@@ -1024,7 +1103,7 @@ void main() {
         );
         expect(resumeButtons, hasLength(2));
         for (final button in resumeButtons) {
-          expect(button.height, 40);
+          expect(button.height, 46);
           expect(button.borderRadius, 12);
           expect(button.fontSize, 13);
         }
@@ -1087,7 +1166,7 @@ void main() {
 
         final focusView = find.byType(SessionStackFocusView);
         expect(
-          find.descendant(of: focusView, matching: find.text('View summary')),
+          find.descendant(of: focusView, matching: find.text('Results')),
           findsNWidgets(2),
         );
         expect(

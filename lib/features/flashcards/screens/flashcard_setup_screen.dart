@@ -86,8 +86,11 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
 
   final Set<String> _selectedMaterialIds = {};
   // Easy is selected by default (NOTE 13a, matching Quiz setup) so a
-  // first-time user isn't blocked purely on difficulty; still freely
-  // changeable/deselectable like any other chip.
+  // first-time user isn't blocked purely on difficulty. Matches Quiz
+  // setup's own selection rule exactly: any level can be freely added or
+  // removed, except the *last* remaining selected one — at least one
+  // level is always selected, never fully empty (see the onChanged
+  // callback below).
   final Set<DifficultyLevel> _selectedDifficulties = {DifficultyLevel.easy};
   int _count = _kDefaultCount;
   final _promptController = TextEditingController();
@@ -266,9 +269,13 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
                           _DifficultyPicker(
                             selected: _selectedDifficulties,
                             onChanged: (level, value) => setState(() {
-                              value
-                                  ? _selectedDifficulties.add(level)
-                                  : _selectedDifficulties.remove(level);
+                              if (value) {
+                                _selectedDifficulties.add(level);
+                              } else if (_selectedDifficulties.length > 1) {
+                                // Same rule as Quiz setup: never let the
+                                // last remaining selected level be removed.
+                                _selectedDifficulties.remove(level);
+                              }
                             }),
                           ),
                           const SizedBox(height: 22),
@@ -306,11 +313,7 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
                     ),
                   ),
                   _Footer(
-                    count: _count,
-                    levels: _selectedDifficulties,
                     canGenerate: _canGenerate,
-                    hasMaterials: _selectedMaterialIds.isNotEmpty,
-                    hasDifficulty: _selectedDifficulties.isNotEmpty,
                     onGenerate: () => _generate(materials),
                   ),
                 ],
@@ -604,6 +607,13 @@ class _DifficultyButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Exactly matches Quiz setup's difficulty button (quiz_setup_screen.
+    // dart's _buildDifficultySection) — same height/radius/border, the
+    // same AppTypography.quizOption label style, and the same muted
+    // (AppColors.disabledMuted) unselected text color, per the "Quiz is
+    // the reference" rule. Only the selected button gets a shadow — see
+    // its own comment below for why these exact values must stay in sync
+    // with Quiz's.
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -613,17 +623,25 @@ class _DifficultyButton extends StatelessWidget {
           color: on ? AppColors.navy : Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: on ? AppColors.navy : AppColors.borderDefault, width: 2),
+          // A subtle soft shadow on the selected button only — unselected
+          // stays flat with just its border. KEEP THESE EXACT VALUES IN
+          // SYNC with quiz_setup_screen.dart's _buildDifficultySection
+          // (same selected-button shadow, both screens).
           boxShadow: on
-              ? [BoxShadow(color: AppColors.navyShadow.withValues(alpha: 0.6), offset: const Offset(0, 3))]
+              ? [
+                  BoxShadow(
+                    color: AppColors.navy.withValues(alpha: 0.15),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
               : null,
         ),
         child: Text(
           label,
-          style: TextStyle(
-            fontFamily: 'Nunito',
-            fontSize: 14,
-            fontWeight: FontWeight.w900,
-            color: on ? Colors.white : _kMutedInk,
+          style: AppTypography.quizOption(
+            FontWeight.w900,
+            color: on ? Colors.white : AppColors.disabledMuted,
           ),
         ),
       ),
@@ -851,36 +869,13 @@ class _PromptField extends StatelessWidget {
 }
 
 class _Footer extends StatelessWidget {
-  const _Footer({
-    required this.count,
-    required this.levels,
-    required this.canGenerate,
-    required this.hasMaterials,
-    required this.hasDifficulty,
-    required this.onGenerate,
-  });
+  const _Footer({required this.canGenerate, required this.onGenerate});
 
-  final int count;
-  final Set<DifficultyLevel> levels;
   final bool canGenerate;
-  final bool hasMaterials;
-  final bool hasDifficulty;
   final VoidCallback onGenerate;
-
-  static const _labels = {
-    DifficultyLevel.easy: 'Easy',
-    DifficultyLevel.medium: 'Medium',
-    DifficultyLevel.hard: 'Hard',
-  };
 
   @override
   Widget build(BuildContext context) {
-    final levelNames = levels.map((l) => _labels[l]!).join(' + ');
-    final recipe = levelNames.isEmpty ? 'Up to $count cards' : 'Up to $count cards · $levelNames';
-    final reason = !hasMaterials
-        ? 'Pick at least one material to build a deck.'
-        : (!hasDifficulty ? 'Pick at least one difficulty level to build a deck.' : null);
-
     return Container(
       padding: const EdgeInsets.fromLTRB(22, 14, 22, 26),
       decoration: BoxDecoration(
@@ -888,29 +883,14 @@ class _Footer extends StatelessWidget {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
         boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: 0.05), offset: const Offset(0, -3))],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(recipe, style: const TextStyle(fontFamily: 'Nunito', fontSize: 12, fontWeight: FontWeight.w900, color: AppColors.textSecondary)),
-          const SizedBox(height: 11),
-          AppButton(
-            label: 'Generate flashcards',
-            variant: AppButtonVariant.accent,
-            height: 56,
-            borderRadius: 18,
-            shadowColor: canGenerate ? AppColors.redShadow.withValues(alpha: 0.6) : Colors.transparent,
-            disabledBackgroundColor: _kDisabledRedFill,
-            onPressed: canGenerate ? onGenerate : null,
-          ),
-          if (reason != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              reason,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontFamily: 'Nunito', fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFA8141B)),
-            ),
-          ],
-        ],
+      child: AppButton(
+        label: 'Generate flashcards',
+        variant: AppButtonVariant.accent,
+        height: 56,
+        borderRadius: 18,
+        shadowColor: canGenerate ? AppColors.redShadow.withValues(alpha: 0.6) : Colors.transparent,
+        disabledBackgroundColor: _kDisabledRedFill,
+        onPressed: canGenerate ? onGenerate : null,
       ),
     );
   }

@@ -7,6 +7,7 @@ import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/flashcard.dart';
 import 'package:tadarab_app/models/study_material.dart';
 import 'package:tadarab_app/services/flashcard_service.dart';
+import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
 
 import '../../../helpers/fake_flashcard_service.dart';
@@ -92,9 +93,10 @@ void main() {
     },
   );
 
-  testWidgets('Generate button is disabled until a material and a '
-      'difficulty are both selected — Easy starts pre-selected, so only '
-      'a material is needed by default', (tester) async {
+  testWidgets('Generate button is disabled until a material is selected — '
+      'Easy starts pre-selected, so only a material is needed by default', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _wrap(FakeFlashcardService(materials: [_material])),
     );
@@ -107,17 +109,90 @@ void main() {
     await tester.pumpAndSettle();
     // Material now selected, Easy is still selected by default: enabled.
     expect(_generateButton(tester).onPressed, isNotNull);
-
-    // Deselecting the only selected difficulty disables it again.
-    await tester.tap(find.byKey(const ValueKey('difficulty-easy')));
-    await tester.pumpAndSettle();
-    expect(_generateButton(tester).onPressed, isNull);
-
-    // Picking any difficulty re-enables it.
-    await tester.tap(find.byKey(const ValueKey('difficulty-medium')));
-    await tester.pumpAndSettle();
-    expect(_generateButton(tester).onPressed, isNotNull);
   });
+
+  testWidgets(
+    'edge case: the last selected difficulty cannot be deselected — '
+    'matches Quiz setup\'s own rule exactly',
+    (tester) async {
+      await tester.pumpWidget(
+        _wrap(FakeFlashcardService(materials: [_material])),
+      );
+      await tester.pumpAndSettle();
+
+      // Easy is selected by default; tapping it again (the only one
+      // selected) should not clear it.
+      await tester.tap(find.byKey(const ValueKey('difficulty-easy')));
+      await tester.pumpAndSettle();
+
+      final easyButton = tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('difficulty-easy')),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      final decoration = easyButton.decoration! as BoxDecoration;
+      // Still selected (navy fill), not deselected to white.
+      expect(decoration.color, isNot(Colors.white));
+
+      // Adding a second level, then removing the original, now succeeds —
+      // the rule only blocks going down to *zero*, not switching which
+      // one is selected.
+      await tester.tap(find.byKey(const ValueKey('difficulty-medium')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('difficulty-easy')));
+      await tester.pumpAndSettle();
+
+      final easyButtonAfter = tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('difficulty-easy')),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      expect(
+        (easyButtonAfter.decoration! as BoxDecoration).color,
+        Colors.white,
+      );
+    },
+  );
+
+  testWidgets(
+    'the subtle shadow appears only on the selected difficulty button',
+    (tester) async {
+      await tester.pumpWidget(
+        _wrap(FakeFlashcardService(materials: [_material])),
+      );
+      await tester.pumpAndSettle();
+
+      final easyButton = tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('difficulty-easy')),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      final easyShadow =
+          (easyButton.decoration! as BoxDecoration).boxShadow!.single;
+      expect(easyShadow.color, AppColors.navy.withValues(alpha: 0.15));
+      expect(easyShadow.blurRadius, 6);
+      expect(easyShadow.offset, const Offset(0, 2));
+
+      final mediumButton = tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('difficulty-medium')),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      expect((mediumButton.decoration! as BoxDecoration).boxShadow, isNull);
+    },
+  );
 
   testWidgets('tapping Generate shows the Generating overlay with the '
       'aimed-for count, before the Worker call resolves', (tester) async {
