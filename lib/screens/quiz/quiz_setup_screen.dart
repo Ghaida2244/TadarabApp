@@ -286,8 +286,17 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.fromLTRB(22, 12, 22, 26),
-                  color: Colors.white,
+                  padding: const EdgeInsets.fromLTRB(22, 14, 22, 26),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+                    // Matches flashcard_setup_screen.dart's _Footer exactly
+                    // (same faint upward shadow, same button shadow/fill
+                    // logic) — Quiz setup is the look-and-feel reference
+                    // everywhere else on this screen; the footer is the one
+                    // place Flashcards was already right and Quiz wasn't.
+                    boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: 0.05), offset: const Offset(0, -3))],
+                  ),
                   child: FutureBuilder<List<StudyMaterial>>(
                     future: _materialsFuture,
                     builder: (context, snapshot) {
@@ -301,9 +310,10 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                         variant: AppButtonVariant.accent,
                         height: 56,
                         borderRadius: 18,
-                        shadowColor: AppColors.navy.withValues(alpha: 0.10),
+                        shadowColor: canGenerate
+                            ? AppColors.redShadow.withValues(alpha: 0.6)
+                            : Colors.transparent,
                         disabledBackgroundColor: AppColors.disabledRedFill,
-                        disabledRemovesShadow: true,
                         onPressed: canGenerate ? () => _generate(materials) : null,
                       );
                     },
@@ -455,6 +465,20 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                       color: on ? AppColors.navy : Colors.white,
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(color: on ? AppColors.navy : AppColors.borderDefault, width: 2),
+                      // A subtle soft shadow on the selected button only —
+                      // unselected stays flat with just its border. KEEP
+                      // THESE EXACT VALUES IN SYNC with
+                      // flashcard_setup_screen.dart's _DifficultyButton
+                      // (same selected-button shadow, both screens).
+                      boxShadow: on
+                          ? [
+                              BoxShadow(
+                                color: AppColors.navy.withValues(alpha: 0.15),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ]
+                          : null,
                     ),
                     child: Text(
                       _difficultyLabel(level),
