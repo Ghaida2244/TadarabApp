@@ -462,6 +462,9 @@ class _StudyTools extends StatelessWidget {
                   background: AppColors.cardTint,
                   iconColor: AppColors.navy,
                   labelColor: AppColors.navy,
+                  // rgba(11,15,91,0.1) in the design handoff's own Quiz
+                  // tile (MaterialsSearchScreen.dc.html).
+                  shadowColor: AppColors.navy.withValues(alpha: 0.1),
                   onTap: unlocked ? onQuizTap : null,
                 ),
               ),
@@ -473,6 +476,9 @@ class _StudyTools extends StatelessWidget {
                   background: AppColors.errorBannerBackground,
                   iconColor: AppColors.red,
                   labelColor: AppColors.errorBannerHeading,
+                  // rgba(227,27,35,0.18) in the design handoff's own
+                  // Flashcards tile (MaterialsSearchScreen.dc.html).
+                  shadowColor: AppColors.red.withValues(alpha: 0.18),
                   onTap: unlocked ? onFlashcardsTap : null,
                 ),
               ),
@@ -498,6 +504,7 @@ class _StudyToolTile extends StatelessWidget {
     required this.background,
     required this.iconColor,
     required this.labelColor,
+    required this.shadowColor,
     required this.onTap,
   });
 
@@ -506,6 +513,7 @@ class _StudyToolTile extends StatelessWidget {
   final Color background;
   final Color iconColor;
   final Color labelColor;
+  final Color shadowColor;
   final VoidCallback? onTap;
 
   @override
@@ -517,6 +525,14 @@ class _StudyToolTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: background,
           borderRadius: BorderRadius.circular(22),
+          // Hard shadow (no blur), per the design handoff — but only when
+          // the tile is actually tappable: the whole Study Tools row is
+          // already wrapped in Opacity when locked (see _StudyTools), so
+          // a flat/disabled tile should look exactly as flat as it does
+          // today, not a faded shadow.
+          boxShadow: onTap == null
+              ? null
+              : [BoxShadow(color: shadowColor, offset: const Offset(0, 3))],
         ),
         child: Column(
           children: [

@@ -55,6 +55,18 @@ void main() {
         );
         expect(find.text('Add your first material'), findsOneWidget);
 
+        // Locked tiles stay flat — no shadow — same as before this fix.
+        final quizContainer = tester.widget<Container>(
+          find.ancestor(
+            of: find.text('Quiz'),
+            matching: find.byType(Container),
+          ).first,
+        );
+        expect(
+          (quizContainer.decoration! as BoxDecoration).boxShadow,
+          isNull,
+        );
+
         await tester.tap(find.text('Quiz'));
         await tester.pumpAndSettle();
         expect(find.text('Quiz sessions'), findsNothing);
@@ -181,6 +193,43 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Quiz sessions'), findsOneWidget);
     });
+
+    testWidgets(
+      'unlocked: the Quiz and Flashcards tiles have the design\'s hard '
+      'bottom-edge shadow (navy@0.1 / red@0.18, offset (0,3), no blur)',
+      (tester) async {
+        await pump(
+          tester,
+          FakeCoursesService(materialsByCourse: {'c1': materials}),
+        );
+
+        final quizContainer = tester.widget<Container>(
+          find.ancestor(
+            of: find.text('Quiz'),
+            matching: find.byType(Container),
+          ).first,
+        );
+        final quizShadow =
+            (quizContainer.decoration! as BoxDecoration).boxShadow!.single;
+        expect(quizShadow.color, AppColors.navy.withValues(alpha: 0.1));
+        expect(quizShadow.offset, const Offset(0, 3));
+        expect(quizShadow.blurRadius, 0);
+
+        final flashcardsContainer = tester.widget<Container>(
+          find.ancestor(
+            of: find.text('Flashcards'),
+            matching: find.byType(Container),
+          ).first,
+        );
+        final flashcardsShadow =
+            (flashcardsContainer.decoration! as BoxDecoration)
+                .boxShadow!
+                .single;
+        expect(flashcardsShadow.color, AppColors.red.withValues(alpha: 0.18));
+        expect(flashcardsShadow.offset, const Offset(0, 3));
+        expect(flashcardsShadow.blurRadius, 0);
+      },
+    );
 
     testWidgets(
       'Flashcards tile opens the real Flashcard sessions screen, not a '
