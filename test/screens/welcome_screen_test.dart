@@ -19,7 +19,7 @@ void main() {
   testWidgets('shows the logo, tagline and both entry buttons', (tester) async {
     await pumpWelcome(tester);
 
-    expect(find.text('Study smarter, not longer'), findsOneWidget);
+    expect(find.text('Study smarter, not harder'), findsOneWidget);
     expect(find.text('Log In'), findsOneWidget);
     expect(find.text('Create Account'), findsOneWidget);
   });
