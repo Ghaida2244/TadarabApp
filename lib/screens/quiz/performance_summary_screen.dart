@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../logic/performance_tier.dart';
 import '../../logic/practice_shuffle.dart';
 import '../../models/enums.dart';
-import '../../models/question.dart';
 import '../../models/quiz_session.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
@@ -67,7 +66,15 @@ class _PerformanceSummaryScreenState extends State<PerformanceSummaryScreen> {
     }
     final session = await widget.service!.fetchSession(widget.sessionId!);
     final questions = await widget.service!.fetchQuestions(widget.sessionId!);
-    final mistakes = questions.where((q) => q.isCorrect != true).toList();
+    // Each mistake's number is its 1-based position in this *full*,
+    // unfiltered list — the question's original position in the session
+    // — computed before filtering, so it survives regardless of where the
+    // mistake lands in the (much shorter) mistakes list itself.
+    final mistakes = <NumberedQuestion>[
+      for (var i = 0; i < questions.length; i++)
+        if (questions[i].isCorrect != true)
+          (question: questions[i], number: i + 1),
+    ];
     return _SummaryData(
       session: session,
       correct: session.correctAnswers,
@@ -90,7 +97,7 @@ class _PerformanceSummaryScreenState extends State<PerformanceSummaryScreen> {
     // options) — a practice round should never look identical to the
     // original, question-for-question and option-for-option.
     final freshQuestions = shuffleQuestionsForPractice(
-      data.mistakes.map((q) => q.asUnanswered()).toList(),
+      data.mistakes.map((m) => m.question.asUnanswered()).toList(),
     );
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -291,7 +298,7 @@ class _SummaryData {
   final QuizSession? session;
   final int correct;
   final int total;
-  final List<Question> mistakes;
+  final List<NumberedQuestion> mistakes;
 }
 
 class _CountCard extends StatelessWidget {

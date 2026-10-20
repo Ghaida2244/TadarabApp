@@ -5,22 +5,28 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/models/question.dart';
 import 'package:tadarab_app/screens/quiz/review_mistakes_screen.dart';
 
-List<Question> _mistakes({String? blankFor}) {
+NumberedQuestion _numbered(Question question, int number) =>
+    (question: question, number: number);
+
+List<NumberedQuestion> _mistakes({String? blankFor, int number = 1}) {
   return [
-    Question(
-      questionId: 'q1',
-      questionText: 'What is a database?',
-      correctAnswer: 'A collection of related data',
-      explanation: 'It organizes related data for access and management.',
-      sourceLocation: 'Slide 1',
-      studentAnswer: blankFor == 'q1' ? null : 'A programming language',
-      options: const [
-        'A collection of unrelated data',
-        'A collection of related data',
-        'A programming language',
-        'A hardware device',
-      ],
-      sessionId: 's1',
+    _numbered(
+      Question(
+        questionId: 'q1',
+        questionText: 'What is a database?',
+        correctAnswer: 'A collection of related data',
+        explanation: 'It organizes related data for access and management.',
+        sourceLocation: 'Slide 1',
+        studentAnswer: blankFor == 'q1' ? null : 'A programming language',
+        options: const [
+          'A collection of unrelated data',
+          'A collection of related data',
+          'A programming language',
+          'A hardware device',
+        ],
+        sessionId: 's1',
+      ),
+      number,
     ),
   ];
 }
@@ -93,15 +99,18 @@ void main() {
   testWidgets('the plural count reads "N wrong out of" for more than one mistake', (tester) async {
     final twoMistakes = [
       ..._mistakes(),
-      Question(
-        questionId: 'q2',
-        questionText: 'Q2',
-        correctAnswer: 'Right',
-        explanation: 'E',
-        sourceLocation: 'Slide 2',
-        studentAnswer: 'Wrong',
-        options: const ['Right', 'Wrong'],
-        sessionId: 's1',
+      _numbered(
+        Question(
+          questionId: 'q2',
+          questionText: 'Q2',
+          correctAnswer: 'Right',
+          explanation: 'E',
+          sourceLocation: 'Slide 2',
+          studentAnswer: 'Wrong',
+          options: const ['Right', 'Wrong'],
+          sessionId: 's1',
+        ),
+        2,
       ),
     ];
     await tester.pumpWidget(
@@ -111,6 +120,52 @@ void main() {
 
     expect(find.text('2 wrong out of 10'), findsOneWidget);
   });
+
+  testWidgets(
+    'labels show each mistake\'s original position in the session, not '
+    'its position in the mistakes list — questions 2 and 5 of a 5-question '
+    'session read "QUESTION 2" and "QUESTION 5"',
+    (tester) async {
+      final mistakes = [
+        _numbered(
+          Question(
+            questionId: 'q2',
+            questionText: 'Second question',
+            correctAnswer: 'Right',
+            explanation: 'E',
+            sourceLocation: 'Slide 2',
+            studentAnswer: 'Wrong',
+            options: const ['Right', 'Wrong'],
+            sessionId: 's1',
+          ),
+          2,
+        ),
+        _numbered(
+          Question(
+            questionId: 'q5',
+            questionText: 'Fifth question',
+            correctAnswer: 'Right',
+            explanation: 'E',
+            sourceLocation: 'Slide 5',
+            studentAnswer: 'Wrong',
+            options: const ['Right', 'Wrong'],
+            sessionId: 's1',
+          ),
+          5,
+        ),
+      ];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ReviewMistakesScreen(mistakes: mistakes, totalQuestions: 5),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('QUESTION 2'), findsOneWidget);
+      expect(find.text('QUESTION 5'), findsOneWidget);
+      expect(find.text('QUESTION 1'), findsNothing);
+    },
+  );
 
   testWidgets(
     'has no "Back to course" button — the back arrow is the only way out, and it goes to Summary, not past it',
