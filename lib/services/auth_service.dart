@@ -52,6 +52,14 @@ class AuthService {
 
   Future<void> signOut() => _auth.signOut();
 
+  /// Returns the current user's Firebase ID token, needed as the
+  /// Authorization: Bearer <token> header on every call to the
+  /// Cloudflare Worker's /generate endpoint.
+  Future<String?> getIdToken() {
+    final user = _auth.currentUser;
+    return user == null ? Future.value(null) : user.getIdToken();
+  }
+
   /// Signs in with email/password. On any credential-related failure this
   /// throws the same generic message regardless of which part was wrong,
   /// so the error can't be used to enumerate valid accounts.

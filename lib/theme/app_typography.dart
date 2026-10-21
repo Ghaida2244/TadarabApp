@@ -104,4 +104,118 @@ class AppTypography {
     color: AppColors.red,
     letterSpacing: 0.08 * 13,
   );
+
+  // Quiz (Phase 2 handoff).
+
+  /// A navy-header screen title, e.g. "Quiz sessions" / "Quiz setup" — white
+  /// on the navy header bar.
+  static TextStyle get quizHeaderTitle => _nunito(
+    24,
+    FontWeight.w900,
+    color: Colors.white,
+    letterSpacing: -0.02 * 24,
+  );
+
+  /// Small meta text on a navy header (session count, mistake count).
+  static TextStyle get quizHeaderMeta => _nunito(
+    13,
+    FontWeight.w900,
+    color: Colors.white.withValues(alpha: 0.65),
+  );
+
+  /// Section eyebrow labels, e.g. "MATERIALS", "DIFFICULTY", "IN PROGRESS".
+  static TextStyle get quizEyebrow => _nunito(
+    12,
+    FontWeight.w900,
+    color: AppColors.placeholder,
+    letterSpacing: 0.06 * 12,
+  );
+
+  /// A session/material card's title line.
+  static TextStyle get quizCardTitle =>
+      _nunito(17, FontWeight.w900, height: 1.25);
+
+  /// A pill/badge label, e.g. "LEARNING" / "EXAM".
+  static TextStyle get quizBadge =>
+      _nunito(10, FontWeight.w900, letterSpacing: 0.04 * 10);
+
+  /// A status label paired with a colored dot ("Completed" / "In progress").
+  static TextStyle get quizStatus => _nunito(12, FontWeight.w900);
+
+  /// The quiz question text itself.
+  static TextStyle get quizQuestion =>
+      _nunito(21, FontWeight.w900, height: 1.35);
+
+  /// An answer option's text (weight varies selected/revealed — pass
+  /// [weight] explicitly).
+  static TextStyle quizOption(FontWeight weight, {Color? color}) =>
+      _nunito(15, weight, color: color ?? AppColors.navy, height: 1.4);
+
+  /// An option's lettered key circle (A/B/C/D).
+  static TextStyle get quizOptionKey => _nunito(12, FontWeight.w900);
+
+  /// "EXPLANATION" / "FIND IT IN YOUR MATERIAL" panel labels.
+  static TextStyle quizPanelLabel({Color? color}) => _nunito(
+    11,
+    FontWeight.w900,
+    color: color ?? AppColors.placeholder,
+    letterSpacing: 0.06 * 11,
+  );
+
+  /// The explanation panel's body text.
+  static TextStyle get quizPanelBody =>
+      _nunito(14, FontWeight.w800, height: 1.6);
+
+  /// The source-location strip's value text ("Lecture 1 · Slide 8").
+  static TextStyle get quizSourceValue =>
+      _nunito(14, FontWeight.w900, color: Colors.white);
+
+  /// Performance Summary's screen title.
+  static TextStyle get quizSummaryTitle => _nunito(
+    26,
+    FontWeight.w900,
+    color: Colors.white,
+    letterSpacing: -0.02 * 26,
+    height: 1.15,
+  );
+
+  /// The big correct/wrong count numbers.
+  static TextStyle quizResultCount(Color color) =>
+      _nunito(34, FontWeight.w900, color: color, height: 1);
+
+  /// "CORRECT" / "WRONG" labels under the counts.
+  static TextStyle get quizResultCountLabel => _nunito(
+    11,
+    FontWeight.w900,
+    color: AppColors.textSecondary,
+    letterSpacing: 0.06 * 11,
+  );
+
+  /// The motivational result line.
+  static TextStyle quizResultLine(Color color) =>
+      _nunito(14, FontWeight.w900, color: color, height: 1.5);
+
+  /// "Points earned" label / value in the summary's points strip.
+  static TextStyle get quizPointsLabel =>
+      _nunito(14, FontWeight.w900, color: AppColors.warningText);
+  static TextStyle get quizPointsValue =>
+      _nunito(24, FontWeight.w900, color: AppColors.warningText);
+
+  /// A dialog's title / body copy (limit dialog, delete/exit confirmations).
+  static TextStyle get quizDialogTitle => _nunito(19, FontWeight.w900);
+  static TextStyle get quizDialogBody => _nunito(
+    14,
+    FontWeight.w700,
+    color: AppColors.textSecondary,
+    height: 1.6,
+  );
+
+  /// The empty-state title/body on Quiz sessions.
+  static TextStyle get quizEmptyTitle => _nunito(20, FontWeight.w900);
+  static TextStyle get quizEmptyBody => _nunito(
+    13,
+    FontWeight.w700,
+    color: AppColors.textSecondary,
+    height: 1.55,
+  );
 }

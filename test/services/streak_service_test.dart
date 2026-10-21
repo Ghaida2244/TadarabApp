@@ -85,6 +85,66 @@ void main() {
     });
   });
 
+  group('effectiveStreak', () {
+    test('normal case: same-day activity shows the full stored streak', () {
+      final result = effectiveStreak(
+        storedStreak: 4,
+        lastStudyDate: DateTime(2026, 3, 10),
+        now: DateTime(2026, 3, 10, 20, 0),
+      );
+      expect(result, 4);
+    });
+
+    test(
+      'normal case: one day since last activity still shows the full streak '
+      '— today isn\'t over yet, so it isn\'t broken yet',
+      () {
+        final result = effectiveStreak(
+          storedStreak: 4,
+          lastStudyDate: DateTime(2026, 3, 9),
+          now: DateTime(2026, 3, 10),
+        );
+        expect(result, 4);
+      },
+    );
+
+    test(
+      'bug repro: a stale stored streak with a real gap since is shown as '
+      'broken (0) immediately, without waiting for the next session',
+      () {
+        // The exact scenario reported: currentStreak is still 4 in
+        // Firestore (nothing has re-run computeNextStreak since), but 3
+        // full days have actually passed with zero activity.
+        final result = effectiveStreak(
+          storedStreak: 4,
+          lastStudyDate: DateTime(2026, 3, 7),
+          now: DateTime(2026, 3, 10),
+        );
+        expect(result, 0);
+      },
+    );
+
+    test('edge case: exactly a 2-day gap is already broken, not a boundary '
+        'that\'s still forgiven', () {
+      final result = effectiveStreak(
+        storedStreak: 10,
+        lastStudyDate: DateTime(2026, 3, 8),
+        now: DateTime(2026, 3, 10),
+      );
+      expect(result, 0);
+    });
+
+    test('failure case: no lastStudyDate ever recorded shows 0, regardless '
+        'of whatever storedStreak happens to hold', () {
+      final result = effectiveStreak(
+        storedStreak: 4,
+        lastStudyDate: null,
+        now: DateTime(2026, 3, 10),
+      );
+      expect(result, 0);
+    });
+  });
+
   group('dateOnly', () {
     test('strips the time-of-day, keeping local date', () {
       expect(

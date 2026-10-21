@@ -33,6 +33,15 @@ class ContinueOrStartCard extends StatelessWidget {
       final kindLabel = session.kind == SessionKind.quiz
           ? 'Quiz'
           : 'Flashcards';
+      // Wording matches the Quiz Sessions screen exactly (not just the
+      // same numbers) — a bare "3/8" is ambiguous about what's being
+      // counted; "3 of 8 answered" isn't.
+      final countLabel = session.kind == SessionKind.quiz
+          ? '${session.currentIndex} of ${session.total} answered'
+          : '${session.currentIndex} of ${session.total} reviewed';
+      final resumeLabel = session.kind == SessionKind.quiz
+          ? 'Resume at question ${session.resumePosition}'
+          : 'Resume at card ${session.resumePosition}';
       return Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
@@ -59,12 +68,16 @@ class ContinueOrStartCard extends StatelessWidget {
                     color: AppColors.errorBannerBody,
                   ),
                 ),
-                Text(
-                  '${session.currentIndex}/${session.total}',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.errorBannerBody,
+                Flexible(
+                  child: Text(
+                    countLabel,
+                    textAlign: TextAlign.right,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.errorBannerBody,
+                    ),
                   ),
                 ),
               ],
@@ -93,7 +106,7 @@ class ContinueOrStartCard extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             AppButton(
-              label: 'Resume',
+              label: resumeLabel,
               variant: AppButtonVariant.accent,
               height: 52,
               onPressed: onResume,

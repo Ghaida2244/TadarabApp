@@ -1,12 +1,25 @@
 import 'package:flutter/material.dart';
 
+import '../../features/flashcards/flashcard_navigation.dart';
+import '../../features/flashcards/screens/flashcard_flip_deck_screen.dart';
+import '../../features/flashcards/screens/flashcard_sessions_screen.dart';
 import '../../models/course.dart';
 import '../../models/student.dart';
+import '../../models/study_material.dart';
 import '../../services/calendar_service.dart';
+import '../../services/courses_service.dart';
+import '../../services/flashcard_service.dart';
 import '../../services/home_data_service.dart';
+import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../calendar/calendar_screen.dart';
+import '../courses/add_course_screen.dart';
+import '../courses/course_detail_screen.dart';
+import '../courses/courses_list_screen.dart';
 import '../placeholder_screen.dart';
+import '../quiz/quiz_navigation.dart';
+import '../quiz/quiz_play_screen.dart';
+import '../quiz/quiz_sessions_screen.dart';
 import 'widgets/continue_or_start_card.dart';
 import 'widgets/course_picker_sheet.dart';
 import 'widgets/new_student_onboarding_card.dart';
@@ -22,6 +35,8 @@ class HomeScreen extends StatefulWidget {
     required this.uid,
     this.homeDataService,
     this.calendarService,
+    this.coursesService,
+    this.flashcardServiceBuilder,
     this.now,
     this.onSignOut,
   });
@@ -33,6 +48,19 @@ class HomeScreen extends StatefulWidget {
 
   /// Overridable for tests; passed straight to the Calendar tab.
   final CalendarService? calendarService;
+
+  /// Overridable for tests; defaults to the real Firebase-backed service.
+  /// Used both by the onboarding "Create my first course" button and by
+  /// the embedded Courses tab, so a single override covers both.
+  final CoursesService? coursesService;
+
+  /// Overridable for tests; defaults to the real Firebase-backed
+  /// FlashcardService. A builder (not a single instance) because, unlike
+  /// [coursesService], the course it's scoped to isn't known until the
+  /// student picks one from the course picker or has an in-progress
+  /// session to resume.
+  final FlashcardService Function({required String uid, required String courseId})?
+  flashcardServiceBuilder;
 
   /// Overridable for tests, so "today"/greeting/streak-row highlighting is deterministic.
   final DateTime? now;
@@ -47,6 +75,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late final _dataService = widget.homeDataService ?? HomeDataService();
+  late final _coursesService = widget.coursesService ?? CoursesService();
+  late final _flashcardServiceBuilder =
+      widget.flashcardServiceBuilder ??
+      ({required String uid, required String courseId}) =>
+          FlashcardService(uid: uid, courseId: courseId);
   int _tabIndex = 0;
 
   /// Bumped whenever the Calendar adds or deletes an event, so the Home tab
@@ -76,18 +109,25 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.homeBackground,
       body: IndexedStack(
         index: _tabIndex,
         children: [
           _HomeTab(
             uid: widget.uid,
             dataService: _dataService,
+            coursesService: _coursesService,
+            flashcardServiceBuilder: _flashcardServiceBuilder,
             now: _now,
+            active: _tabIndex == 0,
             refreshToken: _homeRefreshToken,
+            onCourseCreated: () => _selectTab(1),
             onOpenCalendarTab: () => _selectTab(2),
           ),
-          const PlaceholderScreen(label: 'Courses screen'),
+          CoursesListScreen(
+            uid: widget.uid,
+            coursesService: _coursesService,
+            active: _tabIndex == 1,
+          ),
           _lazyTab(
             2,
             () => CalendarScreen(
@@ -123,19 +163,43 @@ class _HomeTab extends StatefulWidget {
   const _HomeTab({
     required this.uid,
     required this.dataService,
+    required this.coursesService,
+    required this.flashcardServiceBuilder,
     required this.now,
+    required this.active,
     required this.refreshToken,
+    required this.onCourseCreated,
     required this.onOpenCalendarTab,
   });
 
   final String uid;
   final HomeDataService dataService;
+  final CoursesService coursesService;
+  final FlashcardService Function({required String uid, required String courseId})
+  flashcardServiceBuilder;
   final DateTime now;
 
+  /// Whether this is the currently-selected bottom-nav tab. Home lives in a
+  /// persistent IndexedStack alongside Courses, so this State survives tab
+  /// switches — without reloading on becoming active again, a course
+  /// created from the Courses tab would never lift Home out of its
+  /// zero-courses onboarding state within the same session.
+  final bool active;
+
   /// Changes whenever something outside this tab (today, only the Calendar)
-  /// has altered data Home shows, prompting a re-read.
+  /// has altered data Home shows, prompting a re-read. Distinct from
+  /// [active]: an event added on the Calendar tab must refresh Home even
+  /// though Home is not the active tab at that moment.
   final int refreshToken;
 
+  /// Switches HomeScreen's bottom-nav tab to Courses — called once a course
+  /// is successfully created from Home's onboarding card, so the student
+  /// lands on the Courses tab (with the new course visible) instead of
+  /// staying on Home.
+  final VoidCallback onCourseCreated;
+
+  /// Switches HomeScreen's bottom-nav tab to Calendar — see
+  /// [_HomeTabState._openCalendarTab].
   final VoidCallback onOpenCalendarTab;
 
   @override
@@ -143,8 +207,15 @@ class _HomeTab extends StatefulWidget {
 }
 
 class _HomeTabState extends State<_HomeTab> {
-  // Not `late final`: these are re-issued on refresh, so Home can't keep
-  // showing an Upcoming list from before an event was added or deleted.
+  // Not `late final`: HomeScreen keeps every bottom-nav tab alive via
+  // IndexedStack, so this State is never disposed/recreated when the
+  // student navigates to a pushed screen (Quiz, Add Course, ...) and back
+  // — a `late final` Future computed once at first access would go stale
+  // forever (e.g. completing a quiz and returning would never show the
+  // updated points/streak/Continue-card). The same applies to events
+  // added or deleted on the Calendar tab. _reload() re-fetches everything
+  // and is called whenever a pushed screen is popped back to Home, this
+  // tab becomes active again, or [refreshToken] changes.
   late Future<List<Course>> _courses;
   late Future<WeeklyProgress> _weeklyProgress;
   late Future<InProgressSession?> _inProgress;
@@ -153,18 +224,22 @@ class _HomeTabState extends State<_HomeTab> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadAll();
   }
 
   @override
-  void didUpdateWidget(_HomeTab oldWidget) {
+  void didUpdateWidget(covariant _HomeTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.refreshToken != widget.refreshToken) {
-      setState(_load);
-    }
+    // Two independent triggers: becoming the active tab again (a course
+    // may have been created on the Courses tab), and the shell bumping
+    // [refreshToken] (an event was added or deleted on the Calendar tab,
+    // which can happen while Home is inactive).
+    final becameActive = widget.active && !oldWidget.active;
+    final dataChangedElsewhere = widget.refreshToken != oldWidget.refreshToken;
+    if (becameActive || dataChangedElsewhere) _reload();
   }
 
-  void _load() {
+  void _loadAll() {
     _courses = widget.dataService.fetchCourses(widget.uid);
     _weeklyProgress = widget.dataService.fetchWeeklyProgress(
       widget.uid,
@@ -177,24 +252,73 @@ class _HomeTabState extends State<_HomeTab> {
     );
   }
 
-  void _openAddCoursePlaceholder() {
-    Navigator.of(context).push(
+  void _reload() => setState(_loadAll);
+
+  /// Fetches one earlier week's data for [TodayProgressCard]'s streak row
+  /// pager — the exact same query `_loadAll` already uses for the current
+  /// week, just for a different week's Sunday. Lazy, per-week, and cached
+  /// by the card itself; this method does no caching of its own.
+  Future<WeeklyProgress> _fetchWeek(DateTime weekStart) =>
+      widget.dataService.fetchWeeklyProgress(widget.uid, now: weekStart);
+
+  Future<void> _openAddCourse() async {
+    // Only reachable from the zero-courses onboarding card, so the
+    // student's current course list is already known to be empty here —
+    // no need to refetch it just to pass it along.
+    final created = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => const PlaceholderScreen(label: 'Add Course screen'),
+        builder: (_) => AddCourseScreen(
+          uid: widget.uid,
+          coursesService: widget.coursesService,
+          existingCourses: const [],
+        ),
       ),
     );
+    if (created == true) {
+      _reload();
+      widget.onCourseCreated();
+    }
   }
 
-  void _openSetupPlaceholder(SessionKind kind) {
-    final label = kind == SessionKind.quiz
-        ? 'Quiz setup screen'
-        : 'Flashcard setup screen';
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => PlaceholderScreen(label: label)));
+  void _openFlashcardSessions(Course course, String? email) {
+    // Guards against the rare case where the student doc hasn't loaded yet
+    // when this is tapped (FlashcardSessionsScreen needs a real email) —
+    // same defensive-no-op spirit as _resumeSession's inProgress == null arm.
+    if (email == null) return;
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) => FlashcardSessionsScreen(
+              uid: widget.uid,
+              courseId: course.courseId,
+              email: email,
+              service: widget.flashcardServiceBuilder(
+                uid: widget.uid,
+                courseId: course.courseId,
+              ),
+            ),
+            settings: const RouteSettings(name: flashcardSessionsRouteName),
+          ),
+        )
+        .then((_) => _reload());
   }
 
-  void _openCoursePicker(SessionKind kind) {
+  void _openQuizSessions(Course course) {
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) => QuizSessionsScreen(
+              courseId: course.courseId,
+              courseName: course.courseName,
+              service: QuizSessionService(),
+            ),
+            settings: const RouteSettings(name: quizSessionsRouteName),
+          ),
+        )
+        .then((_) => _reload());
+  }
+
+  void _openCoursePicker(SessionKind kind, {String? email}) {
     showCoursePickerSheet(
       context: context,
       dataService: widget.dataService,
@@ -202,18 +326,116 @@ class _HomeTabState extends State<_HomeTab> {
       kind: kind,
       onCourseSelected: (Course course) {
         Navigator.of(context).pop();
-        _openSetupPlaceholder(kind);
+        _onCoursePicked(kind, course, email: email);
       },
     );
   }
 
+  /// The course picker can't tell in advance whether a course has any
+  /// material — Course Detail locks Quiz/Flashcards until at least one
+  /// exists (see `_StudyTools`'s `unlocked` there), so opening the
+  /// sessions screen directly for an empty course would let the student
+  /// reach a screen Course Detail itself would never let them into. Uses
+  /// [CoursesService.fetchMaterials] — the exact same source of truth
+  /// Course Detail reads from — fetched fresh at the moment of picking
+  /// rather than any cached count, so the two places can never disagree.
+  Future<void> _onCoursePicked(
+    SessionKind kind,
+    Course course, {
+    String? email,
+  }) async {
+    List<StudyMaterial> materials;
+    try {
+      materials = await widget.coursesService.fetchMaterials(
+        widget.uid,
+        course.courseId,
+      );
+    } on CoursesFailure catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    if (materials.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            kind == SessionKind.quiz
+                ? 'Upload a material first to start a quiz.'
+                : 'Upload a material first to start flashcards.',
+          ),
+        ),
+      );
+      Navigator.of(context)
+          .push(
+            MaterialPageRoute(
+              builder: (_) => CourseDetailScreen(
+                uid: widget.uid,
+                course: course,
+                coursesService: widget.coursesService,
+              ),
+            ),
+          )
+          .then((_) => _reload());
+      return;
+    }
+
+    if (kind == SessionKind.quiz) {
+      _openQuizSessions(course);
+    } else {
+      _openFlashcardSessions(course, email);
+    }
+  }
+
   void _resumeSession(InProgressSession session) {
-    final label = session.kind == SessionKind.quiz
-        ? 'Quiz session screen'
-        : 'Flashcard session screen';
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => PlaceholderScreen(label: label)));
+    if (session.kind == SessionKind.quiz) {
+      Navigator.of(context)
+          .push(
+            MaterialPageRoute(
+              builder: (_) => QuizPlayScreen(
+                sessionId: session.sessionId,
+                service: QuizSessionService(),
+              ),
+            ),
+          )
+          .then((_) => _reload());
+      return;
+    }
+    _resumeFlashcardSession(session);
+  }
+
+  // Unlike QuizPlayScreen (which loads its own session by id),
+  // FlashcardFlipDeckScreen takes already-fetched data — it's also used to
+  // start a fresh Retake with in-memory values, so it can't fetch for
+  // itself. Mirrors FlashcardSessionsScreen._resume's same two-step fetch.
+  Future<void> _resumeFlashcardSession(InProgressSession info) async {
+    final service = widget.flashcardServiceBuilder(
+      uid: widget.uid,
+      courseId: info.courseId,
+    );
+    final sessions = await service.watchSessions().first;
+    final session = sessions.firstWhere((s) => s.sessionId == info.sessionId);
+    final flashcards = await service.fetchFlashcards(info.sessionId);
+    if (!mounted) return;
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) => FlashcardFlipDeckScreen(
+              uid: widget.uid,
+              courseId: info.courseId,
+              sessionId: info.sessionId,
+              initialFlashcards: flashcards,
+              initialIndex: session.currentFlashcardIndex,
+              initialKnownCount: session.knownCount,
+              initialNeedsReviewCount: session.needsReviewCount,
+              service: service,
+            ),
+          ),
+        )
+        .then((_) => _reload());
   }
 
   void _openCalendarTab() {
@@ -279,7 +501,9 @@ class _HomeTabState extends State<_HomeTab> {
                                 TodayProgressCard(
                                   weeklyProgress: weeklyProgress,
                                   currentStreak: student?.currentStreak ?? 0,
+                                  lastStudyDate: student?.lastStudyDate,
                                   now: widget.now,
+                                  fetchWeek: _fetchWeek,
                                 ),
                                 const SizedBox(height: 16),
                                 ContinueOrStartCard(
@@ -289,8 +513,10 @@ class _HomeTabState extends State<_HomeTab> {
                                       : () => _resumeSession(inProgress),
                                   onNewQuiz: () =>
                                       _openCoursePicker(SessionKind.quiz),
-                                  onNewFlashcards: () =>
-                                      _openCoursePicker(SessionKind.flashcard),
+                                  onNewFlashcards: () => _openCoursePicker(
+                                    SessionKind.flashcard,
+                                    email: student?.email,
+                                  ),
                                 ),
                                 const SizedBox(height: 16),
                                 UpcomingSection(
@@ -301,7 +527,7 @@ class _HomeTabState extends State<_HomeTab> {
                               ],
                             )
                           : NewStudentOnboardingCard(
-                              onCreateFirstCourse: _openAddCoursePlaceholder,
+                              onCreateFirstCourse: _openAddCourse,
                             ),
                     ),
                   ),

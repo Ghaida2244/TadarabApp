@@ -52,4 +52,7 @@ worker/node_modules/
 worker/.wrangler/
 worker/.dev.vars
 
-.DS_Store
+docs/mockups/*.zip
+
+# Local dev-only preview entry point, not for the team repo
+lib/features/flashcards/dev_preview.dart

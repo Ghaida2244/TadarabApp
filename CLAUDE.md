@@ -147,12 +147,20 @@ fields added that aren't in the table (with reason). Report this comparison
 *before* fixing mismatches — don't silently correct them.
 
 **Grounding requirement for generated content** — every question/flashcard
-must cite the exact excerpt/location it came from; after generation, verify
-the cited excerpt actually appears in the material's extracted text before
-showing it, discard/regenerate if not; include a "Report this question"
-option in the UI as a fallback; if the material can't support the requested
-count, generate as many good ones as it supports and tell the student —
-never pad with low-quality or off-topic items.
+must cite the location it came from (`sourceLocation`). Free phrasing of the
+question/answer text itself is allowed (superseding this rule's earlier,
+stricter wording) — the check is that `sourceLocation` points to a real
+location tag that actually exists in the source text (e.g. "Slide 5"), not a
+literal text match of the generated content against the source. Verify this
+after generation as a monitoring check only, not a gate: a slightly
+imprecise sourceLocation shown to the student is acceptable, but losing a
+valid question is not, so an ungrounded item is never discarded or
+regenerated for this reason — it's logged instead, to inform future prompt
+tuning. Include a "Report this question" option in the UI as a fallback
+(flag + store is enough — no admin review flow required); if the material
+can't support the
+requested count, generate as many good ones as it supports and tell the
+student — never pad with low-quality or off-topic items.
 
 ### Non-functional requirements
 
@@ -528,182 +536,1015 @@ mark it done, note decisions made, note what starts next.)*
   inherits it, default scaffold bg is white) and a WelcomeScreen bg test.
   89 tests, 0 failures.
 
-  Remaining for Phase B: the Courses tab itself (add/list/delete courses),
-  deferred along with the rest of the Phase 1 design handoff.
+  Remaining for Phase B: none. The Courses tab is out of scope for Phase B —
+  it's Manar's Courses & Material upload feature (`feature/courses`, see
+  Feature split) in Phase C, for her to define once she starts it.
 - **Phase C — Feature split:** in progress.
-  - **Calendar (`feature/calendar-points`):** done. `CalendarEvent` already
-    existed from Phase A and the required model accuracy audit found
-    **10/10 fields matching** `docs/Attributes Dictionary Table.png` with
-    nothing missing or added, so no model change was needed — the only
-    deviations are the two already-approved project-wide patterns (string
-    document IDs rather than INT, and `#`-prefixed hex colours).
-    No `firestore.rules` change either: the existing owner-scoped rule
-    already covers `users/{uid}/events/{eventId}`.
 
-    Built `lib/utils/event_time.dart` (month-grid construction, `"HH:mm"`
-    ↔ `TimeOfDay` ↔ `"12:00 PM"`, reminder lead-time arithmetic) and
-    `lib/services/calendar_service.dart`, injectable like `AuthService`/
-    `HomeDataService`. `CalendarService.addEvent` returns the new document
-    ID rather than a filled-in `CalendarEvent`, specifically so it needs no
-    `copyWith` on the model — model classes are shared files frozen after
-    Phase B, and the ID is all any caller needs. The month query is a
-    single-field range plus order-by on that same field, which Firestore
-    auto-indexes; this deliberately avoids the two-field shape that forced
-    the composite indexes added for Home in Phase B.
+  **Flashcards & Sessions** (Deemah, `feature/flashcards`, rebased onto
+  latest `main` — picked up the Phase B
+  Home work and the AI generation Worker) is done except the live Worker
+  call. No Phase B UI existed for this feature yet (checked the working
+  tree, `main`, and the pre-existing `feature/flashcards` branch — none had
+  it), so this pass built the screens too, not just the logic layer, styled
+  with the existing `AppTheme` and informed by
+  `docs/mockups/design_handoff_flashcard/.../Tadarab Phase 2b -
+  Flashcards.dc.html` and its reference PNGs, but this was not a
+  pixel-precision design pass like Phase B's.
 
-    Screens: the Calendar tab (month grid, red today marker, a colour dot
-    per event, day-details bottom sheet, centred delete confirmation) and
-    Add Event (name, optional course, four-preset colour picker replaced by
-    the course-colour chip once a course is chosen, date/time pickers,
-    reminder toggle with amount + singular/plural unit). Add Event's fields
-    are built locally rather than with `AppTextField`, whose leading-icon
-    layout doesn't match these boxes.
+  **Model changes** (audited against `docs/Attributes Dictionary Table.png`
+  first, per the required audit — full match on every other field):
+  `Session.difficultyLevel` → `difficultyLevels: List<DifficultyLevel>`
+  (non-empty assert), affecting `session.dart`, `quiz_session.dart`, and
+  `flashcard_session.dart` alike since `QuizSession` and `FlashcardSession`
+  share the base class — **a teammate may be making this same change
+  independently; expect a merge conflict on `session.dart`/
+  `quiz_session.dart` to resolve manually, not a bug.**
+  `FlashcardSession.materialTitles: List<String>` added (approved
+  deviation, same pattern as `StudyMaterial.document`) so the Sessions list
+  can show a session's material badge without a materials re-fetch.
+  `Flashcard.reviewStatus` changed from required to nullable (`ReviewStatus?`)
+  — needed for a freshly-generated card's pre-review state and for Retake's
+  reset, since the enum itself stays exactly `{knowIt, needsReview}` as
+  specified. `Flashcard.cardIndex: int` added (approved deviation) — Firestore
+  doesn't preserve document insertion order, but Resume must reopen a deck in
+  its original order and Retake must persist a freshly-shuffled order, so an
+  explicit, independently-rewritable position field per card was the only way
+  to support both.
 
-    Design decisions confirmed with the team: the Calendar tab is grid-only
-    — the Upcoming Events list belongs on Home, and an earlier mockup
-    showing it on Calendar was a bad reference, since corrected; dots render
-    on **every** day with events including today and past days (the mockups'
-    "Midterm — Today" vs. Midterm-on-May-5 disagreement was an inconsistency
-    between figures, not a rule); and the reminder unit is pluralised by
-    amount, with the amount in its own field so the dropdown shows the unit
-    word alone.
+  **Worker call — still a placeholder.** `FlashcardService.generateFlashcards`
+  throws `UnimplementedError` exactly as specified; the Worker's live URL
+  hasn't been provided. Every other outcome (success at full count, short
+  result → limit dialog, any failure → retry-able banner) is wired and
+  tested against a fake service, so swapping in the real HTTP call later
+  should only require rewriting that one function's body.
 
-    Reminders use `flutter_local_notifications` + `timezone`, with
-    `POST_NOTIFICATIONS`/`RECEIVE_BOOT_COMPLETED` and the plugin's receivers
-    added to `AndroidManifest.xml` so a scheduled reminder survives a
-    reboot. Scheduling is best-effort and never throws — an event must still
-    save even when its reminder can't be set — and reports success via its
-    return value instead. `AndroidScheduleMode.inexactAllowWhileIdle` is
-    used so the app doesn't need the `SCHEDULE_EXACT_ALARM` special-access
-    grant; a reminder may therefore fire a little late if the device is
-    dozing. **Not yet verified on a physical device** — the notification
-    plugin has no implementation under `flutter test`, so the scheduling
-    path is covered only by a fake.
+  **Message copy**: per instruction, did *not* touch auth_service.dart's
+  `_networkFailureMessage`/`_genericFailureMessage` (a teammate may be
+  actively editing that file) — `flashcard_service.dart` instead duplicates
+  the exact same text as its own public `kFlashcardNetworkFailureMessage`/
+  `kFlashcardGenericFailureMessage`, with a TODO to consolidate onto
+  auth_service.dart's constants once that file is confirmed safe to touch.
 
-    Home wiring turned out to be much smaller than scoped:
-    `HomeDataService.fetchUpcomingEvents` and `UpcomingSection` were already
-    reading real events (they were simply always empty, because nothing
-    created events), so neither was rebuilt. What was needed: point the
-    Calendar tab and "See all" at the real screen, and re-read Home's
-    Upcoming after an event is added or deleted — `_HomeTab`'s futures were
-    `late final`, so they could never refresh. Tabs in the shell are now
-    built lazily: `IndexedStack` builds every child eagerly, which
-    subscribed the Calendar to Firestore the moment Home mounted, for a tab
-    the student may never open.
+  **New files**: `lib/services/flashcard_service.dart` (Firestore CRUD +
+  the Worker-call placeholder), `lib/features/flashcards/logic/
+  flashcard_logic.dart` (pure functions: points, tier selection, resume-index
+  clamping, Retake reshuffle+reset, delete-dialog body text — no Firestore
+  dependency, matching how `home_data_service.dart`'s pure helpers are
+  tested), five screens and five shared widgets under
+  `lib/features/flashcards/`. Did not touch `home_screen.dart` — it still
+  opens placeholders for flashcard setup/resume; wiring real navigation
+  there is shared/Phase-C-sensitive territory and wasn't asked for here.
 
-    26 unit tests + 29 widget tests added; **144 tests total, 0 failures**,
-    `flutter analyze` clean. Harness note for whoever writes the next
-    screen: `tester.ensureVisible` does not reliably scroll this
-    `Column > Expanded > SingleChildScrollView` layout, so the Add Event
-    tests set a tall 420x1600 surface instead. (This originally had to be
-    600 wide, because the Material time picker's OK button overflowed a
-    phone-width surface — no longer the case since the SRS audit below
-    replaced that picker.)
+  55 new tests (21 unit on `flashcard_logic.dart`, 34 widget across the five
+  screens and five widgets — Generating overlay, limit dialog, empty
+  sessions list, all four progress-pip states, save-and-leave sheet, Review
+  Pass button-label logic including the single-card case, both delete-dialog
+  variants, all three Performance Summary tiers at their exact 50%/80%
+  boundaries, and Review-now visibility), 0 failures. Full suite: 144 tests,
+  0 failures. `flutter analyze` clean except two pre-existing infos
+  (`session.dart`'s assert form was specified verbatim; the
+  `auth_service.dart` doc-comment lint predates this work).
 
-    **Build break fixed on the way in.** `main` did not compile: commit
-    `7084fe4` renamed `ContinueOrStartCard.onFlashcards` to `onNewFlashcards`
-    and retitled two of its buttons, but missed the call site in
-    `home_screen.dart` and the tests tapping those buttons. Anything that
-    renames a widget parameter should be checked with `flutter analyze`
-    before the PR — the tests can't catch it, because a compile error stops
-    them from running at all.
+  **Visual rebuild pass** (pure styling, no state/logic changes): the first
+  pass above was a reasonable approximation, not sourced from the actual
+  design files. Rebuilt all 5 screens + widgets against `docs/mockups/
+  design_handoff_flashcard/.../design_handoff/Tadarab Phase 2b -
+  Flashcards.dc.html` and its README, made the single source of truth for
+  this pass (screenshots deliberately excluded — the interactive prototype
+  and screenshots disagreed with each other in several places, e.g. header
+  colors on Sessions/Setup, so screenshots were dropped rather than
+  cross-referenced further).
 
-    **SRS audit (Calendar).** Audited Add Event against the SRS before
-    changing anything; state found → action taken:
-    1. *Event name VARCHAR(100)* — not enforced, any length saved → added a
-       `LengthLimitingTextInputFormatter(100)` (`kEventNameMaxLength`).
-    2. *Date picker (Figure 98)* — was Material's `showDatePicker` → replaced
-       with `EventDatePickerSheet`: mini month grid, two-letter weekday
-       headers, red-outlined today, grey (`#C7CBD2`, sampled from the
-       figure) selected day, Cancel; tapping a day selects and closes.
-    3. *Time picker (Figure 99)* — was Material's `showTimePicker` dial →
-       replaced with `EventTimePickerSheet`: "Select Time", live preview,
-       Hour 1–12 grid, Minute grid in 5-minute steps, AM/PM toggle, red
-       Confirm. 12 AM/12 PM conversion lives in the unit-tested
-       `timeOfDayFrom12Hour`.
-    4. *Notification text (Figure 107)* — was the event's name / "Starts at
-       …" → now exactly "Event Reminder" / "Don't forget your upcoming
-       event." (`kEventReminderTitle`/`kEventReminderBody`).
-    5. *Cascade delete* — added `CalendarService.deleteEventsForCourse(uid,
-       courseId)`, returning the count deleted. **No caller yet — Manar's
-       Courses feature should call it when a course is deleted.** It matches
-       the stored `courseId` key (the model's camelCase name for the table's
-       `courseID`), deletes in batches of ≤500 (Firestore's limit), and
-       cancels each batch's reminders once that batch commits.
-    6. *Past dates* — already selectable, kept that way. **This deliberately
-       departs from Figure 98**, which greys out past days and the
-       previous-month arrow; the team chose to let the calendar record past
-       events. Matching the figure is a two-line change in
-       `event_date_picker_sheet.dart`.
-    7. *Reminder already passed* — was a silent skip (the save ignored
-       `scheduleReminder`'s false return) → now an inline error on the
-       reminder row that blocks saving until the lead time is shortened or
-       the reminder turned off (`reminderAlreadyPassed`, unit-tested
-       including the "fires exactly now" edge).
+  Explicit decisions confirmed before rebuilding, overriding what the
+  hand-off alone would give: tier message copy stays the existing
+  research-cited text ("You've mastered this." etc. — Bloom 1968; Mueller &
+  Dweck 1998), not the handoff's own wording; stat-card labels stay "I know
+  it"/"Need review"; tier background colors are green/purple/pink (see
+  below re: "purple"); Review Pass reuses the Flip Deck's pip strip, not a
+  bar; Review Pass's "Next" is red; the Sessions header is a two-part
+  "Flashcards" + dimmer live count; new pip colors for the Flip Deck
+  (`#7BE0A0` known, white-alpha for needs-review/untouched); a "Retake
+  Flashcards" button was added to Performance Summary (a real behavior
+  addition, not just styling — done because it was explicitly requested and
+  the underlying `retake()` call already existed).
 
-    Three more defects surfaced during the audit and were fixed, all of
-    which made reminders or data silently wrong:
-    - **Notification permission was never requested.** `requestPermission()`
-      existed with no caller, so on Android 13+ every reminder was scheduled
-      and then silently dropped. It's now requested on save when a reminder
-      is on. If it's declined, or the platform refuses to schedule, the
-      event still saves and the student gets a message saying the reminder
-      couldn't be set.
-    - **Deleting an event left its reminder scheduled**, so a deleted event
-      still sent its notification. `CalendarService.deleteEvent` now cancels
-      the reminder itself (only after the delete succeeds), which keeps the
-      rule "a deleted event never notifies" true on every delete path,
-      including the course cascade.
-    - **Every event was saved with an empty `email`**, violating the
-      Attributes Dictionary Table's non-null FK to Student.
-      `CalendarService.addEvent` now stamps the signed-in student's email.
-      Events created before this fix still have `email: ''` in Firestore.
+  New color tokens needed by the handoff were kept **local to the Flashcards
+  feature files**, not added to `AppColors`/`AppTheme` — those are on
+  CLAUDE.md's frozen-shared-file list and a teammate may be mid-edit, same
+  reasoning as the earlier `kFlashcard*FailureMessage` duplication.
 
-    **`reminderEnabled` now records what's actually true.** If permission
-    is declined or the platform refuses to schedule, the event is stored with
-    `reminderEnabled: false` (and `reminderBefore`/`reminderUnit` null, the
-    same shape as the toggle being off), not what the student asked for.
-    Add Event now schedules the reminder *before* the single Firestore write,
-    using an ID reserved with `CalendarService.newEventId` (generated
-    locally, no network). If the write then fails, the reminder is cancelled.
-    196 tests, 0 failures.
+  Two things this pass could not fully deliver, both flagged with inline
+  TODOs rather than silently approximated:
+  - **`AppButton` has no "disabled but not loading" visual state** (only
+    `loading`, which is grey) and no background/text-color override — so
+    the handoff's pink-fill (`#F3A8AC`) disabled Generate button, and a
+    true green-filled "I know it" / white-with-red-ink "Need review" pair,
+    aren't reachable through its public API. Per instruction,
+    `lib/widgets/app_button.dart` was **not** touched (possible teammate
+    collision). The Flip Deck's two verdict buttons are instead small
+    local, non-shared widgets (`_VerdictButton`) that hit the exact colors;
+    Generate's disabled state approximates by dropping the shadow and
+    showing the same reason text, with fill staying red instead of pink.
+  - **The handoff's front-face "EXAMPLE" panel and per-card "topic" tags
+    (Performance Summary's "Marked for review" chips) have no backing
+    field on `Flashcard`** — neither is in the Attributes Dictionary Table,
+    and neither was requested when the model was built. Both are omitted
+    rather than fabricated; flagging in case a future pass wants to add
+    them as an approved model deviation.
 
-    **Android build config — core library desugaring (build-config fix).**
-    The app did not build at all on an emulator once
-    `flutter_local_notifications` was added: `:app:checkDebugAarMetadata`
-    failed with "Dependency ':flutter_local_notifications' requires core
-    library desugaring to be enabled for :app". The plugin (v10+) relies on
-    desugaring for scheduled notifications on older Android versions, and
-    requires it even in apps that never schedule one. Fixed in
-    `android/app/build.gradle.kts`: `isCoreLibraryDesugaringEnabled = true`
-    in `compileOptions`, plus a `coreLibraryDesugaring("com.android.tools:
-    desugar_jdk_libs:2.1.4")` dependency (2.1.4 is the minimum the plugin's
-    22.x README specifies). `flutter build apk --debug` now succeeds.
+  One correction made mid-pass, worth a teammate's attention if they touch
+  this screen: the handoff's "developing" (50–79%) tier is actually a light
+  navy/lavender tint (`#EEF0FF` + navy ink), not purple — the prior purple
+  (`#F3E8FF`) was this project's own invented color, not sourced from any
+  design file. Implemented the verified navy/lavender value instead.
 
-    **This should have been caught when the package was added**, not when
-    someone first tried to run the app. Nothing in `flutter test` or
-    `flutter analyze` compiles the Android project, so neither catches it —
-    both passed the whole time the app was unbuildable. Lesson for the rest
-    of Phase C: any new plugin with a native Android side needs one actual
-    `flutter build apk --debug` before the feature is called done; a green
-    test suite says nothing about whether the app builds. (The
-    Kotlin-Gradle-Plugin deprecation warning printed by that build comes
-    from the Firebase and `flutter_timezone` plugins, is pre-existing, and
-    is unrelated to this fix.)
+  Also fixed a real layout bug surfaced by the rebuild (not a visual
+  choice): the Sessions list's colored side-strip used `Row(
+  crossAxisAlignment: CrossAxisAlignment.stretch)` inside a `ListView`
+  (unbounded height), which is a circular layout dependency — Flutter threw
+  thousands of `RenderFlex`/`debugCheckForParentData` assertion errors and
+  every session-row widget test hung on `pumpAndSettle`. Fixed by wrapping
+  the row in `IntrinsicHeight`, the standard pattern for a "strip spans
+  full row height" layout when the row's own height isn't otherwise
+  bounded.
 
-    Added dev dependencies `fake_cloud_firestore` and `mock_exceptions` so
-    `CalendarService` is tested against an in-memory Firestore rather than
-    only through fakes. **190 tests, 0 failures; `flutter analyze` clean.**
-    The new name-limit and passed-reminder tests were checked by breaking
-    each fix and confirming the tests fail. Still not verified on a physical
-    device: whether the permission dialog and scheduled reminders actually
-    appear.
+  Updated 2 existing tests to match the deliberately-changed visual
+  behavior above (pip "known" color; the flip card's answer-side no longer
+  has a "FIND IT IN YOUR MATERIAL" heading, per the handoff). Full suite:
+  144 tests, 0 failures. `flutter analyze` clean (same two pre-existing
+  infos as above).
 
-    Still to do on this branch: Points/Ranks and Profile (`05_ranks.png`,
-    `06_profile.png` were removed from the mockups folder as out of scope
-    for Calendar and need to be re-added when that work starts).
-  - **Courses & Material upload, Quiz generation & Sessions, Flashcards &
-    Sessions:** not started.
+  **Deliberate, explicit overrides of the .dc.html** (confirmed twice after
+  re-verifying the file showed otherwise both times — these are intentional
+  exceptions, not drift, and should not be "corrected" back to match the
+  file without the team re-discussing it): Sessions List and Setup screen
+  headers are **red** (`AppColors.red`), not the file's navy; the Setup
+  header reads **"Flashcard setup"**, not the file's "Build the deck"; the
+  Sessions List row's **"DECK" badge is removed**; the count-stepper's "A
+  target, not a promise — the AI writes as many good cards as your
+  material supports." helper line (present verbatim in the current
+  `.dc.html`, line 165) is **removed**. Materials picker still shows a
+  plain "N materials selected" / single-title summary, never a list of
+  titles — this one actually matches the current `.dc.html`. 55 flashcards
+  tests, 0 failures after these changes; full suite not re-run this pass
+  (no non-flashcards files touched).
+
+  **Reversal:** the "Retake flashcards" button added to Performance Summary
+  earlier in this same pass (to match the `.dc.html`) has been **removed
+  again** — Retake now lives only on the Sessions List, per explicit
+  instruction, so there's one place it can be triggered from, not two.
+  Also removed the "2 per card you knew" subtitle under "Points earned" —
+  that row now shows just the label and the number. 4 performance-summary
+  tests, 0 failures; `flutter analyze` clean.
+
+  **Five more UI tweaks**, on-device-testing feedback rather than
+  design-handoff conflicts:
+  - Sessions List: a session's material title(s) are now a pill badge
+    above the status row (was plain grey text below the stats line); if
+    the joined title text is wider than the pill, it loops in a continuous
+    horizontal scroll (`_MarqueeText`) instead of wrapping or eliding.
+    **Real bug hit and fixed while building this:** the first version used
+    a `LayoutBuilder` to detect overflow, but this session row sits inside
+    an `IntrinsicHeight` (added earlier for the colored side-strip) —
+    `LayoutBuilder` inside an intrinsic-sizing pass throws a storm of
+    `RenderFlex`/`debugCheckForParentData` assertions and hangs
+    `pumpAndSettle`, the same failure mode as the `IntrinsicHeight` bug
+    fixed in the visual rebuild pass. Fixed by measuring the rendered width
+    via a `GlobalKey` + `RenderBox` read in a post-frame callback instead —
+    the first build is always a plain, intrinsically-safe `Text`, and only
+    a later frame (outside any intrinsic pass) can switch to the scrolling
+    layout. Note for later: the marquee's `AnimationController` repeats
+    forever once scrolling starts, so any future widget test that calls
+    `pumpAndSettle()` on a row whose title is long enough to actually
+    scroll will hang the same way — none of the current tests trigger it
+    (their sample titles are short), but it's a trap for a longer one.
+  - Setup screen: "Medium" is now selected by default (still freely
+    changeable) instead of requiring the student to pick a difficulty
+    before anything is selected.
+  - Setup screen: the "Generate flashcards" button now genuinely fills
+    pink (`#F3A8AC`, the README's own documented disabled-red-fill token)
+    when disabled, closing the gap the TODO from the visual-rebuild pass
+    flagged. Required a small, additive extension to the shared
+    `lib/widgets/app_button.dart`: a new optional `disabledBackgroundColor`
+    param, applied only when the button is disabled-and-not-loading — every
+    other existing `AppButton` call site across the app omits it and is
+    therefore unaffected (verified: analyzed and tested the whole project,
+    not just Flashcards, after this change).
+  - Setup screen: the cards-to-aim-for count is now directly editable
+    (tap the number, type a value on the numeric keypad) alongside the
+    existing +/- buttons; invalid or empty input reverts to the last valid
+    value, and typed values respect the same bounds as the buttons. The
+    LinearProgressIndicator bar under the count was removed.
+  - Setup screen: count bounds changed from 3–20 to 5–150 (the visual
+    rebuild pass had already changed the original 1–50 to 3–20; this
+    changes it again).
+
+  55 flashcards tests, 0 failures (one test updated — "Generate button is
+  disabled" now accounts for Medium starting pre-selected — and the intent
+  preserved, not just made to pass). Full project suite re-run after the
+  shared `AppButton` change: 144 tests, 0 failures; `flutter analyze` clean.
+
+  **Fix: the material-title pill's marquee never actually triggered.** The
+  pill's `Container` was `width: double.infinity`, so it always stretched
+  to the full card width — nothing ever overflowed it, so the "scrolling"
+  branch was dead code in practice. Fixed by giving the pill a real fixed
+  `ConstrainedBox(maxWidth: 200)` (`_kMaterialPillMaxWidth`, tunable) and
+  rewriting `_MarqueeText` to compare the text's natural width against
+  that fixed number directly in `build()`, rather than measuring the
+  parent's rendered width at runtime — simpler, and sidesteps needing
+  `LayoutBuilder` or a post-frame `RenderBox` read entirely (both of which
+  have their own problems inside this row's `IntrinsicHeight`, per the
+  earlier note). Verified with two new tests, not just visual inspection:
+  one confirms a short title renders once with no `Positioned` (the
+  scrolling branch's tell), the other confirms a long joined title renders
+  twice (the loop + its follow-on copy) *and* that a `Positioned`'s `left`
+  offset actually changes between two pumps — proving real motion, not a
+  silent fallback to a wider box.
+
+  This exposed the trap flagged in the note above: the existing
+  "singular session count" / "in-progress" / "completed" row tests all use
+  the same default sample title ("Lecture 1 - Introduction"), which turned
+  out to be wide enough at the new fixed pill width to trigger scrolling —
+  so their `pumpAndSettle()` calls started hanging on the marquee's
+  infinite-repeat animation. Switched those three to a plain `pump()`
+  (they were never actually testing the marquee, just text/button
+  presence, so this loses nothing). General lesson for this row going
+  forward: **never call `pumpAndSettle()` on it — use `pump()`** — whether
+  a given title triggers the marquee depends on exact text-measurement
+  behavior that can differ between the test harness's font fallback and a
+  real device, so it's not safe to assume "short enough not to scroll"
+  will hold.
+
+  57 flashcards tests now (2 new), 0 failures. Full project suite: 146
+  tests, 0 failures; `flutter analyze` clean.
+
+  **Two more refinements to the pill, and its mechanism changed entirely.**
+  The fixed `_kMaterialPillMaxWidth` (200px) approach above was itself
+  wrong: the ask was for the pill to hug short content and grow only up
+  to the *card's* full width (not a flat constant), and — this is the
+  bigger change — for long content to be **manually drag-scrollable**,
+  not auto-looping. So `_MarqueeText` (`AnimationController`, the
+  `Positioned` duplicate-loop) is gone; `_MaterialTitlePill` replaces it:
+  hugs content via `Align` inside an invisible full-width sizing box (so
+  short titles don't stretch), and once text is wider than that box's
+  *measured* available width, becomes exactly that width with a plain
+  horizontal `SingleChildScrollView` inside — the user drags to see the
+  rest. Still reads the available width via `GlobalKey` + `RenderBox` in
+  a post-frame callback rather than `LayoutBuilder`, for the same
+  `IntrinsicHeight` reason as before.
+
+  Also moved the delete/trash icon out of the pill's line entirely — it
+  now sits beside the status-dot/detail-text block below (its original
+  position before the pill existed), so the pill's available width isn't
+  reduced by a sibling it no longer shares a `Row` with.
+
+  Rewrote the two marquee-behavior tests to match: one confirms a short
+  title introduces no `SingleChildScrollView` at all (hugging, not always
+  a fixed box); the other confirms a long joined title produces exactly
+  one horizontal `SingleChildScrollView` *and* that dragging it actually
+  moves its `ScrollableState.position.pixels` away from zero — proof it's
+  really draggable, not just present. 57 flashcards tests (same count,
+  2 replaced in place), 0 failures. Full project suite: 146 tests, 0
+  failures; `flutter analyze` clean.
+
+  **`FlashcardCard` (Flip Deck + Review Pass): fixed size, and two source-
+  strip corrections.** Re-verified directly against the current `.dc.html`
+  before changing anything, per the standing rule — two findings worth
+  recording:
+  - The handoff's source-location strip is `#EEF0FF` (a light navy tint)
+    with navy text/icon, **not** a navy background as it was described
+    when this request came in. Kept `#EEF0FF`, per the file. The existing
+    doc comment claiming the handoff has no "FIND IT IN YOUR MATERIAL"
+    heading was also double-checked directly against the file and found
+    to be accurate, not stale — left as-is. Two real (smaller) mismatches
+    were found and fixed: the strip's border-radius should be 16px (was
+    14, i.e. `AppRadius.md`), and its icon+text should be left-aligned
+    (was centered — the handoff's flex row has no `justify-content`,
+    which defaults to start).
+  - The handoff itself has **no fixed card size at all** — the card is
+    fluid (`width:100%` of its container, height auto-sized to content),
+    so front/back and short/long content render at different sizes there.
+    Treated the fixed-size ask as a deliberate choice for this app (fair
+    one — a card changing shape between its two faces reads as a glitch),
+    sized off the handoff's own reference phone frame: 412px wide minus
+    22px of deck-body padding on each side ≈ 368px available, so 320×320
+    (`_CardFace._size`) is a round number comfortably under that. Content
+    now overflows via an internal vertical scroll
+    (`SingleChildScrollView` + `ConstrainedBox(minHeight: ...)` +
+    `Center`) rather than growing the card — short content still centers
+    vertically when there's nothing to scroll. `FlashcardCard` isn't used
+    anywhere inside an `IntrinsicHeight` (verified: that's Sessions-List-
+    only), so `LayoutBuilder` was safe to use here, unlike the sessions
+    row.
+
+  Added 3 new tests verifying this isn't just visual: front and back
+  render at the exact same `Size(320, 320)` regardless of text length;
+  very long text throws no render-overflow exception and the card stays
+  fixed-size while its internal `Scrollable` has genuine
+  `maxScrollExtent > 0`; short text's vertical center lands close to the
+  card's own center (not pinned to the top). 60 flashcards tests now
+  (3 new), 0 failures. Full project suite: 149 tests, 0 failures;
+  `flutter analyze` clean.
+
+  **Explicit, deliberate departure from the handoff, requested directly
+  (no re-verification asked or done for this one):** the back face's
+  source-location strip is now navy (`AppColors.navy`) with a white icon
+  and two stacked white lines — a dim "FIND IT IN YOUR MATERIAL" label
+  above a bold location line — replacing the handoff's own `#EEF0FF`-
+  tint/no-heading version from the visual rebuild pass. The strip has an
+  explicit fixed height (`_kSourceStripHeight`, 62) so it can't grow with
+  a long location string; both text lines are capped at `maxLines: 1` +
+  `TextOverflow.ellipsis` instead. Also increased `_CardFace._size` from
+  320 to 352 (bigger, per request, still fixed/square) — sized against
+  the actual `Padding(all: 22)` both hosting screens use (44px fixed
+  horizontal budget) and the handoff's own 412px reference frame (~368px
+  available), leaving a 16px margin.
+
+  Added a `ValueKey('source-strip')` for test targeting, and 2 new tests:
+  the strip renders at the identical size for a short vs. a very long
+  location (proving it truly doesn't grow), and the location `Text`
+  widget's own `maxLines`/`overflow` properties are asserted directly
+  (not just eyeballing that it looks truncated). Updated the two existing
+  fixed-card-size test assertions from `Size(320, 320)` to `Size(352,
+  352)`, and the "flipped" test's stale "no heading" comment/assumption —
+  it now asserts the heading *is* present, matching the new deliberate
+  design. 62 flashcards tests now (2 new), 0 failures. Full project
+  suite: 151 tests, 0 failures; `flutter analyze` clean.
+
+  **Correction to the strip above:** it had been made full card width,
+  which was wrong — precise spec given directly (no re-verification asked
+  for this one, since it's an intentional handoff departure): narrower
+  than the card (`_kSourceStripWidth = 230`, ~74% of the card's 312px
+  inner content width), horizontally centered (free via the surrounding
+  Column's default center cross-axis alignment once the strip stopped
+  being `width: double.infinity`), height brought down from 62 to 54,
+  radius from 16 to 14, icon 20→17, icon-to-text gap 12→9, inter-line gap
+  3→2, label opacity 0.7→0.75. Colors/text sizes/maxLines+ellipsis
+  behavior unchanged from the previous pass. Added a test asserting the
+  strip-to-card width ratio falls in 0.55–0.85 (a deliberately wide band
+  around the requested "roughly 70–75%" — not pinning the exact private
+  constant) and that the strip's center-x matches the card's center-x
+  within 1px. 63 flashcards tests now (1 new), 0 failures. Full project
+  suite: 152 tests, 0 failures; `flutter analyze` clean.
+
+  **Answer text (`_back()`) enlarged to match the question text.** Was
+  `AppTypography.subtitle.copyWith(fontWeight: w800)` (14px); now the same
+  explicit style the front face's question text uses — `fontSize: 22,
+  fontWeight: w900`, navy — for visual consistency between the two faces.
+  Nothing else in `_back()` (ANSWER tag, spacing, source strip) touched.
+  Added a test comparing the answer style directly against the live
+  question style (not just checking it against a hardcoded 22/w900) so a
+  future change to the front's style would be caught here too if the two
+  drift apart again. 64 flashcards tests now (1 new), 0 failures. Full
+  project suite: 153 tests, 0 failures; `flutter analyze` clean.
+
+  **Courses & Material upload** (Manar, `feature/courses`) — starting, per
+  `courses_material_upload_spec.md` at the project root. Model deviation
+  reported per that spec before writing the class: `StudyMaterial` gains a
+  new `extractedText` (String) field, not in the original Attributes
+  Dictionary Table — the plain-text extraction of the uploaded file's
+  content, tagged with `[Slide N: ...]` / `[Heading N: ...]` / `[Paragraph
+  N]` markers per the spec's exact contract with Ghaida's generation Worker.
+  Final field set: `materialID, title, type, document, courseID,
+  extractedText`.
+
+  Text extraction library choice, per the spec's instruction to test the
+  suggested packages on real files before committing: neither suggested
+  package fit. Verified directly against `docs/Lecture1.pptx` and
+  `docs/SRS_GP1...docx` (real files) plus each package's actual source/docs
+  on GitHub — `open_xml`'s `WordDocument.parseText()` yields a flat stream
+  of text runs with no paragraph-style info, so it can't tell a `Heading1`
+  paragraph from body text; its `.pptx` support is generation/template-
+  focused with no documented API for reading arbitrary slide text. 
+  `doc_text_extractor`'s "chapter splitting" feature isn't exposed in its
+  documented API, and it pulls in `syncfusion_flutter_pdf` for a PDF path
+  this feature doesn't need. Inspecting the real files' raw XML showed the
+  structure needed is simple and well-defined (PPTX: `<p:ph type="title"/>`
+  marks a slide's title shape; DOCX: `<w:pStyle w:val="HeadingN"/>` marks a
+  real heading, distinguishable from `TOC1-3`/`Caption`/`Bibliography`
+  styles that share similar formatting but aren't headings) — so
+  `lib/services/text_extraction_service.dart` parses PPTX/DOCX/TXT directly
+  with the `archive` (unzip) and `xml` (parse) packages, the same
+  lower-level packages both suggested libraries build on. This gives exact
+  control matching the spec's tagging contract instead of adapting to
+  either library's undocumented behavior.
+
+  **Built out.** `lib/services/courses_service.dart` (course/material CRUD,
+  cascade delete — course doc + materials subcollection + their Storage
+  files + this course's calendar events, per §3 — the direct
+  `users/{uid}/events` query/delete written inline since Leen's
+  `CalendarService.deleteEventsForCourse(uid, courseId)` isn't merged yet;
+  swap the call site once it is), the 4 screens (`lib/screens/courses/`:
+  courses list empty/list states, Add Course as a full pushed screen per
+  the design handoff — confirmed with the team over the mockup's own
+  `upload-material.png` frame, which is a lower-fidelity draft that
+  disagreed with the actual `.dc.html` handoff — Course Detail
+  locked/unlocked, and the Upload Material bottom sheet), and the delete
+  confirmation dialog. `file_picker`/`archive`/`xml` added as dependencies.
+  10MB file-size limit used everywhere per §8's default, with the 10 vs
+  20MB conflict still flagged and unresolved for the team. Routing: the
+  single authorized line in `lib/screens/home/home_screen.dart` (Courses
+  tab → `CoursesListScreen`) swapped in its own commit, per §9.
+
+  136 tests, 0 failures: 15 extraction unit tests (including against the
+  real `docs/Lecture1.pptx`/SRS `.docx`), 14 pure-logic unit tests (name/
+  material-name uniqueness, color-lock incl. freeing on delete, initials),
+  and 18 widget tests covering every state §10 lists (empty, list, Add
+  Course incl. duplicate-name/no-color-disabled, Course Detail locked/
+  unlocked, Upload Material idle/uploading/success/duplicate/empty-file-
+  error, delete confirmation).
+
+  **On-device verification**, per CLAUDE.md's standing rule to actually
+  exercise UI changes rather than rely on tests alone: run against the real
+  `tadarabapp-2e060` project on a local Android emulator (`sdk gphone64
+  arm64`, API 36), signed in as the existing `student1` test account.
+  Confirmed live: the Courses tab renders the real screen (not the old
+  placeholder); the empty state, Add Course's live validation (duplicate-
+  name warning, color lock/select, live preview), and course creation all
+  worked end-to-end — a real `IS230` course document was written and
+  persisted (confirmed indirectly: Home switched from the zero-courses
+  onboarding state to the has-courses state on the next launch).
+
+  This surfaced one real bug, now fixed: `CoursesService`'s Firestore/
+  Storage calls (`createCourse`, `deleteCourse`, `uploadMaterial`, the list/
+  materials fetches) had no timeout. The emulator's network went
+  genuinely flaky mid-session (confirmed via `adb logcat`: real
+  `UnknownHostException` resolving `firestore.googleapis.com`, and a bare
+  `ping 8.8.8.8` from the emulator shell hung with no reply — a sandbox
+  network limitation, not a code issue), and a `createCourse` write hung
+  for 30+ seconds with the Save button stuck spinning and no way out —
+  exactly what the NFR's "never a frozen screen" rule exists to prevent.
+  Added a 15s timeout on every Firestore call and a 60s timeout (with
+  `UploadTask.cancel()`) on the Storage upload specifically, since a real
+  file transfer legitimately needs more headroom than a small document
+  write; both map to the existing `CoursesFailure` error path. Re-verified
+  live after the fix: the Courses list now shows "Couldn't load your
+  courses." with a working Retry button within the timeout window instead
+  of hanging — confirmed by triggering the same network condition again.
+
+  **Upload and cascade-delete verification, completed in a follow-up
+  on-device pass** after the emulator's network fully stopped responding
+  (confirmed: DNS resolution failed for every hostname, not just
+  `firestore.googleapis.com`, and the emulator's own network settings
+  (private DNS off, wifi/airplane-mode toggles) didn't fix it, while the
+  host machine's own DNS/`curl` to the same hosts worked fine throughout —
+  isolating the problem to the emulator's QEMU/slirp networking layer, not
+  the code, the project, or the host). Fixed by killing and relaunching the
+  AVD (`Pixel_10_API_36`) with explicit `-dns-server 8.8.8.8,8.8.4.4`.
+
+  With real network restored: pushed `docs/Lecture1.pptx` to the
+  emulator's Downloads folder, opened Upload Material, picked it through
+  Android's real system file picker (not a stub), watched a real Storage
+  upload progress bar, and — confirmed by reopening Course Detail — the
+  material was actually written: Study Tools unlocked, the materials list
+  and type-filter counts (`All 1 / PPTX 1`) updated, all against the live
+  `tadarabapp-2e060` project.
+
+  This caught a second real bug, now fixed: both `CoursesListScreen` and
+  `CourseDetailScreen`'s `_reload()` used
+  `setState(() => _field = someFuture)` — an assignment expression as an
+  arrow-function body evaluates to the assigned value, so the callback's
+  inferred return type was `Future<...>` instead of `void`. In debug
+  builds this trips `State.setState`'s "callback argument returned a
+  Future" assertion, which *throws before reaching `markNeedsBuild()`* —
+  caught by `adb logcat` right after a successful upload, where it made
+  Course Detail appear to silently fail to refresh (the material had in
+  fact saved; the screen just didn't reliably rebuild to show it). Fixed
+  by using a block body (`setState(() { _field = future; })`) in both
+  places, which returns `void`. Confirmed fixed by re-running the exact
+  same upload afterward. Note for the team: this class of bug is silent in
+  release builds (`assert` is compiled out there), so it's easy to miss
+  outside an on-device debug run — worth checking for the same
+  `setState(() => x = someFuture)` pattern in any future feature's reload
+  logic.
+
+  **Cascade-delete verification, including calendar events**, done against
+  a throwaway account rather than reusing `student1`, since the Calendar
+  feature doesn't exist yet to create a real linked event through the UI:
+  created a temporary account via the Identity Toolkit REST API (the same
+  method Phase A's rules verification used), wrote a course, a material,
+  and a calendar event (with `courseId` pointing at that course) directly
+  via the Firestore REST API, logged into the app as that account, and
+  deleted the course through the real UI delete-confirmation flow. Verified
+  by re-querying all three documents over the Firestore REST API
+  afterward: course, material, and **event all returned `404 NOT_FOUND`**.
+  The event-deletion path in particular — invisible in the app's own UI
+  today, since there's no Calendar screen yet to show its absence — is now
+  confirmed working end-to-end against the live project, not just via the
+  widget tests' fake service. The throwaway account and its data were
+  deleted afterward (Identity Toolkit `accounts:delete`); `student1` and
+  its real `IS230` course (with its one uploaded material) were left
+  intact for any future manual testing.
+
+  Every state/flow this feature spec calls for has now been confirmed both
+  by the automated test suite and by a real run against the live Firebase
+  project: courses empty/list, Add Course validation, Course Detail locked/
+  unlocked, the full upload pipeline (real file → Storage → extraction →
+  Firestore) with the real `docs/Lecture1.pptx`, and cascade delete
+  including calendar events.
+
+  **Home-screen regression investigated and ruled out as unrelated to this
+  feature.** After the above was done, `student1`'s Home tab started
+  showing "Could not load your progress" with a working connection and a
+  successful login. Confirmed by direct A/B test — `git stash` on just
+  `lib/screens/home/home_screen.dart` (reverting it to the exact
+  pre-Courses version, i.e. the Courses tab back to
+  `PlaceholderScreen`) and relaunching against the same account
+  reproduced the *identical* error — that neither this feature's one-line
+  routing change nor the `_reload()` fix touches this code path or caused
+  it. Root-caused (via temporary, since-removed debug prints — never
+  committed) to a plain Dart type error, not a network/Firestore
+  exception: `type 'Null' is not a subtype of type 'String' in type
+  cast`, thrown from `HomeDataService.fetchInProgressSession` and
+  `fetchWeeklyProgress` specifically (`fetchCourses` and
+  `fetchUpcomingEvents` succeed fine) — both go through
+  `SessionFields.fromMap` (`lib/models/session.dart`), which casts
+  `difficultyLevel`, `email`, and `courseId` as non-nullable `String`
+  with no fallback. `student1` has real documents in both `quizSessions`
+  and `flashcardSessions` that are missing one of those fields (confirmed
+  via the Courses tab loading fine with "2 courses" — Manar's own
+  `IS230` plus a second, "data base", that Manar created herself through
+  this feature's real UI while testing it, unrelated to the session
+  documents). The session documents themselves can't have come from using
+  the app, though: grepping the whole codebase shows `HomeDataService` is
+  the *only* code anywhere that touches the `quizSessions`/
+  `flashcardSessions` collections, and it only ever reads (`.get()`) —
+  there is no writer, since Quiz/Flashcard generation (Ghaida's and
+  Deemah's Phase C features) hasn't been built yet. So the malformed
+  document(s) must have been added some other way — most likely by hand
+  via the Firebase console, by someone testing Home's Continue/Start or
+  Today's Progress card early, before generation existed to write real
+  ones — and is unrelated to Manar's own course-creation testing. This is
+  a pre-existing gap in shared, frozen model code (`lib/models/
+  session.dart` — not this feature's file, and not safe for a single
+  branch to change without full-team review per the Git workflow rules)
+  that any malformed session document was always going to trip; it
+  surfaced now by coincidence of timing, not because of anything in this
+  feature.
+  **Not fixed here** — flagged for the team: either harden
+  `SessionFields.fromMap`'s three casts the same way `Course.fromFirestore`
+  already does for `color` (nullable with a fallback), or delete/fix
+  whatever hand-created `quizSessions`/`flashcardSessions` documents
+  `student1` has via the Firebase console.
+
+  **Two more real bugs found on-device and fixed**, both stemming from the
+  same root cause: `HomeScreen`'s `IndexedStack` keeps every tab's State
+  alive and independent, so nothing ever told a tab to refresh once
+  another tab (or a screen pushed on top of one) changed the data it had
+  already fetched.
+  1. Home's onboarding "Create my first course" button opened the real
+     `AddCourseScreen` (per the fix above) but never awaited its result —
+     `_HomeTabState._openAddCourse` called `Navigator.push` without
+     awaiting, so a successful save's `Navigator.pop(true)` returned to
+     Home with nothing done about it: no refresh, and the newly-created
+     course invisible until something else happened to trigger one.
+  2. Switching to the Courses tab after creating a course elsewhere showed
+     stale data (sometimes an empty list) because `CoursesListScreen`'s
+     `late Future ... _courses = ...` only ever fetches once, at
+     construction — which, since `IndexedStack` builds every child up
+     front, happens once at Home's very first frame, not each time the
+     tab becomes visible.
+
+  Fixed both with the same mechanism: `_HomeTab` and `CoursesListScreen`
+  each gained an `active` flag (true only while its own bottom-nav tab is
+  selected) and a `didUpdateWidget` that reloads on `active` flipping
+  false→true — so switching tabs now refreshes whichever tab you land on,
+  symmetrically in both directions. `_openAddCourse` now also awaits its
+  `Navigator.push` and reloads immediately on a successful create, so
+  Home updates the instant you're popped back to it, without needing a
+  tab switch at all. `HomeScreen` gained an injectable `coursesService`
+  (mirroring the existing `homeDataService` override), since both the
+  onboarding button and the embedded Courses tab needed one and it's what
+  made these regressions properly testable — this was the one further
+  change to this frozen file beyond the button-routing fix above; flagged
+  the same way, its own commit when this lands.
+
+  4 new tests reproducing each bug's exact repro steps against the real
+  screens (fakes only at the network boundary) and confirming the fix: in
+  `courses_list_screen_test.dart`, a course added while inactive appears
+  on becoming active again, and staying active doesn't cause a needless
+  refetch; in `home_screen_test.dart`, creating a course through the
+  onboarding button both returns to Home and lifts it out of onboarding,
+  and a course created while Home was the inactive tab appears on
+  returning to it. 140 tests total, 0 failures. Not re-verified live on
+  the emulator this round (the fix is a pure navigation/reload wiring
+  change with no new Firebase interaction shape, and the regression tests
+  drive the real screens end-to-end down to the fake network boundary) —
+  worth a quick manual pass before merging given how much this session's
+  device testing has been worth in general.
+
+  **Two visual bugs in the Upload Material sheet**, caught live on-device
+  and fixed, both confined to `upload_material_sheet.dart` (no frozen-file
+  touch): the Upload button rendered navy instead of red — it never set
+  `variant: AppButtonVariant.accent`, silently falling back to `AppButton`'s
+  navy default — and now also dims to a pale red (`Opacity` at 0.4) while
+  disabled and goes full solid red once a file's picked, matching the
+  pattern already used for the locked Study Tools tiles and locked color
+  swatches, since `AppButton` itself has no disabled-vs-enabled visual (it
+  only dims for its separate `loading` state). The "Choose a file"
+  drop-zone's dashed border was being drawn but was completely invisible:
+  its opaque `surfaceFaint` fill lived on `DashedRoundedBorder`'s own
+  child, and `CustomPaint` draws its `painter` *behind* the child — so the
+  fill painted over the dashes it was meant to sit inside. Moved the fill
+  to a new outer `Container` wrapping `DashedRoundedBorder` instead,
+  leaving its child transparent; `DashedRoundedBorder` itself
+  (`lib/widgets/dashed_border.dart`) wasn't touched. Both fixes verified
+  live on the emulator (idle-pale, empty-file-picked-solid, dashes visible
+  throughout).
+
+  **Delete single material**, a new feature request (deleting one study
+  material without deleting its course), scoped and confirmed with the
+  team before coding per the standing rule. `CoursesService.deleteMaterial`
+  deletes just that material's Firestore doc, then best-effort-deletes its
+  Storage file (mirroring `deleteCourse`'s per-material cleanup) — it
+  never touches the course doc, any other material, or any quiz/flashcard
+  session, on purpose (out of scope unless asked). UI:
+  `delete_material_dialog.dart` mirrors `delete_course_dialog.dart`'s
+  structure/copy exactly ("Delete [name]?" / "This material will be
+  permanently deleted. This can't be undone." / red "Delete material" +
+  outlined "Keep it"), kept as its own file rather than sharing one with
+  the course dialog so that already-verified flow stays untouched. Each
+  material row in Course Detail now has its own trash icon — navy on the
+  same pale tint used by the row's own PPTX/DOCX/TXT type badge, per an
+  explicit correction from the initial plan (which had proposed red,
+  reasoning from an old removed courses-list design reference) — that
+  turns into a small spinner while that specific material is deleting, via
+  a per-row `Set<String>` of in-flight material IDs on
+  `_CourseDetailScreenState` rather than one screen-wide flag, so deleting
+  one material doesn't freeze the rest of the list. On success the list
+  updates immediately in place (no navigation away from Course Detail); on
+  failure, the existing SnackBar+Retry pattern used elsewhere in this
+  feature. 6 new widget tests added to `course_detail_screen_test.dart`
+  (trash icon present per row, tapping opens the dialog with the correct
+  material name, "Keep it" is a no-op, confirming deletes and updates the
+  list without navigating away, a failure shows the SnackBar with Retry
+  and leaves the row in place, deleting the last material re-locks Study
+  Tools and shows the empty-materials state) plus the matching
+  `FakeCoursesService.deleteMaterial` override. 146 tests total, 0
+  failures. Not yet re-verified live on the emulator for this specific
+  feature.
+
+  **Merge fallout, fixed.** `main`'s merge into `feature/flashcards`
+  (`d52cbc5`) landed with this Progress Log's own merge left unresolved —
+  literal `<<<<<<<`/`=======`/`>>>>>>>` markers committed into this file,
+  splitting the Phase C narrative between the Flashcards and Courses work
+  with no `- **Phase C — Feature split:**` heading surviving on either
+  side. Fixed directly in this file: restored the heading, and cleaned up
+  stray/missing blank lines left at the former conflict boundaries.
+  Verified clean via `grep` for all three marker strings (none found) and
+  for `^## ` (exactly one of each top-level heading).
+
+  That merge also pulled in Manar's new required `StudyMaterial
+  .extractedText` field (see her entry above), which broke 3 call sites
+  that predate it — real `missing_required_argument` compile errors, not
+  anything to do with Flashcards' own logic (confirmed: nothing in
+  `flashcard_service.dart` or elsewhere in this feature reads
+  `.extractedText`, it's referenced only in a forward-looking doc comment).
+  Fixed by adding a placeholder `extractedText` argument at each site:
+  both dev-only sample materials in `lib/features/flashcards/
+  dev_preview.dart`, and the shared `_material` fixture in `test/features/
+  flashcards/screens/flashcard_setup_screen_test.dart`. Re-ran `flutter
+  analyze` on the whole project afterward: down to the same 2 pre-existing,
+  unrelated infos as before (`session.dart`'s `prefer_is_empty`,
+  `auth_service.dart`'s doc-comment HTML lint) — all 3 real errors gone.
+
+  Ran `flutter test` on the full project for the first time with Flashcards
+  and Courses code coexisting on the same branch: **209 passed, 1 failed**.
+  The one failure is pre-existing and unrelated to this fallout fix —
+  `test/services/text_extraction_service_test.dart`'s "a real lecture deck
+  extracts with the exact tag format and real known content" throws
+  `PathNotFoundException` for `docs/Lecture1.pptx`. Confirmed via `git log
+  --all -- docs/Lecture1.pptx` (no history at all, on any branch) and
+  `.gitignore` (no `*.pptx`/`docs/` rule) that this fixture file was never
+  actually committed — Manar's on-device verification pass (see her entry
+  above) used a real local copy pushed straight to an emulator's Downloads
+  folder, not a file checked into the repo, so this test only ever passed
+  on a machine that happened to have that file sitting in `docs/` already.
+  Not fixed here — it's Manar's test fixture, not this feature's, and the
+  fix is either committing a real (small) sample `.pptx` to `docs/` or
+  skipping/guarding the test when the file is absent; flagging for the
+  team rather than guessing which the Courses feature would prefer.
+
+  **Second merge-fallout pass: the manual conflict resolution itself left
+  `session.dart` broken**, found when a later `origin/main` merge (Ghaida's
+  Quiz generation & Sessions feature landing) hit the same
+  `Session.difficultyLevel` → `difficultyLevels` conflict a second time and
+  was resolved by hand rather than re-taken from either side. Two real
+  defects, both in `lib/models/session.dart`:
+  - `Session`'s field declaration (`final DifficultyLevel difficultyLevel;`)
+    and `sharedFieldsToFirestore()`'s serialization
+    (`'difficultyLevel': difficultyLevel.toJson()`) were still singular,
+    while the constructor signature, `QuizSession`/`FlashcardSession`, and
+    `SessionFields` elsewhere in the same file had already moved to the
+    plural `List<DifficultyLevel> difficultyLevels` shape — a straight
+    compile error (undefined field) the moment anything touched
+    `difficultyLevel`.
+  - `SessionFields.fromMap`'s `difficultyLevels:` argument was still
+    parsing a single `data['difficultyLevel']` string via
+    `DifficultyLevelJson.fromJson` under the (also wrong) named parameter
+    `difficultyLevel:`, instead of calling the file's own
+    `_readDifficultyLevels(data)` helper that every other reader in this
+    file already relies on for the real multi-select, never-throws
+    behavior.
+
+  Fixed: field renamed to `difficultyLevels` (`List<DifficultyLevel>`),
+  `sharedFieldsToFirestore()` now writes
+  `'difficultyLevels': difficultyLevels.map((d) => d.toJson()).toList()`,
+  and `SessionFields.fromMap` now calls `_readDifficultyLevels(data)`.
+  Also restored the constructor's non-empty assert
+  (`assert(difficultyLevels.isNotEmpty, ...)`) on `Session` itself, which
+  this Progress Log had already documented as part of the original
+  `difficultyLevel` → `difficultyLevels` migration but which the manual
+  resolution dropped — confirmed missing via `test/models/session_test.dart`'s
+  own "asserts at least one difficulty level is given" test, which was
+  failing (no assert thrown) until this was added back.
+
+  Checked `quiz_session.dart` and `flashcard_session.dart` for the same
+  stale-singular pattern: both were already fully on `difficultyLevels`
+  throughout (constructor, `fromFirestore`, `toFirestore`) — no fix needed
+  there. Also checked `lib/widgets/app_button.dart`, hand-resolved in the
+  same merge (`disabledRemovesShadow` field + the shadow-dropping logic in
+  `build()`): `disabledBackgroundColor` and `disabledRemovesShadow` are
+  each declared exactly once, and `build()`'s `disabledNotLoading` branch
+  applies both correctly — no duplication or breakage found.
+
+  Re-ran `flutter analyze` (clean, same 1 pre-existing unrelated info —
+  `auth_service.dart`'s doc-comment HTML lint; the earlier
+  `session.dart` `prefer_is_empty` info is also gone now, since the new
+  assert was written with `isNotEmpty` directly) and `flutter test` on the
+  full project: **341 passed, 1 failed** — the only failure is the same
+  pre-existing `docs/Lecture1.pptx` missing-fixture issue documented just
+  above, still unrelated and still not this feature's to fix.
+
+  **Home never actually wired to the real Flashcards screens — fixed.**
+  After the merges above, `flutter run` showed a placeholder instead of
+  the real Flashcards UI from the Courses tab's "New Flashcards" flow and
+  from Resume. Root cause: this was never a merge regression — it's the
+  one known gap this feature's very first pass explicitly flagged and
+  deliberately left alone ("Did not touch `home_screen.dart` — it still
+  opens placeholders for flashcard setup/resume... wasn't asked for
+  here"), and nothing in any later pass (including Manar's and Ghaida's
+  merges) ever came back to wire it, unlike Quiz's equivalent flow, which
+  *did* get wired to the real `QuizSessionsScreen`/`QuizPlayScreen` when
+  Ghaida's feature landed. So `_HomeTabState` was still calling
+  `_openFlashcardSetupPlaceholder()` and pushing a literal
+  `PlaceholderScreen` on Resume.
+
+  Fixed in `lib/screens/home/home_screen.dart` (the one frozen-file
+  exception this needed, same as every other Home routing fix logged
+  above): the course-picker's flashcard branch now opens the real
+  `FlashcardSessionsScreen` (Screen 1 — courseId + the signed-in student's
+  email, which `_openCoursePicker` now threads through from the
+  `StreamBuilder<Student?>` already in scope); Resume for a flashcard
+  session now does the same two-step fetch `FlashcardSessionsScreen`
+  itself already does for its own Resume button (`watchSessions().first`
+  to get the session's `currentFlashcardIndex`/`knownCount`/
+  `needsReviewCount`, then `fetchFlashcards()`) before pushing the real
+  `FlashcardFlipDeckScreen` — necessary because, unlike `QuizPlayScreen`,
+  that screen takes already-fetched data rather than loading by id itself
+  (it's also how a fresh Retake starts). `HomeScreen` gained an injectable
+  `flashcardServiceBuilder` (a *builder*, not a single instance like
+  `coursesService`, since the course it's scoped to isn't known until a
+  course is picked or there's a session to resume) — mirrors the existing
+  `homeDataService`/`coursesService` override pattern and is what made
+  this properly testable against a fake rather than a real Firestore call.
+
+  Updated the one test this deliberately changed: "tapping Resume opens
+  the (currently unreachable-in-production) session placeholder" is now
+  "tapping Resume opens the real Flashcard Flip Deck screen at the stored
+  position" — seeded a `FakeFlashcardService` with a real session + cards
+  and asserted the actual Flip Deck content (`Card 3 of 3`, the stored
+  card's front text) renders, not just that the placeholder is gone.
+  Re-ran `flutter analyze` (clean, same single pre-existing info) and
+  `flutter test` on the full project: still **341 passed, 1 failed**
+  (same pre-existing `docs/Lecture1.pptx` fixture gap, unrelated) — one
+  test was rewritten in place rather than added, so the total didn't
+  move. Not yet re-verified live on-device for this specific fix (no
+  Firebase emulator/device session run this pass); the fake-backed
+  widget test is real integration coverage of the navigation and data
+  wiring, but a live run is still worth doing before this merges.
+
+  **Full sweep for any other remaining flashcard placeholder.** Grepped
+  the whole of `lib/` for every `PlaceholderScreen` usage and every
+  case-insensitive "flashcard" mention, not just `home_screen.dart`. Found
+  one more, in Manar's `lib/screens/courses/course_detail_screen.dart`:
+  the Study Tools "Flashcards" tile's `_openFlashcards()` still pushed a
+  literal `PlaceholderScreen(label: 'Flashcard setup screen')`, with a
+  now-stale comment claiming "Deemah's Flashcards feature... isn't built
+  yet" — same root cause as `home_screen.dart`'s gap (this feature's first
+  pass only ever wired its own screens to each other, never to the two
+  external entry points that predate or postdate it) and missed by the
+  home_screen.dart fix since it's a different file in a different
+  teammate's feature. Fixed: now opens the real `FlashcardSessionsScreen`
+  with `widget.course.email` as the session owner's email (the `Course`
+  model already carries the owner's email — no new field or lookup
+  needed). Swept the rest of `lib/` too: every other `PlaceholderScreen`
+  use is Calendar/Profile (Leen's feature, genuinely not built yet,
+  correctly left alone), and every other "flashcard" mention is real
+  button/label text inside the feature's own already-built screens — no
+  further gaps found.
+
+  Gave `CourseDetailScreen` the same injectable-service treatment as
+  `HomeScreen`'s earlier fix (a single `flashcardService` override this
+  time, not a builder, since this screen is already scoped to one course)
+  — needed because `FlashcardService.watchSessions()` is a plain
+  synchronous function called straight from `build()`, unlike
+  `QuizSessionService.fetchSessions()` (an `async` method, so a
+  no-Firebase-app error lands inside its returned Future instead of
+  throwing immediately): without a fake behind it, tapping the real
+  Flashcards tile in a widget test crashes the build immediately with
+  `[core/no-app]`, caught while adding this screen's own regression test.
+  Added one, mirroring the existing Quiz-tile test: taps "Flashcards" and
+  asserts `find.byType(FlashcardSessionsScreen)` (not matching text, since
+  the pushed screen's own "Flashcards" header would otherwise collide
+  with the tile's identical label still in the tree underneath). Re-ran
+  `flutter analyze` (clean, same single pre-existing info) and
+  `flutter test` on the full project: **342 passed, 1 failed** (one test
+  added this time; same pre-existing `docs/Lecture1.pptx` fixture gap,
+  still unrelated and still not this feature's to fix).
+
+  **Calendar & reminders** (Leen, `feature/calendar-points`) — done.
+  `CalendarEvent` already existed from Phase A and the required model accuracy audit found
+  **10/10 fields matching** `docs/Attributes Dictionary Table.png` with
+  nothing missing or added, so no model change was needed — the only
+  deviations are the two already-approved project-wide patterns (string
+  document IDs rather than INT, and `#`-prefixed hex colours).
+  No `firestore.rules` change either: the existing owner-scoped rule
+  already covers `users/{uid}/events/{eventId}`.
+
+  Built `lib/utils/event_time.dart` (month-grid construction, `"HH:mm"`
+  ↔ `TimeOfDay` ↔ `"12:00 PM"`, reminder lead-time arithmetic) and
+  `lib/services/calendar_service.dart`, injectable like `AuthService`/
+  `HomeDataService`. `CalendarService.addEvent` returns the new document
+  ID rather than a filled-in `CalendarEvent`, specifically so it needs no
+  `copyWith` on the model — model classes are shared files frozen after
+  Phase B, and the ID is all any caller needs. The month query is a
+  single-field range plus order-by on that same field, which Firestore
+  auto-indexes; this deliberately avoids the two-field shape that forced
+  the composite indexes added for Home in Phase B.
+
+  Screens: the Calendar tab (month grid, red today marker, a colour dot
+  per event, day-details bottom sheet, centred delete confirmation) and
+  Add Event (name, optional course, four-preset colour picker replaced by
+  the course-colour chip once a course is chosen, date/time pickers,
+  reminder toggle with amount + singular/plural unit). Add Event's fields
+  are built locally rather than with `AppTextField`, whose leading-icon
+  layout doesn't match these boxes.
+
+  Design decisions confirmed with the team: the Calendar tab is grid-only
+  — the Upcoming Events list belongs on Home, and an earlier mockup
+  showing it on Calendar was a bad reference, since corrected; dots render
+  on **every** day with events including today and past days (the mockups'
+  "Midterm — Today" vs. Midterm-on-May-5 disagreement was an inconsistency
+  between figures, not a rule); and the reminder unit is pluralised by
+  amount, with the amount in its own field so the dropdown shows the unit
+  word alone.
+
+  Reminders use `flutter_local_notifications` + `timezone`, with
+  `POST_NOTIFICATIONS`/`RECEIVE_BOOT_COMPLETED` and the plugin's receivers
+  added to `AndroidManifest.xml` so a scheduled reminder survives a
+  reboot. Scheduling is best-effort and never throws — an event must still
+  save even when its reminder can't be set — and reports success via its
+  return value instead. `AndroidScheduleMode.inexactAllowWhileIdle` is
+  used so the app doesn't need the `SCHEDULE_EXACT_ALARM` special-access
+  grant; a reminder may therefore fire a little late if the device is
+  dozing. **Not yet verified on a physical device** — the notification
+  plugin has no implementation under `flutter test`, so the scheduling
+  path is covered only by a fake.
+
+  Home wiring turned out to be much smaller than scoped:
+  `HomeDataService.fetchUpcomingEvents` and `UpcomingSection` were already
+  reading real events (they were simply always empty, because nothing
+  created events), so neither was rebuilt. What was needed: point the
+  Calendar tab and "See all" at the real screen, and re-read Home's
+  Upcoming after an event is added or deleted — `_HomeTab`'s futures were
+  `late final`, so they could never refresh. Tabs in the shell are now
+  built lazily: `IndexedStack` builds every child eagerly, which
+  subscribed the Calendar to Firestore the moment Home mounted, for a tab
+  the student may never open.
+
+  26 unit tests + 29 widget tests added; **144 tests total, 0 failures**,
+  `flutter analyze` clean. Harness note for whoever writes the next
+  screen: `tester.ensureVisible` does not reliably scroll this
+  `Column > Expanded > SingleChildScrollView` layout, so the Add Event
+  tests set a tall 420x1600 surface instead. (This originally had to be
+  600 wide, because the Material time picker's OK button overflowed a
+  phone-width surface — no longer the case since the SRS audit below
+  replaced that picker.)
+
+  **Build break fixed on the way in.** `main` did not compile: commit
+  `7084fe4` renamed `ContinueOrStartCard.onFlashcards` to `onNewFlashcards`
+  and retitled two of its buttons, but missed the call site in
+  `home_screen.dart` and the tests tapping those buttons. Anything that
+  renames a widget parameter should be checked with `flutter analyze`
+  before the PR — the tests can't catch it, because a compile error stops
+  them from running at all.
+
+  **SRS audit (Calendar).** Audited Add Event against the SRS before
+  changing anything; state found → action taken:
+  1. *Event name VARCHAR(100)* — not enforced, any length saved → added a
+     `LengthLimitingTextInputFormatter(100)` (`kEventNameMaxLength`).
+  2. *Date picker (Figure 98)* — was Material's `showDatePicker` → replaced
+     with `EventDatePickerSheet`: mini month grid, two-letter weekday
+     headers, red-outlined today, grey (`#C7CBD2`, sampled from the
+     figure) selected day, Cancel; tapping a day selects and closes.
+  3. *Time picker (Figure 99)* — was Material's `showTimePicker` dial →
+     replaced with `EventTimePickerSheet`: "Select Time", live preview,
+     Hour 1–12 grid, Minute grid in 5-minute steps, AM/PM toggle, red
+     Confirm. 12 AM/12 PM conversion lives in the unit-tested
+     `timeOfDayFrom12Hour`.
+  4. *Notification text (Figure 107)* — was the event's name / "Starts at
+     …" → now exactly "Event Reminder" / "Don't forget your upcoming
+     event." (`kEventReminderTitle`/`kEventReminderBody`).
+  5. *Cascade delete* — added `CalendarService.deleteEventsForCourse(uid,
+     courseId)`, returning the count deleted. **No caller yet — Manar's
+     Courses feature should call it when a course is deleted.** It matches
+     the stored `courseId` key (the model's camelCase name for the table's
+     `courseID`), deletes in batches of ≤500 (Firestore's limit), and
+     cancels each batch's reminders once that batch commits.
+  6. *Past dates* — already selectable, kept that way. **This deliberately
+     departs from Figure 98**, which greys out past days and the
+     previous-month arrow; the team chose to let the calendar record past
+     events. Matching the figure is a two-line change in
+     `event_date_picker_sheet.dart`.
+  7. *Reminder already passed* — was a silent skip (the save ignored
+     `scheduleReminder`'s false return) → now an inline error on the
+     reminder row that blocks saving until the lead time is shortened or
+     the reminder turned off (`reminderAlreadyPassed`, unit-tested
+     including the "fires exactly now" edge).
+
+  Three more defects surfaced during the audit and were fixed, all of
+  which made reminders or data silently wrong:
+  - **Notification permission was never requested.** `requestPermission()`
+    existed with no caller, so on Android 13+ every reminder was scheduled
+    and then silently dropped. It's now requested on save when a reminder
+    is on. If it's declined, or the platform refuses to schedule, the
+    event still saves and the student gets a message saying the reminder
+    couldn't be set.
+  - **Deleting an event left its reminder scheduled**, so a deleted event
+    still sent its notification. `CalendarService.deleteEvent` now cancels
+    the reminder itself (only after the delete succeeds), which keeps the
+    rule "a deleted event never notifies" true on every delete path,
+    including the course cascade.
+  - **Every event was saved with an empty `email`**, violating the
+    Attributes Dictionary Table's non-null FK to Student.
+    `CalendarService.addEvent` now stamps the signed-in student's email.
+    Events created before this fix still have `email: ''` in Firestore.
+
+  **`reminderEnabled` now records what's actually true.** If permission
+  is declined or the platform refuses to schedule, the event is stored with
+  `reminderEnabled: false` (and `reminderBefore`/`reminderUnit` null, the
+  same shape as the toggle being off), not what the student asked for.
+  Add Event now schedules the reminder *before* the single Firestore write,
+  using an ID reserved with `CalendarService.newEventId` (generated
+  locally, no network). If the write then fails, the reminder is cancelled.
+  196 tests, 0 failures.
+
+  **Android build config — core library desugaring (build-config fix).**
+  The app did not build at all on an emulator once
+  `flutter_local_notifications` was added: `:app:checkDebugAarMetadata`
+  failed with "Dependency ':flutter_local_notifications' requires core
+  library desugaring to be enabled for :app". The plugin (v10+) relies on
+  desugaring for scheduled notifications on older Android versions, and
+  requires it even in apps that never schedule one. Fixed in
+  `android/app/build.gradle.kts`: `isCoreLibraryDesugaringEnabled = true`
+  in `compileOptions`, plus a `coreLibraryDesugaring("com.android.tools:
+  desugar_jdk_libs:2.1.4")` dependency (2.1.4 is the minimum the plugin's
+  22.x README specifies). `flutter build apk --debug` now succeeds.
+
+  **This should have been caught when the package was added**, not when
+  someone first tried to run the app. Nothing in `flutter test` or
+  `flutter analyze` compiles the Android project, so neither catches it —
+  both passed the whole time the app was unbuildable. Lesson for the rest
+  of Phase C: any new plugin with a native Android side needs one actual
+  `flutter build apk --debug` before the feature is called done; a green
+  test suite says nothing about whether the app builds. (The
+  Kotlin-Gradle-Plugin deprecation warning printed by that build comes
+  from the Firebase and `flutter_timezone` plugins, is pre-existing, and
+  is unrelated to this fix.)
+
+  Added dev dependencies `fake_cloud_firestore` and `mock_exceptions` so
+  `CalendarService` is tested against an in-memory Firestore rather than
+  only through fakes. **190 tests, 0 failures; `flutter analyze` clean.**
+  The new name-limit and passed-reminder tests were checked by breaking
+  each fix and confirming the tests fail. Still not verified on a physical
+  device: whether the permission dialog and scheduled reminders actually
+  appear.
+
+  Still to do on this branch: Points/Ranks and Profile (`05_ranks.png`,
+  `06_profile.png` were removed from the mockups folder as out of scope
+  for Calendar and need to be re-added when that work starts).
+
+  **Post-merge follow-up (this merge).** `main`'s Courses & Material upload
+  feature cascade-deletes a course's calendar events with a direct inline
+  `users/{uid}/events` query, because `CalendarService.deleteEventsForCourse`
+  wasn't merged at the time — its own note says to "swap the call site once
+  it is." It is merged now, so that swap is outstanding. Until it happens
+  there are two independent implementations of the same cascade, and only
+  one of them (`CalendarService`'s) cancels the deleted events' scheduled
+  reminders — so deleting a course through the Courses UI today still
+  leaves its events' reminders scheduled.
 
 ## Design handoffs
 
@@ -712,3 +1553,7 @@ mark it done, note decisions made, note what starts next.)*
   Courses) is in the same bundle: the Home frames are implemented. The
   Courses-tab frames are Manar's Courses & Material upload feature
   (`feature/courses`, see Feature split) — not yet built, and hers to scope.
+- `docs/mockups/design_handoff_flashcard/` — the same design-system bundle,
+  with the Phase 2b (Flashcards) frames and reference PNGs added. Used to
+  build the Flashcards feature's screens (see Phase C above); not a
+  pixel-precision pass like Phase B's.

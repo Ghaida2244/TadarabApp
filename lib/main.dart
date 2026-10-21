@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'firebase_options.dart';
 import 'screens/auth/welcome_screen.dart';
 import 'screens/home/home_screen.dart';
+import 'screens/quiz/quiz_navigation.dart';
 import 'services/auth_service.dart';
 import 'theme/app_theme.dart';
 
@@ -22,6 +23,12 @@ class TadarabApp extends StatelessWidget {
     return MaterialApp(
       title: 'Tadarab',
       theme: AppTheme.themeData,
+      // quizSessionsRouteObserver: lets QuizSessionsScreen reload reliably
+      // when the student returns to it, regardless of how many push/
+      // pushReplacement steps happened in the quiz flow above it — see
+      // lib/screens/quiz/quiz_navigation.dart for why this replaced a
+      // simpler .then()-based approach.
+      navigatorObservers: [quizSessionsRouteObserver],
       home: const _FirebaseBootstrap(),
     );
   }

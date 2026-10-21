@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// A bare "not built yet" screen: centered label, nothing else. Used for
-/// the Courses/Calendar/Profile bottom-nav tabs and the Quiz/Flashcard
-/// setup screens — all Phase C work not built yet — so navigating to them
-/// shows something deliberate instead of erroring or dead-ending.
+/// A bare "not built yet" screen: centered label, nothing else. Courses
+/// (Manar) and Quiz generation & Sessions (Ghaida) are real now — what's
+/// left on this is Flashcards (Deemah) and Calendar/Profile (Leen), still
+/// Phase C work not built yet — so navigating to them shows something
+/// deliberate instead of erroring or dead-ending.
 class PlaceholderScreen extends StatelessWidget {
   const PlaceholderScreen({super.key, required this.label, this.actions});
 

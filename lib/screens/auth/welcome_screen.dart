@@ -33,7 +33,7 @@ class WelcomeScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 22),
                     Text(
-                      'Study smarter, not longer',
+                      'Study smarter, not harder',
                       style: AppTypography.promoTitle,
                     ),
                     const SizedBox(height: 8),

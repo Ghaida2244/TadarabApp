@@ -5,8 +5,16 @@ import {
   validateCustomPrompt,
   computeMaxTokens,
   buildPrompt,
+  buildSystemPrompt,
+  buildSourceText,
   buildToolSchema,
   shuffleQuizOptions,
+  filterGroundedItems,
+  buildGroundingLogEntry,
+  normalizeItems,
+  normalizeCoveredTopics,
+  normalizePreviousTopics,
+  validatePreviousTopics,
 } from './generation.js';
 
 // Google's published JWK set for Firebase ID tokens. jose caches this
@@ -71,6 +79,9 @@ function parseGenerateRequest(body) {
 
   const difficulties = parseDifficulty(body.difficulty);
   validateCustomPrompt(body.customPrompt);
+  validatePreviousTopics(body.previousTopics);
+  const isRetake = body.isRetake === true;
+  const previousTopics = normalizePreviousTopics(body.previousTopics);
 
   return {
     type: body.type,
@@ -78,6 +89,8 @@ function parseGenerateRequest(body) {
     materials: body.materials,
     difficulties,
     customPrompt: typeof body.customPrompt === 'string' ? body.customPrompt : null,
+    isRetake,
+    previousTopics,
   };
 }
 
@@ -85,7 +98,8 @@ function parseGenerateRequest(body) {
 /// the caller, builds the exact prompt from
 /// quiz_flashcard_generation_spec.md, forces structured (Tool Use) output
 /// from Claude, shuffles quiz option order server-side, and returns
-/// { items, note } ready for the app to turn into Question/Flashcard docs.
+/// { items, note, coveredTopics } ready for the app to turn into
+/// Question/Flashcard docs.
 async function handleGenerate(request, env) {
   let payload;
   try {
@@ -109,6 +123,7 @@ async function handleGenerate(request, env) {
   }
 
   const prompt = buildPrompt(req);
+  const system = buildSystemPrompt(req.type);
   const tool = buildToolSchema(req.type);
   const maxTokens = computeMaxTokens(req.type, req.count);
 
@@ -124,6 +139,7 @@ async function handleGenerate(request, env) {
       body: JSON.stringify({
         model: CLAUDE_MODEL,
         max_tokens: maxTokens,
+        system,
         messages: [{ role: 'user', content: prompt }],
         tools: [tool],
         tool_choice: { type: 'tool', name: tool.name },
@@ -139,20 +155,38 @@ async function handleGenerate(request, env) {
   }
 
   const toolUse = (claudeData.content ?? []).find((block) => block.type === 'tool_use' && block.name === tool.name);
-  if (!toolUse || !Array.isArray(toolUse.input?.items)) {
+  const rawItems = normalizeItems(toolUse?.input?.items);
+  if (!toolUse || !rawItems) {
     return jsonResponse(
       { error: 'Claude API error', message: 'Response did not include the expected structured output', details: claudeData },
       502,
     );
   }
 
-  const items = req.type === 'quiz' ? shuffleQuizOptions(toolUse.input.items) : toolUse.input.items;
+  // Grounding check (CLAUDE.md, corrected): sourceLocation is checked
+  // against the real location tags from the source text sent to Claude, but
+  // this is monitoring only — a slightly imprecise sourceLocation shown to
+  // the student is acceptable, losing a valid item is not. No item is ever
+  // dropped or regenerated because of this check; when some items don't
+  // check out, it's logged (count + truncated sourceLocation strings, no
+  // question/source text) so the prompt can keep being tuned.
+  const sourceText = buildSourceText(req.materials);
+  const { discarded } = filterGroundedItems(rawItems, sourceText);
+
+  if (discarded.length > 0) {
+    console.log(JSON.stringify(buildGroundingLogEntry(discarded, rawItems.length)));
+  }
+
+  const items = req.type === 'quiz' ? shuffleQuizOptions(rawItems) : rawItems;
+  const note = toolUse.input.note ?? null;
+  const coveredTopics = normalizeCoveredTopics(toolUse.input.coveredTopics);
 
   return jsonResponse({
     uid: payload.sub,
     type: req.type,
     items,
-    note: toolUse.input.note ?? null,
+    note,
+    coveredTopics,
   });
 }
 

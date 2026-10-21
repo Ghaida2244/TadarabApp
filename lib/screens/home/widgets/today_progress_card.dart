@@ -1,32 +1,165 @@
 import 'package:flutter/material.dart';
 
+import '../../../logic/streak_row_logic.dart';
 import '../../../services/home_data_service.dart';
-import '../../../services/streak_service.dart' show dateOnly;
+import '../../../services/streak_service.dart' show dateOnly, effectiveStreak;
 import '../../../theme/app_theme.dart';
 import '../../../widgets/dashed_border.dart';
 
 const _dayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const _weekdayNames = [
+  'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
+];
+
+/// Fixed height for the pager's single row of 7 cells + their labels, so
+/// every page — real data, or the loading placeholder — occupies exactly
+/// the same space and the card never resizes while swiping.
+const _kWeekRowHeight = 54.0;
+
+/// The streak panel's own vertical padding — same value above the header
+/// ("N-day streak" line) and below the day labels, so the row doesn't sit
+/// closer to one edge than the other.
+const _kPanelPadding = 14.0;
+
+/// Gap between two adjacent cells *inside* one week (see _WeekRow) — also
+/// used, via _kPagePadding below, as the target gap *across* a week
+/// boundary (the peeking cell and its neighbor), so the whole strip reads
+/// as one continuously-spaced row regardless of where a page boundary
+/// happens to fall.
+const _kCellGap = 8.0;
+
+/// Each page's own horizontal inset — half of [_kCellGap] on each side, so
+/// two adjacent pages' insets sum to exactly [_kCellGap] at the boundary
+/// between them (see _buildWeekPage). Matches the "half the cell gap on
+/// each side" approach directly.
+const _kPagePadding = _kCellGap / 2;
+
+/// How far the pager's *viewport* escapes the panel's own [_kPanelPadding]
+/// on each side, so an adjacent week's cells can peek through at the edges
+/// (see _TodayProgressCardState.build). This is [_kPanelPadding] minus
+/// [_kPagePadding] rather than [_kPanelPadding] itself: each page already
+/// re-adds [_kPagePadding] of its own (see _buildWeekPage), and the two
+/// need to net out to exactly [_kPanelPadding] so the *active* page's cells
+/// still land flush under the header above it. A side effect of also
+/// satisfying the cross-boundary-gap requirement: the visible peek sliver
+/// is [_kPeekInset] minus the neighbor's own [_kPagePadding], i.e.
+/// narrower than it would be with zero inter-page gap.
+const _kPeekInset = _kPanelPadding - _kPagePadding;
 
 /// The dark "Today's progress" card: today's question/flashcard split at
-/// top, then a 7-day (Sun-Sat) row of combined counts below. [currentStreak]
-/// is the real, week-independent streak (Student.currentStreak) — the row
-/// itself only ever shows the current calendar week, per the design.
-class TodayProgressCard extends StatelessWidget {
+/// top, then a weekly (Sun-Sat) row of activity cells below that the
+/// student can swipe horizontally to see earlier weeks. [currentStreak] is
+/// [Student.currentStreak] (real, week-independent) as last written on a
+/// session commit — [lastStudyDate] lets this re-derive whether it's still
+/// actually alive as of [now] (see [effectiveStreak]) rather than trusting
+/// a value that can go stale for days after a streak quietly breaks.
+///
+/// [weeklyProgress] is always the *current* week's data, fetched eagerly by
+/// the caller (Home's existing `_reload()` path) — this card never
+/// re-fetches it itself, so finishing a session and reloading Home updates
+/// the current week exactly as before. Earlier weeks are fetched lazily,
+/// one at a time as their page is first built, via [fetchWeek] — the same
+/// `HomeDataService.fetchWeeklyProgress` query, just for a different week's
+/// Sunday — and cached by week start for the life of this widget.
+class TodayProgressCard extends StatefulWidget {
   const TodayProgressCard({
     super.key,
     required this.weeklyProgress,
     required this.currentStreak,
+    required this.lastStudyDate,
     required this.now,
+    required this.fetchWeek,
   });
 
   final WeeklyProgress weeklyProgress;
   final int currentStreak;
+  final DateTime? lastStudyDate;
   final DateTime now;
+
+  /// Fetches a single week's data for the Sunday [weekStart] — the caller
+  /// binds this to `HomeDataService.fetchWeeklyProgress(uid, now:
+  /// weekStart)`; no new query shape, no new index.
+  final Future<WeeklyProgress> Function(DateTime weekStart) fetchWeek;
+
+  @override
+  State<TodayProgressCard> createState() => _TodayProgressCardState();
+}
+
+class _TodayProgressCardState extends State<TodayProgressCard> {
+  PageController? _pageController;
+  final Map<DateTime, WeeklyProgress> _cache = {};
+  final Set<DateTime> _fetchingWeeks = {};
+
+  DateTime get _currentWeekStart => startOfWeek(widget.now);
+
+  @override
+  void initState() {
+    super.initState();
+    _cache[_currentWeekStart] = widget.weeklyProgress;
+  }
+
+  @override
+  void didUpdateWidget(covariant TodayProgressCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The parent's existing _reload() path hands this a fresh
+    // WeeklyProgress for the current week on every reload (e.g. after
+    // finishing a session) — just refresh the cache entry for it; no
+    // re-fetch of our own.
+    _cache[_currentWeekStart] = widget.weeklyProgress;
+  }
+
+  @override
+  void dispose() {
+    _pageController?.dispose();
+    super.dispose();
+  }
+
+  void _ensureFetching(DateTime weekStart) {
+    if (_fetchingWeeks.contains(weekStart)) return;
+    _fetchingWeeks.add(weekStart);
+    widget
+        .fetchWeek(weekStart)
+        .then((result) {
+          if (!mounted) return;
+          setState(() {
+            _cache[weekStart] = result;
+            _fetchingWeeks.remove(weekStart);
+          });
+        })
+        .catchError((Object _) {
+          // Error-safe fallback: treat a failed earlier-week fetch as an
+          // empty week rather than surfacing an error or retrying forever.
+          if (!mounted) return;
+          setState(() {
+            _cache[weekStart] = WeeklyProgress.empty(weekStart);
+            _fetchingWeeks.remove(weekStart);
+          });
+        });
+  }
+
+  void _backToCurrentWeek() {
+    final controller = _pageController;
+    if (controller == null) return;
+    if (MediaQuery.of(context).disableAnimations) {
+      controller.jumpToPage(0);
+    } else {
+      controller.animateToPage(
+        0,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final today = dateOnly(now);
-    final todayCount = weeklyProgress.dayForDate(today);
+    final today = dateOnly(widget.now);
+    final todayCount = widget.weeklyProgress.dayForDate(today);
+    final displayedStreak = effectiveStreak(
+      storedStreak: widget.currentStreak,
+      lastStudyDate: widget.lastStudyDate,
+      now: widget.now,
+    );
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -64,55 +197,268 @@ class TodayProgressCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
+          // The panel itself carries no blanket padding any more (unlike
+          // before) — the header gets its own top/side padding below, and
+          // the pager is a direct, unpadded child so it can span the
+          // panel's full width (see the LayoutBuilder below) and let an
+          // adjacent week's cells peek through at the edges, clipped at
+          // the panel's own rounded corners rather than an inner inset.
           Container(
-            padding: const EdgeInsets.all(14),
+            clipBehavior: Clip.hardEdge,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(18),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            // Everything below is inside one LayoutBuilder — deliberately
+            // including the header, not just the pager — so _pageController
+            // is already assigned by the time _StreakHeader is constructed,
+            // on every build including the very first one. Splitting the
+            // header out of the LayoutBuilder would mean its *first* build
+            // always sees a null controller (since the Column's children
+            // are all constructed before any of them actually run their own
+            // build), and nothing would ever force a second build to fix
+            // that up — the header would be permanently stuck showing the
+            // current week's label regardless of swiping.
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final fullWidth = constraints.maxWidth;
+                // The active page's own width needs to be fullWidth minus
+                // the same 14px inset on each side the header above it
+                // uses, so its cells land flush under it; whatever's left
+                // over either side is exactly the peek of the neighboring
+                // week.
+                final viewportFraction = fullWidth > _kPeekInset * 2
+                    ? ((fullWidth - _kPeekInset * 2) / fullWidth).clamp(
+                        0.5,
+                        1.0,
+                      )
+                    : 1.0;
+                _pageController ??= PageController(
+                  viewportFraction: viewportFraction,
+                );
+                return Column(
                   children: [
-                    Text(
-                      '$currentStreak-day streak',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        _kPanelPadding,
+                        _kPanelPadding,
+                        _kPanelPadding,
+                        0,
+                      ),
+                      child: _StreakHeader(
+                        streakLabel: '$displayedStreak-day streak',
+                        weekStart: _currentWeekStart,
+                        onBackToCurrent: _backToCurrentWeek,
+                        pageController: _pageController,
                       ),
                     ),
-                    Text(
-                      'questions + cards per day',
-                      style: AppTypography.helper.copyWith(
-                        color: Colors.white.withValues(alpha: 0.65),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: _kWeekRowHeight,
+                      child: PageView.builder(
+                        controller: _pageController,
+                        // weeksBack increases with the index; reverse:true
+                        // makes swiping right (per the design's own
+                        // description) increase the index — i.e. go back a
+                        // week. Page 0 (the start, unreachable to swipe
+                        // past) is always the current week, so "future
+                        // weeks aren't reachable" and "no limit on how far
+                        // back" both fall out of plain Scrollable bounds —
+                        // no page-count constant needed.
+                        reverse: true,
+                        itemBuilder: (context, weeksBack) =>
+                            _buildWeekPage(weeksBack),
                       ),
                     ),
+                    // Mirrors the header's own top _kPanelPadding above, so
+                    // the day labels get the same breathing room below them
+                    // that the streak line gets above it. Fixed/unconditional
+                    // — never varies between the current and an earlier
+                    // week, so it can't introduce the height jumpiness the
+                    // header's own invisible-vs-visible button is already
+                    // careful to avoid.
+                    const SizedBox(height: _kPanelPadding),
                   ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    for (var i = 0; i < 7; i++) ...[
-                      if (i > 0) const SizedBox(width: 8),
-                      Expanded(
-                        child: _DayCell(
-                          label: _dayLabels[i],
-                          day: weeklyProgress.days[i],
-                          isToday: weeklyProgress.days[i].date == today,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
+                );
+              },
             ),
           ),
+          const SizedBox(height: 14),
         ],
+      ),
+    );
+  }
+
+  Widget _buildWeekPage(int weeksBack) {
+    final weekStart = weekStartForWeeksBack(
+      currentWeekStart: _currentWeekStart,
+      weeksBack: weeksBack,
+    );
+    final cached = _cache[weekStart];
+    Widget row;
+    if (cached == null) {
+      _ensureFetching(weekStart);
+      row = _WeekRow.placeholder(weekStart: weekStart);
+    } else {
+      row = _WeekRow(weekStart: weekStart, now: widget.now, progress: cached);
+    }
+    // _kPagePadding on every page, loading or not, so the gap between this
+    // page's own cells and whichever page is peeking in next to it is
+    // exactly _kCellGap too — see _kPeekInset's own doc comment for the
+    // full derivation.
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: _kPagePadding),
+      child: row,
+    );
+  }
+}
+
+/// The streak panel's header row: the real streak count on the left,
+/// either the current week's month (or month range) or an earlier week's
+/// explicit day range on the right, and — only for an earlier week — a
+/// circular "back to this week" button after it.
+///
+/// The button is always mounted (never removed from the tree) so the
+/// header's height can never differ between the two states; when hidden
+/// it's made fully inert — excluded from the semantics tree, ignoring
+/// pointer events, and never focusable (it's a plain GestureDetector, not
+/// a focusable Material widget, so there's no focus node to suppress in
+/// the first place).
+class _StreakHeader extends StatelessWidget {
+  const _StreakHeader({
+    required this.streakLabel,
+    required this.weekStart,
+    required this.onBackToCurrent,
+    required this.pageController,
+  });
+
+  final String streakLabel;
+
+  /// The *current* week's Sunday — only used to compute the month/range
+  /// label when nothing's been swiped yet; once a page is actually built,
+  /// [_HeaderRange] below reads the real page offset from [pageController]
+  /// instead.
+  final DateTime weekStart;
+  final VoidCallback onBackToCurrent;
+  final PageController? pageController;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          streakLabel,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w900,
+            color: Colors.white,
+          ),
+        ),
+        _HeaderRange(
+          currentWeekStart: weekStart,
+          pageController: pageController,
+          onBackToCurrent: onBackToCurrent,
+        ),
+      ],
+    );
+  }
+}
+
+/// Rebuilds just the range label + back button whenever the pager's page
+/// changes, via [pageController]'s own `ListenableBuilder` — keeps the
+/// header in sync with whichever week is actually on screen (including
+/// mid-drag) without the whole card needing to rebuild per scroll frame.
+class _HeaderRange extends StatelessWidget {
+  const _HeaderRange({
+    required this.currentWeekStart,
+    required this.pageController,
+    required this.onBackToCurrent,
+  });
+
+  final DateTime currentWeekStart;
+  final PageController? pageController;
+  final VoidCallback onBackToCurrent;
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = pageController;
+    if (controller == null) {
+      // First frame, before the pager has measured itself and created a
+      // controller — render the current week's own label so there's no
+      // one-frame flash of nothing.
+      return _rangeRow(weeksBack: 0);
+    }
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final weeksBack = (controller.hasClients && controller.page != null
+                ? controller.page!
+                : 0.0)
+            .round();
+        return _rangeRow(weeksBack: weeksBack);
+      },
+    );
+  }
+
+  Widget _rangeRow({required int weeksBack}) {
+    final isCurrent = weeksBack == 0;
+    final weekStart = weekStartForWeeksBack(
+      currentWeekStart: currentWeekStart,
+      weeksBack: weeksBack,
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          streakHeaderLabel(weekStart: weekStart, isCurrent: isCurrent),
+          style: AppTypography.helper.copyWith(
+            color: Colors.white.withValues(alpha: 0.65),
+          ),
+        ),
+        const SizedBox(width: 4),
+        ExcludeSemantics(
+          excluding: isCurrent,
+          child: IgnorePointer(
+            ignoring: isCurrent,
+            child: Opacity(
+              opacity: isCurrent ? 0 : 1,
+              child: _BackToCurrentWeekButton(onTap: onBackToCurrent),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BackToCurrentWeekButton extends StatelessWidget {
+  const _BackToCurrentWeekButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Back to this week',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 24,
+          height: 24,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.keyboard_double_arrow_right,
+            size: 13,
+            color: AppColors.navy,
+          ),
+        ),
       ),
     );
   }
@@ -151,78 +497,141 @@ class _TodayStat extends StatelessWidget {
   }
 }
 
-/// One day's cell in the streak row. Three visual states, matching the two
-/// example frames precisely (confirmed with the team rather than assumed):
-/// - Has data (today or a past day): filled — white+navy for today, red+white otherwise.
-/// - Today with no data yet: not filled — a *bright* solid-white dashed
-///   outline and full-white label, distinct from a locked day.
-/// - No data and not today (a past miss, or a future/locked day): a *dim*
-///   dashed outline (30% white) and dimmed label (40% white).
-class _DayCell extends StatelessWidget {
-  const _DayCell({
-    required this.label,
-    required this.day,
-    required this.isToday,
+/// One week's row of 7 day cells. [progress] is null for a week that
+/// hasn't finished loading yet — [placeholder] builds that state directly,
+/// since it needs no activity data at all (every cell just renders dim,
+/// with its correct date label — only [DayCellFillState.otherEmpty]
+/// applies, since a week still loading is always an earlier, fully-past
+/// week, never the current one).
+class _WeekRow extends StatelessWidget {
+  const _WeekRow({
+    required this.weekStart,
+    required DateTime this.now,
+    required WeeklyProgress this.progress,
   });
 
-  final String label;
-  final DailyStudyCount day;
-  final bool isToday;
+  const _WeekRow.placeholder({required this.weekStart})
+    : now = null,
+      progress = null;
 
-  bool get _hasData => day.combined > 0;
+  final DateTime weekStart;
+  final DateTime? now;
+  final WeeklyProgress? progress;
 
   @override
   Widget build(BuildContext context) {
-    final filled = _hasData;
+    final today = now == null ? null : dateOnly(now!);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        for (var i = 0; i < 7; i++) ...[
+          if (i > 0) const SizedBox(width: _kCellGap),
+          Expanded(child: _buildCell(i, today)),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildCell(int i, DateTime? today) {
+    final date = addDaysCalendar(weekStart, i);
+    final isToday = today != null && date == today;
+    final isFuture = today != null && date.isAfter(today);
+    final hasActivity = progress != null && progress!.days[i].combined > 0;
+
+    final fillState = progress == null
+        ? DayCellFillState.otherEmpty
+        : dayCellFillState(hasActivity: hasActivity, isToday: isToday);
+    final labelOpacity = progress == null
+        ? 0.4
+        : dayCellLabelOpacity(isToday: isToday, isFuture: isFuture);
+
+    return _DayCell(
+      letter: _dayLabels[i],
+      dayOfMonth: date.day,
+      fillState: fillState,
+      labelOpacity: labelOpacity,
+      semanticsLabel:
+          '${_weekdayNames[date.weekday % 7]}, '
+          '${monthAbbreviations[date.month - 1]} ${date.day}, '
+          '${progress == null
+              ? 'loading'
+              : hasActivity
+              ? 'studied'
+              : 'no activity'}',
+    );
+  }
+}
+
+/// One day's cell — fill/border per [fillState] (see [DayCellFillState]),
+/// label per [labelOpacity] (see [dayCellLabelOpacity]). No count, no
+/// number: per the redesign, a cell only ever says whether that day had
+/// any activity at all.
+class _DayCell extends StatelessWidget {
+  const _DayCell({
+    required this.letter,
+    required this.dayOfMonth,
+    required this.fillState,
+    required this.labelOpacity,
+    required this.semanticsLabel,
+  });
+
+  final String letter;
+  final int dayOfMonth;
+  final DayCellFillState fillState;
+  final double labelOpacity;
+  final String semanticsLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = fillState == DayCellFillState.active;
+    final todayEmpty = fillState == DayCellFillState.todayEmpty;
 
     Widget cell = Container(
       height: 34,
       width: double.infinity,
-      alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: filled
-            ? (isToday ? Colors.white : AppColors.red)
-            : Colors.white.withValues(alpha: 0.14),
+        color: active
+            ? AppColors.red
+            : (todayEmpty
+                  ? Colors.transparent
+                  : Colors.white.withValues(alpha: 0.14)),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: filled
-          ? Text(
-              '${day.combined}',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-                color: isToday ? AppColors.navy : Colors.white,
-              ),
-            )
-          : null,
     );
 
-    if (!filled) {
+    if (!active) {
       cell = DashedRoundedBorder(
-        color: Colors.white.withValues(alpha: isToday ? 1 : 0.3),
+        color: Colors.white.withValues(alpha: todayEmpty ? 1 : 0.3),
         borderRadius: 12,
         child: cell,
       );
     }
 
-    final Color labelColor = filled
-        ? (isToday ? Colors.white : Colors.white.withValues(alpha: 0.6))
-        : Colors.white.withValues(alpha: isToday ? 1 : 0.4);
-
-    return Column(
-      children: [
-        cell,
-        const SizedBox(height: 6),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 0.04 * 10,
-            color: labelColor,
+    return Semantics(
+      // container:true: without it, 7 adjacent leaf Semantics nodes with
+      // nothing but a label get silently merged by the framework into one
+      // node carrying all 7 labels joined by newlines — confirmed by
+      // dumping the actual semantics tree while writing this; container
+      // forces each cell to keep its own, separately-findable node.
+      container: true,
+      label: semanticsLabel,
+      child: Column(
+        children: [
+          cell,
+          const SizedBox(height: 6),
+          ExcludeSemantics(
+            child: Text(
+              '$letter $dayOfMonth',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.02 * 10,
+                color: Colors.white.withValues(alpha: labelOpacity),
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

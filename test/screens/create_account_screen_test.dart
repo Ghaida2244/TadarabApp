@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/screens/auth/create_account_screen.dart';
 import 'package:tadarab_app/services/auth_service.dart';
+import 'package:tadarab_app/theme/app_theme.dart';
 
 import '../helpers/fake_auth_service.dart';
 
@@ -56,6 +57,28 @@ void main() {
       );
       expect(find.text('Full name is required'), findsNothing);
     });
+
+    testWidgets(
+      '"Already have an account? Sign in" is horizontally centered on the '
+      'page',
+      (tester) async {
+        await pumpCreateAccount(tester);
+
+        final screenCenterX =
+            tester.getSize(find.byType(MaterialApp)).width / 2;
+        final linkCenterX = tester
+            .getCenter(
+              find.byWidgetPredicate(
+                (w) =>
+                    w is RichText &&
+                    w.text.toPlainText().contains('Already have an account?'),
+              ),
+            )
+            .dx;
+
+        expect(linkCenterX, closeTo(screenCenterX, 1));
+      },
+    );
   });
 
   group('A3b — validation errors', () {
@@ -110,6 +133,82 @@ void main() {
 
       expect(find.text('Strong'), findsOneWidget);
     });
+
+    testWidgets(
+      'Re-enter password never shows a checkmark when it matches — only '
+      'the show/hide eye icon, same as Password',
+      (tester) async {
+        await pumpCreateAccount(tester);
+
+        await fillForm(tester, password: 'abcdefg1', confirm: 'abcdefg1');
+        await tester.pump();
+
+        expect(find.byIcon(Icons.check), findsNothing);
+        expect(find.byIcon(Icons.visibility_outlined), findsNWidgets(2));
+      },
+    );
+
+    Color confirmBorderColor(WidgetTester tester) {
+      final container = tester.widget<Container>(
+        find
+            .ancestor(
+              of: find.byType(TextField).at(3),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      final border = (container.decoration as BoxDecoration).border as Border;
+      return border.top.color;
+    }
+
+    testWidgets(
+      'Re-enter password border goes green live as soon as it matches '
+      'Password, and back off green the moment it stops matching',
+      (tester) async {
+        await pumpCreateAccount(tester);
+
+        await tester.enterText(find.byType(TextField).at(2), 'abcdefg1');
+        await tester.enterText(find.byType(TextField).at(3), 'abcdefg1');
+        await tester.pump();
+        expect(confirmBorderColor(tester), AppColors.success);
+
+        // Still matching, one keystroke away from mismatching — no submit
+        // yet, so this is today's plain "filled" look, not green and not
+        // the submit-only error red.
+        await tester.enterText(find.byType(TextField).at(3), 'abcdefg');
+        await tester.pump();
+        expect(confirmBorderColor(tester), isNot(AppColors.success));
+        expect(confirmBorderColor(tester), isNot(AppColors.error));
+      },
+    );
+
+    testWidgets(
+      'Re-enter password border stays empty-grey while the field is empty, '
+      'even though Password already matches nothing',
+      (tester) async {
+        await pumpCreateAccount(tester);
+
+        await tester.enterText(find.byType(TextField).at(2), 'abcdefg1');
+        await tester.pump();
+
+        expect(confirmBorderColor(tester), isNot(AppColors.success));
+      },
+    );
+
+    testWidgets(
+      'a submitted mismatch keeps its red error border, not green — error '
+      'keeps priority',
+      (tester) async {
+        await pumpCreateAccount(tester);
+
+        await fillForm(tester, password: 'abcdefg1', confirm: 'somethingelse');
+        await submit(tester);
+        await tester.pump();
+
+        expect(find.text("Passwords don't match"), findsOneWidget);
+        expect(confirmBorderColor(tester), AppColors.error);
+      },
+    );
   });
 
   group('A3c — email already taken', () {
