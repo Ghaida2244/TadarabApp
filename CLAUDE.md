@@ -1454,6 +1454,9 @@ mark it done, note decisions made, note what starts next.)*
      Hour 1–12 grid, Minute grid in 5-minute steps, AM/PM toggle, red
      Confirm. 12 AM/12 PM conversion lives in the unit-tested
      `timeOfDayFrom12Hour`.
+     **(Items 2 and 3 were reversed by the unified-UI pass below — both
+     custom sheets, and `timeOfDayFrom12Hour`, have since been deleted in
+     favour of the platform pickers.)**
   4. *Notification text (Figure 107)* — was the event's name / "Starts at
      …" → now exactly "Event Reminder" / "Don't forget your upcoming
      event." (`kEventReminderTitle`/`kEventReminderBody`).
@@ -1546,6 +1549,144 @@ mark it done, note decisions made, note what starts next.)*
   reminders — so deleting a course through the Courses UI today still
   leaves its events' reminders scheduled.
 
+  **Unified UI pass (Calendar).** Rebuilt every Calendar screen against
+  `docs/mockups/design-handoff_Calendar/android-study-app-redesign/project/
+  Tadarab Phase 3 - Calendar.dc.html`, which is the source of truth for this
+  feature. Two traps in that bundle, worth knowing before anyone opens it:
+  its nested `project/design_handoff/` folder is a **stale earlier export**
+  (111 differing lines — 15px day numbers, hardcoded swatches) whose own
+  README still names Phase 2 - Quiz as primary, and its `_ds/modernist-…/`
+  folder is an **unrelated design system** (Archivo, `#ec3013`, 0px radius)
+  that the Calendar file never imports — only the abandoned "Home Redesign
+  v2/v3" explorations do. `uploads/` and `ref/` are reference images, not
+  design: `uploads/` holds the old SRS screens the designer fed *in* (the
+  same frames as `docs/mockups/calendar-points/`), and `ref/` has no
+  Calendar frames at all. The only real imports are `support.js` (the
+  prototype runtime) and `android-frame.jsx` (a generic Material 3 device
+  bezel marked `@ds-adherence-ignore`, i.e. the phone mockup around the
+  screen, not Tadarab design). The identical copy of the Calendar file in
+  `docs/mockups/design-handoff_quiz/` is byte-for-byte the same export.
+
+  **What changed.** Calendar tab: navy header now has rounded bottom
+  corners, a 24px title, a month/year-view toggle, and a 40px red Add Event
+  pill with the hard `0 3px 0` shadow; a "Back to today" pill appears
+  whenever the viewed month isn't the current one; the white month card
+  grew a `0 0 0 2px #EEF0FF` ring; **today is now an outline** (pale red
+  fill + 2px red border + red text) rather than a solid red tile — the
+  handoff and the original SRS figure agree on this and the old code
+  didn't; dots cap at **2 plus a "+N" label**; empty days are no longer
+  tappable; and the grid **flexes to fill the screen** instead of
+  scrolling. Day sheet: an event-count line, the linked course's name in
+  the event's own colour, a `· reminder N units before` clause, a 6px
+  full-height colour bar, a 34×34 tinted delete button, time-sorted rows,
+  and a 62%-height cap with tap-to-dismiss. Delete confirm: a 52px tinted
+  trash badge, centred text, a **dynamic body** (reminder-cancelled vs.
+  removed-from-this-day, plus "This can't be undone."), and
+  "Delete event" / "Keep it". Add Event: all-caps 12px field labels, 54px
+  fields with focus/filled border states, an **inline** course dropdown
+  (replacing the modal sheet), **course-aware colour presets**, a single
+  reminder card with a hand-built 52×30 switch, a **1–60 stepper**, inline
+  unit chips, a three-state note box, and a **pinned red Save button,
+  disabled with a reason line** until the form is valid.
+
+  **New: the year view** (`widgets/year_grid.dart`), built to the handoff's
+  two prototype defaults — `yearMarkers = fill` (an event day is filled
+  with its earliest event's colour) and `todayStyle = ring` (today gets a
+  pale red pill, a red ring and a 1.15× nudge). A day that is both today
+  and has an event takes the event's fill but keeps the ring. This needed
+  `CalendarService.watchEventsForYear`, since the existing stream only
+  covers one month; it is the same single-field range + order-by shape as
+  `watchEventsForMonth`, so it needs **no composite index** either.
+
+  **Team decision — the date and time pickers are now the platform's.**
+  The design uses the native date/time inputs, so `EventDatePickerSheet`
+  and `EventTimePickerSheet` were **deleted** along with
+  `timeOfDayFrom12Hour` and `kWeekdayHeadersShort` (confirmed by a repo-wide
+  search that nothing else used either). `widgets/calendar_pickers.dart`
+  now wraps `showDatePicker`/`showTimePicker` with a **local** `Theme`
+  override for the navy/red palette — not a change to the shared
+  `AppTheme`. **This deliberately departs from SRS Figures 98–99**, which
+  the earlier audit had matched by hand. Past dates stay selectable
+  (`firstDate` reaches five years back), which the handoff explicitly
+  endorses: "pick a date that has already been and the event saves and
+  lists normally. Only the *reminder* is time-checked."
+
+  **Reminder validation flipped from block-on-save to refuse-on-entry**,
+  per the handoff's own rule — "an invalid value is rejected, not
+  accepted-then-warned". A unit whose lead time has already passed is
+  greyed and inert; the stepper refuses a value that would put the reminder
+  in the past and explains why. The note box carries the state in three
+  colours. Everything the design doesn't draw was kept and restyled: the
+  100-character `eventName` cap, the exact "Event Reminder" / "Don't forget
+  your upcoming event." notification text, `reminderEnabled` still stored
+  as **false** when permission is declined or scheduling fails (with the
+  three snackbar messages), the screen loading and error + "Try again"
+  states, the "Couldn't save your event" banner, "Saving…", the "You
+  haven't added any courses yet" line, the empty-month line (the handoff's
+  own empty-state branch renders *nothing* — a real hole in it), and
+  `deleteEventsForCourse`.
+
+  **Decisions recorded.** Text styles live in a Calendar-local
+  `calendar_styles.dart`, **not** in `app_typography.dart` — this diverges
+  from the Quiz feature, which put its `quiz*` styles in the shared file;
+  the trade was made to avoid touching a frozen shared file, and every
+  colour still comes from `AppColors` with Nunito set explicitly. The
+  16-colour `kEventSwatchPool` lives there too, as feature data rather than
+  a theme role. Spelling follows Manar's Courses screens — **"color"**, not
+  the handoff's "colour". The custom-colour "+" reuses the Courses
+  feature's zero-dependency hue-slider approach rather than adding
+  `flutter_colorpicker`, so **`pubspec.yaml` was not touched**. Course
+  names for the day sheet come from `CoursesService.fetchCourses` (not
+  `HomeDataService`, whose version wraps no failures), fetched once by
+  `CalendarScreen` and passed down to Add Event, so the feature has one
+  source for "the student's courses". **No shared or frozen file was
+  edited.** `CalendarScreen` keeps its now-unused `homeDataService`
+  parameter precisely because dropping it would mean editing
+  `home_screen.dart`.
+
+  **Graceful degradation, flagged as a deliberate bend of the "every
+  network call shows an actionable message" rule:** if the course fetch
+  fails, event rows simply omit the course name rather than blocking events
+  that loaded fine. An event whose course was since *deleted* takes the
+  same path. Both are tested.
+
+  **Three real bugs the tests caught before they shipped**, all in code
+  written during this pass: the Calendar header's top row overflowed by
+  49px at phone width because the title couldn't yield to the two
+  fixed-width actions (now `Expanded` with ellipsis, as the handoff's CSS
+  would shrink it); the day cell's content overflowed by a fraction of a
+  pixel once the grid compressed, since a flexing grid's contents must
+  tolerate compression (the number is now `Flexible` + `BoxFit.scaleDown`,
+  keeping its design size whenever there is room); and a reminder landing
+  *exactly* on "now" counts as passed, which an early test asserted
+  backwards.
+
+  **Test-harness notes for whoever is next.** The Calendar widget tests pump
+  at the handoff's own 412×892 canvas — the default 800×600 surface is both
+  unrealistic for this layout and too short for the year view's four rows,
+  so `GridView`'s lazy building left December unbuilt. The Add Event suite
+  is back to a **600px-wide** surface because Material's time picker
+  overflows a phone-width one; that is the same reason the suite was 600
+  wide before the custom pickers existed. A never-resolving write is faked
+  with a `Completer`, not `Future.delayed`, since a pending timer fails the
+  test at teardown.
+
+  **181 Calendar tests** across `test/screens/calendar/` (screen 28, Add
+  Event 44, reminder card 13, year grid 8, day sheet 14, delete dialog 7),
+  `test/utils/event_time_test.dart` (51, after dropping the 3 that covered
+  the deleted `timeOfDayFrom12Hour`) and
+  `test/services/calendar_service_test.dart` (16, including 4 new for the
+  year query).
+  **Whole suite: 798 passing, 1 failing** — `text_extraction_service_test`'s
+  PPTX case, which is **pre-existing on `main` and not this feature's**: it
+  reads `docs/Lecture1.pptx`, a fixture that was never committed (verified
+  by running that test against a clean `MERGE_HEAD` worktree). `flutter
+  analyze` reports only the two pre-existing infos from `main`
+  (`auth_service.dart`, `flashcard_service_test.dart`), and `flutter build
+  apk --debug` succeeds. Still not verified on a physical device: the
+  notification permission dialog and whether scheduled reminders actually
+  appear.
+
 ## Design handoffs
 
 - `docs/mockups/android-study-app-redesign/` — Phase 0 (Auth: Welcome, Log
@@ -1553,6 +1694,14 @@ mark it done, note decisions made, note what starts next.)*
   Courses) is in the same bundle: the Home frames are implemented. The
   Courses-tab frames are Manar's Courses & Material upload feature
   (`feature/courses`, see Feature split) — not yet built, and hers to scope.
+- `docs/mockups/design-handoff_Calendar/` — the unified Calendar design
+  (`project/Tadarab Phase 3 - Calendar.dc.html`), implemented. **Read only
+  that file**: the nested `project/design_handoff/` folder is a stale
+  earlier export, `_ds/modernist-…/` is an unrelated design system the
+  Calendar never imports, and `uploads/`/`ref/` are reference images (the
+  old SRS screens fed into the tool), not design. `Tadarab Phase 3b -
+  Profile.dc.html` sits in the same bundle and is Leen's Profile/Ranks
+  work, not yet started.
 - `docs/mockups/design_handoff_flashcard/` — the same design-system bundle,
   with the Phase 2b (Flashcards) frames and reference PNGs added. Used to
   build the Flashcards feature's screens (see Phase C above); not a

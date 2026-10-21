@@ -304,39 +304,6 @@ void main() {
     });
   });
 
-  group('timeOfDayFrom12Hour', () {
-    test('converts ordinary AM and PM hours', () {
-      expect(
-        timeOfDayFrom12Hour(hour12: 9, minute: 30, isPm: false),
-        const TimeOfDay(hour: 9, minute: 30),
-      );
-      expect(
-        timeOfDayFrom12Hour(hour12: 3, minute: 45, isPm: true),
-        const TimeOfDay(hour: 15, minute: 45),
-      );
-    });
-
-    test('maps 12 AM to midnight and 12 PM to noon', () {
-      // The trap: adding 12 for PM would make noon hour 24, and leaving
-      // 12 AM alone would make midnight hour 12.
-      expect(
-        timeOfDayFrom12Hour(hour12: 12, minute: 0, isPm: false),
-        const TimeOfDay(hour: 0, minute: 0),
-      );
-      expect(
-        timeOfDayFrom12Hour(hour12: 12, minute: 0, isPm: true),
-        const TimeOfDay(hour: 12, minute: 0),
-      );
-    });
-
-    test('returns null for an hour or minute out of range', () {
-      expect(timeOfDayFrom12Hour(hour12: 0, minute: 0, isPm: false), isNull);
-      expect(timeOfDayFrom12Hour(hour12: 13, minute: 0, isPm: true), isNull);
-      expect(timeOfDayFrom12Hour(hour12: 5, minute: 60, isPm: false), isNull);
-      expect(timeOfDayFrom12Hour(hour12: 5, minute: -1, isPm: false), isNull);
-    });
-  });
-
   group('reminderAlreadyPassed', () {
     final now = DateTime(2026, 5, 3, 9, 0);
 
@@ -403,6 +370,213 @@ void main() {
           now,
         ),
         isFalse,
+      );
+    });
+  });
+
+  group('isSameMonth', () {
+    test('is true only within the same month of the same year', () {
+      expect(
+        isSameMonth(DateTime(2026, 5, 1), DateTime(2026, 5, 31)),
+        isTrue,
+      );
+      expect(isSameMonth(DateTime(2026, 5, 1), DateTime(2026, 6, 1)), isFalse);
+    });
+
+    test('distinguishes the same month in different years', () {
+      expect(isSameMonth(DateTime(2026, 5, 3), DateTime(2027, 5, 3)), isFalse);
+    });
+
+    test('ignores the time of day', () {
+      expect(
+        isSameMonth(DateTime(2026, 5, 1, 23, 59), DateTime(2026, 5, 2, 0, 1)),
+        isTrue,
+      );
+    });
+  });
+
+  group('formatEventCount', () {
+    test('singularises one event', () {
+      expect(formatEventCount(1), '1 event');
+    });
+
+    test('pluralises anything else', () {
+      expect(formatEventCount(2), '2 events');
+      expect(formatEventCount(11), '11 events');
+    });
+
+    test('handles zero without saying "0 event"', () {
+      expect(formatEventCount(0), '0 events');
+    });
+  });
+
+  group('formatReminderSummary', () {
+    test('lower-cases the unit so it reads inside a sentence', () {
+      expect(
+        formatReminderSummary(3, ReminderUnit.hours),
+        'reminder 3 hours before',
+      );
+    });
+
+    test('singularises an amount of one', () {
+      expect(
+        formatReminderSummary(1, ReminderUnit.days),
+        'reminder 1 day before',
+      );
+    });
+
+    test('covers every unit', () {
+      expect(
+        formatReminderSummary(2, ReminderUnit.minutes),
+        'reminder 2 minutes before',
+      );
+      expect(
+        formatReminderSummary(2, ReminderUnit.weeks),
+        'reminder 2 weeks before',
+      );
+    });
+  });
+
+  group('eventReminderSummary', () {
+    CalendarEvent build({
+      bool enabled = true,
+      int? before = 1,
+      ReminderUnit? unit = ReminderUnit.days,
+    }) => CalendarEvent(
+      eventId: 'e1',
+      eventName: 'Midterm',
+      eventDate: DateTime(2026, 5, 14),
+      eventTime: '09:00',
+      email: 'student@example.com',
+      reminderEnabled: enabled,
+      reminderBefore: before,
+      reminderUnit: unit,
+    );
+
+    test('describes a complete reminder', () {
+      expect(eventReminderSummary(build()), 'reminder 1 day before');
+    });
+
+    test('is null when the reminder is off', () {
+      expect(eventReminderSummary(build(enabled: false)), isNull);
+    });
+
+    test('is null when enabled but missing its amount or unit', () {
+      // Representable because both fields are nullable on the model.
+      expect(eventReminderSummary(build(before: null)), isNull);
+      expect(eventReminderSummary(build(unit: null)), isNull);
+    });
+  });
+
+  group('reminderLeadPassed', () {
+    final now = DateTime(2026, 5, 3, 9, 0);
+
+    test('is false when the lead time is still ahead', () {
+      expect(
+        reminderLeadPassed(
+          date: DateTime(2026, 5, 14),
+          time: const TimeOfDay(hour: 9, minute: 0),
+          amount: 1,
+          unit: ReminderUnit.days,
+          now: now,
+        ),
+        isFalse,
+      );
+    });
+
+    test('is true when the lead time is in the past', () {
+      expect(
+        reminderLeadPassed(
+          date: DateTime(2026, 5, 4),
+          time: const TimeOfDay(hour: 9, minute: 0),
+          amount: 1,
+          unit: ReminderUnit.weeks,
+          now: now,
+        ),
+        isTrue,
+      );
+    });
+
+    test('a lead time landing exactly on now counts as passed', () {
+      // May 4 09:00 minus one day is 09:00 on the 3rd — exactly "now", and
+      // a notification for this instant can no longer be delivered.
+      expect(
+        reminderLeadPassed(
+          date: DateTime(2026, 5, 4),
+          time: const TimeOfDay(hour: 9, minute: 0),
+          amount: 1,
+          unit: ReminderUnit.days,
+          now: now,
+        ),
+        isTrue,
+      );
+    });
+
+    test('is false while either the date or the time is unset', () {
+      // Nothing to validate against yet, which is what puts the note box in
+      // its "pick a date and time" state rather than its error state.
+      expect(
+        reminderLeadPassed(
+          date: null,
+          time: const TimeOfDay(hour: 9, minute: 0),
+          amount: 1,
+          unit: ReminderUnit.days,
+          now: now,
+        ),
+        isFalse,
+      );
+      expect(
+        reminderLeadPassed(
+          date: DateTime(2026, 5, 14),
+          time: null,
+          amount: 1,
+          unit: ReminderUnit.days,
+          now: now,
+        ),
+        isFalse,
+      );
+    });
+
+    test('an event already in the past is always passed', () {
+      expect(
+        reminderLeadPassed(
+          date: DateTime(2026, 4, 1),
+          time: const TimeOfDay(hour: 9, minute: 0),
+          amount: 1,
+          unit: ReminderUnit.minutes,
+          now: now,
+        ),
+        isTrue,
+      );
+    });
+  });
+
+  group('reminder note messages', () {
+    test('the passed message states the offending value', () {
+      expect(
+        formatReminderPassedMessage(3, ReminderUnit.hours),
+        '3 hours before this event has already passed.',
+      );
+    });
+
+    test('the passed message singularises one', () {
+      expect(
+        formatReminderPassedMessage(1, ReminderUnit.days),
+        '1 day before this event has already passed.',
+      );
+    });
+
+    test('the confirm message reads as a promise', () {
+      expect(
+        formatReminderConfirmMessage(2, ReminderUnit.weeks),
+        'You will be notified 2 weeks before this event.',
+      );
+    });
+
+    test('the confirm message singularises one', () {
+      expect(
+        formatReminderConfirmMessage(1, ReminderUnit.minutes),
+        'You will be notified 1 minute before this event.',
       );
     });
   });

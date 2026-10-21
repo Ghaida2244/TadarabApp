@@ -66,6 +66,57 @@ void main() {
     );
   });
 
+  group('watchEventsForYear', () {
+    Future<void> seedOn(String uid, DateTime date) async {
+      await events(uid).add(
+        CalendarEvent(
+          eventId: '',
+          eventName: 'E',
+          eventDate: date,
+          eventTime: '12:00',
+          email: 'student@example.com',
+        ).toFirestore(),
+      );
+    }
+
+    test('returns every event in that year, soonest first', () async {
+      await seedOn('u1', DateTime(2026, 11, 2));
+      await seedOn('u1', DateTime(2026, 1, 9));
+      await seedOn('u1', DateTime(2026, 6, 20));
+
+      final result = await service.watchEventsForYear('u1', 2026).first;
+
+      expect(result.map((e) => e.eventDate.month), [1, 6, 11]);
+    });
+
+    test('excludes events in the neighbouring years', () async {
+      // The exact boundaries: 31 Dec of the year before and 1 Jan of the
+      // year after both sit just outside the range.
+      await seedOn('u1', DateTime(2025, 12, 31));
+      await seedOn('u1', DateTime(2026, 1, 1));
+      await seedOn('u1', DateTime(2026, 12, 31));
+      await seedOn('u1', DateTime(2027, 1, 1));
+
+      final result = await service.watchEventsForYear('u1', 2026).first;
+
+      expect(result, hasLength(2));
+      expect(result.every((e) => e.eventDate.year == 2026), isTrue);
+    });
+
+    test('never returns another student\'s events', () async {
+      await seedOn('u1', DateTime(2026, 5, 14));
+      await seedOn('u2', DateTime(2026, 5, 14));
+
+      final result = await service.watchEventsForYear('u1', 2026).first;
+
+      expect(result, hasLength(1));
+    });
+
+    test('a year with no events emits an empty list, not an error', () async {
+      expect(await service.watchEventsForYear('u1', 2030).first, isEmpty);
+    });
+  });
+
   group('deleteEventsForCourse', () {
     test('deletes only that course\'s events and cancels their reminders', () async {
       final a = await seed('uid-1', courseId: 'c1');

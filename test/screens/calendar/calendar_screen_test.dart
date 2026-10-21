@@ -1,15 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/models/calendar_event.dart';
+import 'package:tadarab_app/models/course.dart';
+import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/screens/calendar/calendar_screen.dart';
+import 'package:tadarab_app/screens/calendar/widgets/delete_event_dialog.dart';
 import 'package:tadarab_app/services/calendar_service.dart';
+import 'package:tadarab_app/services/courses_service.dart';
 
 import '../../helpers/fake_calendar_service.dart';
-import '../../helpers/fake_home_data_service.dart';
+import '../../helpers/fake_courses_service.dart';
 
 void main() {
-  // A fixed "today" inside May 2026 — the month the mockups show, whose
-  // 1st falls on a Friday, so the grid layout matches the design exactly.
+  // A fixed "today" inside May 2026 — the month the design shows, whose 1st
+  // falls on a Friday, so the grid layout is deterministic.
   final now = DateTime(2026, 5, 3, 9, 0);
 
   CalendarEvent event({
@@ -18,6 +24,10 @@ void main() {
     int day = 14,
     String time = '23:59',
     String color = '#F0A93B',
+    String? courseId,
+    bool reminderEnabled = false,
+    int? reminderBefore,
+    ReminderUnit? reminderUnit,
   }) {
     return CalendarEvent(
       eventId: id,
@@ -26,21 +36,32 @@ void main() {
       eventTime: time,
       color: color,
       email: 'student@example.com',
+      courseId: courseId,
+      reminderEnabled: reminderEnabled,
+      reminderBefore: reminderBefore,
+      reminderUnit: reminderUnit,
     );
   }
 
+  // The handoff's own device canvas. Also the only way the year view's four
+  // rows of mini-months all get built: the default 800x600 surface leaves
+  // December below the fold, and GridView builds lazily.
   Future<void> pumpCalendar(
     WidgetTester tester, {
     FakeCalendarService? service,
+    FakeCoursesService? coursesService,
     VoidCallback? onEventsChanged,
   }) async {
+    tester.view.physicalSize = const Size(412, 892);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: CalendarScreen(
             uid: 'uid-1',
             calendarService: service ?? FakeCalendarService(),
-            homeDataService: FakeHomeDataService(),
+            coursesService: coursesService ?? FakeCoursesService(),
             now: now,
             onEventsChanged: onEventsChanged,
           ),
@@ -50,135 +71,111 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  group('empty state (01_calendar_empty)', () {
-    testWidgets('shows the month grid, Add Event, and the empty line', (
+  group('month view', () {
+    testWidgets('shows the header, month title and Add Event pill', (
       tester,
     ) async {
       await pumpCalendar(tester);
 
       expect(find.text('Calendar'), findsOneWidget);
-      expect(find.text('+ Add Event'), findsOneWidget);
+      // The pill is now an icon plus bare text, not a "+ Add Event" string.
+      expect(find.text('Add Event'), findsOneWidget);
       expect(find.text('May 2026'), findsOneWidget);
       expect(find.text('Sun'), findsOneWidget);
       expect(find.text('Sat'), findsOneWidget);
-      expect(find.text('31'), findsOneWidget);
+    });
+
+    testWidgets('an empty month shows the line under the grid', (
+      tester,
+    ) async {
+      await pumpCalendar(tester);
+
       expect(
-        find.text('No events yet. Tap "Add Event" to schedule your first one.'),
+        find.textContaining('No events yet.'),
         findsOneWidget,
       );
     });
 
-    testWidgets('has no Upcoming Events list — that belongs on Home', (
-      tester,
-    ) async {
+    testWidgets('a month with events hides the empty line', (tester) async {
       await pumpCalendar(
         tester,
         service: FakeCalendarService(events: [event()]),
       );
 
-      expect(find.text('Upcoming Events'), findsNothing);
-      expect(find.text('See all'), findsNothing);
+      expect(find.textContaining('No events yet.'), findsNothing);
     });
-  });
 
-  group('with events (02_calendar_with_events)', () {
-    testWidgets('hides the empty line once the month has events', (
+    testWidgets('shows a loading spinner before the first snapshot', (
       tester,
     ) async {
-      await pumpCalendar(
-        tester,
-        service: FakeCalendarService(events: [event()]),
+      tester.view.physicalSize = const Size(412, 892);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CalendarScreen(
+              uid: 'uid-1',
+              calendarService: _PendingCalendarService(),
+              coursesService: FakeCoursesService(),
+              now: now,
+            ),
+          ),
+        ),
       );
+      await tester.pump();
 
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
+
+    testWidgets('today is outlined, not filled — pale fill, red border', (
+      tester,
+    ) async {
+      await pumpCalendar(tester);
+
+      final todayCell = tester.widget<Container>(
+        find
+            .ancestor(
+              of: find.text('3'),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      final decoration = todayCell.decoration! as BoxDecoration;
+
+      expect(decoration.color, const Color(0xFFFFE9EA));
+      expect(decoration.border, isA<Border>());
       expect(
-        find.text('No events yet. Tap "Add Event" to schedule your first one.'),
-        findsNothing,
+        (decoration.border! as Border).top.color,
+        const Color(0xFFE31B23),
       );
+      expect((decoration.border! as Border).top.width, 2);
     });
 
-    testWidgets('renders a dot per event, including on today', (tester) async {
-      // Today (the 3rd) gets a dot like any other day — the red today
-      // marker does not suppress it.
+    testWidgets('caps dots at two and shows "+N" for the rest', (
+      tester,
+    ) async {
       await pumpCalendar(
         tester,
         service: FakeCalendarService(
           events: [
-            event(id: 'a', day: 3),
-            event(id: 'b', day: 14),
-            event(id: 'c', day: 14),
+            event(id: 'a', day: 14, time: '08:00'),
+            event(id: 'b', day: 14, time: '09:00'),
+            event(id: 'c', day: 14, time: '10:00'),
+            event(id: 'd', day: 14, time: '11:00'),
           ],
         ),
       );
 
       expect(find.byKey(const ValueKey('day-dot-a')), findsOneWidget);
       expect(find.byKey(const ValueKey('day-dot-b')), findsOneWidget);
-      expect(find.byKey(const ValueKey('day-dot-c')), findsOneWidget);
+      expect(find.byKey(const ValueKey('day-dot-c')), findsNothing);
+      expect(find.text('+2'), findsOneWidget);
     });
-  });
 
-  group('month navigation', () {
-    testWidgets('steps forward and back, re-querying each month', (
+    testWidgets('a day with no events does not open the sheet', (
       tester,
     ) async {
-      final service = FakeCalendarService();
-      await pumpCalendar(tester, service: service);
-
-      await tester.tap(find.bySemanticsLabel('Next month'));
-      await tester.pumpAndSettle();
-      expect(find.text('June 2026'), findsOneWidget);
-
-      await tester.tap(find.bySemanticsLabel('Previous month'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.bySemanticsLabel('Previous month'));
-      await tester.pumpAndSettle();
-      expect(find.text('April 2026'), findsOneWidget);
-
-      expect(
-        service.watchedMonths,
-        containsAll([
-          DateTime(2026, 5, 1),
-          DateTime(2026, 6, 1),
-          DateTime(2026, 4, 1),
-        ]),
-      );
-    });
-
-    testWidgets('rolls over the year boundary', (tester) async {
-      await pumpCalendar(tester);
-
-      for (var i = 0; i < 8; i++) {
-        await tester.tap(find.bySemanticsLabel('Next month'));
-        await tester.pumpAndSettle();
-      }
-
-      expect(find.text('January 2027'), findsOneWidget);
-    });
-  });
-
-  group('day details sheet (03_calendar_event_details)', () {
-    testWidgets('tapping a day with events lists them with their times', (
-      tester,
-    ) async {
-      await pumpCalendar(
-        tester,
-        service: FakeCalendarService(
-          events: [
-            event(id: 'a', name: 'GP1 Report Submission', day: 14),
-            event(id: 'b', name: 'GP1 Presentation Submission', day: 14),
-          ],
-        ),
-      );
-
-      await tester.tap(find.text('14'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('May 14, 2026'), findsOneWidget);
-      expect(find.text('GP1 Report Submission'), findsOneWidget);
-      expect(find.text('GP1 Presentation Submission'), findsOneWidget);
-      expect(find.text('11:59 PM'), findsNWidgets(2));
-    });
-
-    testWidgets('tapping a day with no events opens nothing', (tester) async {
       await pumpCalendar(
         tester,
         service: FakeCalendarService(events: [event(day: 14)]),
@@ -189,101 +186,381 @@ void main() {
 
       expect(find.text('May 21, 2026'), findsNothing);
     });
+
+    testWidgets('month arrows move the viewed month', (tester) async {
+      final service = FakeCalendarService();
+      await pumpCalendar(tester, service: service);
+
+      await tester.tap(find.bySemanticsLabel('Next month'));
+      await tester.pumpAndSettle();
+      expect(find.text('June 2026'), findsOneWidget);
+
+      await tester.tap(find.bySemanticsLabel('Previous month'));
+      await tester.tap(find.bySemanticsLabel('Previous month'));
+      await tester.pumpAndSettle();
+      expect(find.text('April 2026'), findsOneWidget);
+    });
   });
 
-  group('delete (04_delete_event_confirmation)', () {
-    testWidgets('confirming deletes the event and reports the change', (
+  group('back to today', () {
+    testWidgets('is hidden on the current month', (tester) async {
+      await pumpCalendar(tester);
+
+      expect(find.text('Back to today'), findsNothing);
+    });
+
+    testWidgets('appears once the month changes and returns to today', (
       tester,
     ) async {
-      final service = FakeCalendarService(events: [event(id: 'e9', day: 14)]);
-      var changed = 0;
+      await pumpCalendar(tester);
+
+      await tester.tap(find.bySemanticsLabel('Next month'));
+      await tester.pumpAndSettle();
+      expect(find.text('Back to today'), findsOneWidget);
+
+      await tester.tap(find.text('Back to today'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('May 2026'), findsOneWidget);
+      expect(find.text('Back to today'), findsNothing);
+    });
+  });
+
+  group('year view', () {
+    testWidgets('the toggle swaps to twelve mini-months and the year', (
+      tester,
+    ) async {
+      final service = FakeCalendarService();
+      await pumpCalendar(tester, service: service);
+
+      await tester.tap(find.bySemanticsLabel('Show year view'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('2026'), findsOneWidget);
+      expect(find.text('May 2026'), findsNothing);
+      expect(find.text('Jan'), findsOneWidget);
+      expect(find.text('Dec'), findsOneWidget);
+      // It reads the whole year, not one month.
+      expect(service.watchedYears, contains(2026));
+    });
+
+    testWidgets('the arrows step by year while it is open', (tester) async {
+      await pumpCalendar(tester);
+
+      await tester.tap(find.bySemanticsLabel('Show year view'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.bySemanticsLabel('Next year'));
+      await tester.pumpAndSettle();
+      expect(find.text('2027'), findsOneWidget);
+    });
+
+    testWidgets('"Back to today" is never offered in year view', (
+      tester,
+    ) async {
+      await pumpCalendar(tester);
+
+      await tester.tap(find.bySemanticsLabel('Show year view'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('Next year'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Back to today'), findsNothing);
+    });
+
+    testWidgets('tapping a mini-month opens it in month view', (
+      tester,
+    ) async {
+      await pumpCalendar(tester);
+
+      await tester.tap(find.bySemanticsLabel('Show year view'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('mini-month-8')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('August 2026'), findsOneWidget);
+    });
+  });
+
+  group('day details sheet', () {
+    testWidgets('opens with the date, count and event', (tester) async {
       await pumpCalendar(
         tester,
-        service: service,
-        onEventsChanged: () => changed++,
+        service: FakeCalendarService(events: [event(day: 14)]),
       );
 
       await tester.tap(find.text('14'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.delete_outline));
+
+      expect(find.text('May 14, 2026'), findsOneWidget);
+      expect(find.text('1 event'), findsOneWidget);
+      expect(find.text('Midterm'), findsOneWidget);
+      expect(find.text('11:59 PM'), findsOneWidget);
+    });
+
+    testWidgets('pluralises the count and sorts by time', (tester) async {
+      await pumpCalendar(
+        tester,
+        service: FakeCalendarService(
+          events: [
+            event(id: 'late', name: 'Evening', day: 14, time: '18:00'),
+            event(id: 'early', name: 'Morning', day: 14, time: '08:00'),
+          ],
+        ),
+      );
+
+      await tester.tap(find.text('14'));
       await tester.pumpAndSettle();
+
+      expect(find.text('2 events'), findsOneWidget);
+      final morning = tester.getTopLeft(find.text('Morning')).dy;
+      final evening = tester.getTopLeft(find.text('Evening')).dy;
+      expect(morning, lessThan(evening));
+    });
+
+    testWidgets('shows the linked course name', (tester) async {
+      await pumpCalendar(
+        tester,
+        service: FakeCalendarService(
+          events: [event(day: 14, courseId: 'c1')],
+        ),
+        coursesService: FakeCoursesService(
+          courses: [
+            Course(courseId: 'c1', courseName: 'IS230', email: 'e@x.com'),
+          ],
+        ),
+      );
+
+      await tester.tap(find.text('14'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('IS230'), findsOneWidget);
+    });
+
+    testWidgets(
+      'an event whose course was deleted shows no course name and does not '
+      'crash',
+      (tester) async {
+        await pumpCalendar(
+          tester,
+          service: FakeCalendarService(
+            // Points at a course that is no longer in the student's list.
+            events: [event(day: 14, courseId: 'deleted-course')],
+          ),
+          coursesService: FakeCoursesService(
+            courses: [
+              Course(courseId: 'c1', courseName: 'IS230', email: 'e@x.com'),
+            ],
+          ),
+        );
+
+        await tester.tap(find.text('14'));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('Midterm'), findsOneWidget);
+        expect(find.text('IS230'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a failed course fetch still lists the events, without course names',
+      (tester) async {
+        await pumpCalendar(
+          tester,
+          service: FakeCalendarService(
+            events: [event(day: 14, courseId: 'c1')],
+          ),
+          coursesService: FakeCoursesService(
+            courses: [
+              Course(courseId: 'c1', courseName: 'IS230', email: 'e@x.com'),
+            ],
+          )..fetchCoursesError = CoursesFailure('offline'),
+        );
+
+        await tester.tap(find.text('14'));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('Midterm'), findsOneWidget);
+        expect(find.text('IS230'), findsNothing);
+      },
+    );
+
+    testWidgets('shows the reminder summary when one is set', (tester) async {
+      await pumpCalendar(
+        tester,
+        service: FakeCalendarService(
+          events: [
+            event(
+              day: 14,
+              reminderEnabled: true,
+              reminderBefore: 3,
+              reminderUnit: ReminderUnit.hours,
+            ),
+          ],
+        ),
+      );
+
+      await tester.tap(find.text('14'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('reminder 3 hours before'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('omits the reminder clause when there is none', (
+      tester,
+    ) async {
+      await pumpCalendar(
+        tester,
+        service: FakeCalendarService(events: [event(day: 14)]),
+      );
+
+      await tester.tap(find.text('14'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('reminder'), findsNothing);
+    });
+
+    testWidgets('closes via the close chip', (tester) async {
+      await pumpCalendar(
+        tester,
+        service: FakeCalendarService(events: [event(day: 14)]),
+      );
+
+      await tester.tap(find.text('14'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('Close'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('May 14, 2026'), findsNothing);
+    });
+  });
+
+  group('delete', () {
+    Future<void> openDeleteDialog(
+      WidgetTester tester,
+      FakeCalendarService service,
+    ) async {
+      await pumpCalendar(tester, service: service);
+      await tester.tap(find.text('14'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('Delete event'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the confirm names the reminder when the event has one', (
+      tester,
+    ) async {
+      await openDeleteDialog(
+        tester,
+        FakeCalendarService(
+          events: [
+            event(
+              day: 14,
+              reminderEnabled: true,
+              reminderBefore: 1,
+              reminderUnit: ReminderUnit.days,
+            ),
+          ],
+        ),
+      );
 
       expect(find.text('Delete this event?'), findsOneWidget);
       expect(
-        find.text('The selected event will be removed from your calendar.'),
+        find.textContaining(kDeleteBodyWithReminder),
         findsOneWidget,
       );
-
-      await tester.tap(find.text('Delete'));
-      await tester.pumpAndSettle();
-
-      expect(service.deletedEventIds, ['e9']);
-      expect(changed, 1);
+      expect(find.textContaining(kDeleteBodyTail), findsOneWidget);
     });
 
-    testWidgets('cancelling deletes nothing and keeps the sheet open', (
+    testWidgets('the confirm omits the reminder when there is none', (
       tester,
     ) async {
-      final service = FakeCalendarService(events: [event(id: 'e9', day: 14)]);
-      await pumpCalendar(tester, service: service);
+      await openDeleteDialog(
+        tester,
+        FakeCalendarService(events: [event(day: 14)]),
+      );
 
-      await tester.tap(find.text('14'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.delete_outline));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Cancel'));
+      expect(find.textContaining(kDeleteBodyNoReminder), findsOneWidget);
+      expect(find.textContaining(kDeleteBodyWithReminder), findsNothing);
+    });
+
+    testWidgets('"Keep it" cancels without deleting', (tester) async {
+      final service = FakeCalendarService(events: [event(day: 14)]);
+      await openDeleteDialog(tester, service);
+
+      await tester.tap(find.text('Keep it'));
       await tester.pumpAndSettle();
 
       expect(service.deletedEventIds, isEmpty);
-      expect(find.text('May 14, 2026'), findsOneWidget);
+      expect(find.text('Midterm'), findsOneWidget);
     });
 
-    testWidgets('a failed delete surfaces a message instead of failing silently', (
+    testWidgets('"Delete event" deletes and notifies Home', (tester) async {
+      final service = FakeCalendarService(events: [event(day: 14)]);
+      var notified = 0;
+      await pumpCalendar(
+        tester,
+        service: service,
+        onEventsChanged: () => notified++,
+      );
+
+      await tester.tap(find.text('14'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('Delete event'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete event'));
+      await tester.pumpAndSettle();
+
+      expect(service.deletedEventIds, ['e1']);
+      expect(notified, 1);
+    });
+
+    testWidgets('a delete failure shows the message and keeps the event', (
       tester,
     ) async {
       final service = FakeCalendarService(
-        events: [event(id: 'e9', day: 14)],
-        deleteError: CalendarFailure('Network unavailable.'),
+        events: [event(day: 14)],
+        deleteError: CalendarFailure('Could not delete that event.'),
       );
-      await pumpCalendar(tester, service: service);
+      await openDeleteDialog(tester, service);
 
-      await tester.tap(find.text('14'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.delete_outline));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Delete'));
+      await tester.tap(find.text('Delete event'));
       await tester.pumpAndSettle();
 
+      expect(find.text('Could not delete that event.'), findsOneWidget);
       expect(service.deletedEventIds, isEmpty);
-      expect(find.text('Network unavailable.'), findsOneWidget);
     });
   });
 
   group('load failure', () {
-    testWidgets('shows the error banner with a retry instead of a blank grid', (
-      tester,
-    ) async {
+    testWidgets('shows the error banner and retries', (tester) async {
       final service = FakeCalendarService(
-        loadError: CalendarFailure("Couldn't reach Tadarab."),
+        loadError: CalendarFailure("Couldn't load your calendar."),
       );
       await pumpCalendar(tester, service: service);
 
       expect(find.text("Couldn't load your calendar"), findsOneWidget);
-      expect(find.text("Couldn't reach Tadarab."), findsOneWidget);
       expect(find.text('Try again'), findsOneWidget);
-    });
 
-    testWidgets('retry re-subscribes to the month stream', (tester) async {
-      final service = FakeCalendarService(
-        loadError: CalendarFailure("Couldn't reach Tadarab."),
-      );
-      await pumpCalendar(tester, service: service);
       final before = service.watchedMonths.length;
-
       await tester.tap(find.text('Try again'));
       await tester.pumpAndSettle();
 
       expect(service.watchedMonths.length, greaterThan(before));
     });
   });
+}
+
+/// A service whose month stream never emits *and* never closes, so the
+/// screen stays in ConnectionState.waiting and the spinner can be observed.
+/// `Stream.empty()` would close immediately and land on `done` instead.
+class _PendingCalendarService extends FakeCalendarService {
+  @override
+  Stream<List<CalendarEvent>> watchEventsForMonth(String uid, DateTime month) =>
+      StreamController<List<CalendarEvent>>().stream;
 }

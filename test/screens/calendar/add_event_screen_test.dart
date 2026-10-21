@@ -1,21 +1,28 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tadarab_app/models/calendar_event.dart';
 import 'package:tadarab_app/models/course.dart';
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/screens/calendar/add_event_screen.dart';
+import 'package:tadarab_app/screens/calendar/calendar_styles.dart';
 import 'package:tadarab_app/services/calendar_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
+import 'package:tadarab_app/widgets/app_button.dart';
 
 import '../../helpers/fake_calendar_service.dart';
-import '../../helpers/fake_home_data_service.dart';
 import '../../helpers/fake_reminder_scheduler.dart';
 
 void main() {
+  // "Now" is 9:00 AM on Sunday 3 May 2026, so every reminder assertion is
+  // deterministic. The date picker opens on May 2026.
   final now = DateTime(2026, 5, 3, 9, 0);
+
   final aCourse = Course(
     courseId: 'c1',
     courseName: 'IS230',
-    color: '#10B981',
+    color: '#16A34A',
     email: 'student@example.com',
   );
 
@@ -33,35 +40,32 @@ void main() {
     scheduler = reminderScheduler ?? FakeReminderScheduler();
     poppedResult = null;
 
-    // The form is a tall phone screen. The 800x600 test default cuts it off
-    // below the reminder toggle, so give the test a phone-width surface tall
-    // enough that the whole form and both picker sheets are directly
-    // tappable.
-    await tester.binding.setSurfaceSize(const Size(420, 1600));
+    // Tall enough for the whole form, and 600 wide because Material's time
+    // picker overflows a phone-width surface — the same reason this suite
+    // was 600 wide before the custom pickers were introduced.
+    await tester.binding.setSurfaceSize(const Size(600, 1600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Builder(
-          builder: (context) => Scaffold(
-            body: Builder(
-              builder: (innerContext) => ElevatedButton(
-                onPressed: () async {
-                  poppedResult = await Navigator.of(innerContext).push<bool>(
-                    MaterialPageRoute(
-                      builder: (_) => AddEventScreen(
-                        uid: 'uid-1',
-                        calendarService: calendarService,
-                        homeDataService: FakeHomeDataService(courses: courses),
-                        reminderScheduler: scheduler,
-                        initialDate: DateTime(2026, 5, 1),
-                        now: now,
-                      ),
+        home: Scaffold(
+          body: Builder(
+            builder: (innerContext) => ElevatedButton(
+              onPressed: () async {
+                poppedResult = await Navigator.of(innerContext).push<bool>(
+                  MaterialPageRoute(
+                    builder: (_) => AddEventScreen(
+                      uid: 'uid-1',
+                      calendarService: calendarService,
+                      courses: courses,
+                      reminderScheduler: scheduler,
+                      initialDate: DateTime(2026, 5, 1),
+                      now: now,
                     ),
-                  );
-                },
-                child: const Text('open'),
-              ),
+                  ),
+                );
+              },
+              child: const Text('open'),
             ),
           ),
         ),
@@ -76,744 +80,635 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// Picks [day] of the month the date sheet opens on (May 2026) by tapping
-  /// it in the custom Figure 98 sheet, which closes on selection.
+  Future<void> enterName(WidgetTester tester, [String name = 'Midterm']) async {
+    await tester.enterText(find.byKey(const ValueKey('event-name')), name);
+    await tester.pumpAndSettle();
+  }
+
+  /// Picks [day] of May 2026 through Flutter's date picker.
   Future<void> pickDate(WidgetTester tester, int day) async {
-    await tapVisible(tester, find.text('Select a date'));
-    await tapVisible(tester, find.byKey(ValueKey('picker-day-$day')));
+    await tapVisible(tester, find.byKey(const ValueKey('event-date')));
+    await tapVisible(tester, find.text('$day'));
+    await tapVisible(tester, find.text('OK'));
   }
 
-  /// Picks a time in the custom Figure 99 sheet and confirms it. With no
-  /// arguments it confirms the sheet's 12:00 PM default.
-  Future<void> pickTime(
-    WidgetTester tester, {
-    int? hour,
-    int? minute,
-    bool? isPm,
-  }) async {
-    await tapVisible(tester, find.text('Select a time'));
-    if (hour != null) {
-      await tapVisible(tester, find.byKey(ValueKey('hour-$hour')));
-    }
-    if (minute != null) {
-      await tapVisible(tester, find.byKey(ValueKey('minute-$minute')));
-    }
-    if (isPm != null) {
-      await tapVisible(
-        tester,
-        find.byKey(ValueKey(isPm ? 'period-pm' : 'period-am')),
-      );
-    }
-    await tapVisible(tester, find.text('✓ Confirm'));
+  /// Accepts the time picker's default (9:00 AM, from `pickEventTime`).
+  /// The dial itself isn't driven — every assertion here only needs *a*
+  /// time, and the wrapper's default keeps that deterministic.
+  Future<void> pickDefaultTime(WidgetTester tester) async {
+    await tapVisible(tester, find.byKey(const ValueKey('event-time')));
+    await tapVisible(tester, find.text('OK'));
   }
 
-  group('initial state (05_add_event_no_course)', () {
-    testWidgets('shows empty placeholders, the colour presets, reminder off', (
+  /// Fills name + date + time so the form is valid and Save is live.
+  Future<void> fillValidForm(WidgetTester tester, {int day = 14}) async {
+    await enterName(tester);
+    await pickDate(tester, day);
+    await pickDefaultTime(tester);
+  }
+
+  group('initial state', () {
+    testWidgets('shows all-caps labels, placeholders and a reminder off', (
       tester,
     ) async {
       await pumpAddEvent(tester);
 
       expect(find.text('Add Event'), findsOneWidget);
-      expect(find.text('e.g. Midterm Exam, Assignment 1'), findsOneWidget);
+      expect(find.text('EVENT NAME'), findsOneWidget);
+      expect(find.text('EVENT COLOR'), findsOneWidget);
+      expect(find.text('DATE'), findsOneWidget);
+      expect(find.text('TIME'), findsOneWidget);
+      expect(find.text('e.g. Midterm exam, Assignment 1'), findsOneWidget);
       expect(find.text('No course selected'), findsOneWidget);
-      expect(find.text('Event Color'), findsOneWidget);
       expect(find.text('Select a date'), findsOneWidget);
       expect(find.text('Select a time'), findsOneWidget);
-      expect(find.text('Enable Reminder'), findsOneWidget);
-      expect(find.text('Save Event'), findsOneWidget);
-
-      // Reminder is off, so the amount+unit row is not shown yet.
-      expect(find.byKey(const ValueKey('reminder-unit')), findsNothing);
+      expect(find.text('Enable reminder'), findsOneWidget);
+      // The reminder controls only appear once the toggle is on.
+      expect(find.byKey(const ValueKey('reminder-amount')), findsNothing);
     });
 
-    testWidgets('pre-selects green, the same default the model stores', (
+    testWidgets('the COURSE label carries its optional half', (tester) async {
+      await pumpAddEvent(tester);
+
+      final label = tester.widget<Text>(
+        find.byWidgetPredicate(
+          (w) => w is Text && w.textSpan?.toPlainText() == 'COURSE · OPTIONAL',
+        ),
+      );
+      expect(label.textSpan, isNotNull);
+    });
+  });
+
+  group('save gating', () {
+    testWidgets('Save is disabled with the name reason first', (tester) async {
+      await pumpAddEvent(tester);
+
+      expect(find.text(kSaveReasonName), findsOneWidget);
+      await tapVisible(tester, find.text('Save Event'));
+      expect(calendarService.addedEvents, isEmpty);
+    });
+
+    testWidgets('the reason advances to the date once a name is typed', (
+      tester,
+    ) async {
+      await pumpAddEvent(tester);
+      await enterName(tester);
+
+      expect(find.text(kSaveReasonName), findsNothing);
+      expect(find.text(kSaveReasonDate), findsOneWidget);
+    });
+
+    testWidgets('then to the time once a date is picked', (tester) async {
+      await pumpAddEvent(tester);
+      await enterName(tester);
+      await pickDate(tester, 14);
+
+      expect(find.text(kSaveReasonDate), findsNothing);
+      expect(find.text(kSaveReasonTime), findsOneWidget);
+    });
+
+    testWidgets('the reason disappears once the form is valid', (
+      tester,
+    ) async {
+      await pumpAddEvent(tester);
+      await fillValidForm(tester);
+
+      expect(find.byKey(const ValueKey('save-reason')), findsNothing);
+    });
+
+    testWidgets('a disabled Save is pink with no shadow', (tester) async {
+      await pumpAddEvent(tester);
+
+      final button = tester.widget<AppButton>(find.byType(AppButton));
+      expect(button.onPressed, isNull);
+      expect(button.disabledBackgroundColor, AppColors.disabledRedFill);
+      expect(button.disabledRemovesShadow, isTrue);
+    });
+
+    testWidgets('the reason is exposed to screen readers as a hint', (
       tester,
     ) async {
       await pumpAddEvent(tester);
 
-      final green = tester.widget<Semantics>(
+      final semantics = tester.widget<Semantics>(
         find
             .ancestor(
-              of: find.byIcon(Icons.check),
+              of: find.byType(AppButton),
               matching: find.byType(Semantics),
             )
             .first,
       );
-
-      expect(green.properties.label, 'Event color #10B981');
-      expect(green.properties.selected, isTrue);
-    });
-
-    testWidgets('offers a custom colour beyond the four presets', (
-      tester,
-    ) async {
-      await pumpAddEvent(tester);
-
-      expect(find.bySemanticsLabel('Custom event color'), findsOneWidget);
+      expect(semantics.properties.hint, kSaveReasonName);
     });
   });
 
-  group('course selection (06_add_event_with_course)', () {
-    testWidgets('picking a course replaces the colour picker with its chip', (
-      tester,
-    ) async {
-      await pumpAddEvent(tester, courses: [aCourse]);
-
-      await tapVisible(tester, find.text('No course selected'));
-      await tester.tap(find.text('IS230').last);
-      await tester.pumpAndSettle();
-
-      expect(find.text('Event will use this course color'), findsOneWidget);
-      expect(find.text('Event Color'), findsNothing);
-    });
-
-    testWidgets('saving with a course stores its id and colour', (
-      tester,
-    ) async {
-      await pumpAddEvent(tester, courses: [aCourse]);
-
-      await tester.enterText(find.byKey(const ValueKey('event-name')), 'Midterm');
-      await tapVisible(tester, find.text('No course selected'));
-      await tester.tap(find.text('IS230').last);
-      await tester.pumpAndSettle();
-      await pickDate(tester, 5);
-      await pickTime(tester);
-      await tapVisible(tester, find.text('Save Event'));
-
-      final saved = calendarService.addedEvents.single;
-      expect(saved.courseId, 'c1');
-      expect(saved.color, '#10B981');
-    });
-
-    testWidgets('an empty course list still allows saving without one', (
-      tester,
-    ) async {
+  group('event name', () {
+    testWidgets('is capped at the SRS 100-character limit', (tester) async {
       await pumpAddEvent(tester);
-
-      await tapVisible(tester, find.text('No course selected'));
-
-      expect(
-        find.text(
-          "You haven't added any courses yet. Events can still be saved without one.",
-        ),
-        findsOneWidget,
-      );
-    });
-  });
-
-  group('validation', () {
-    testWidgets('an empty name is rejected with a message, not a silent no-op', (
-      tester,
-    ) async {
-      await pumpAddEvent(tester);
-
-      await tapVisible(tester, find.text('Save Event'));
-
-      expect(find.text('Event name is required'), findsOneWidget);
-      expect(calendarService.addedEvents, isEmpty);
-    });
-
-    testWidgets('a missing date and time are both called out', (tester) async {
-      await pumpAddEvent(tester);
-
-      await tester.enterText(find.byKey(const ValueKey('event-name')), 'Midterm');
-      await tapVisible(tester, find.text('Save Event'));
-
-      expect(find.text('Pick a date for this event'), findsOneWidget);
-      expect(find.text('Pick a time for this event'), findsOneWidget);
-      expect(calendarService.addedEvents, isEmpty);
-    });
-
-    testWidgets('the name error clears as soon as the student types', (
-      tester,
-    ) async {
-      await pumpAddEvent(tester);
-
-      await tapVisible(tester, find.text('Save Event'));
-      expect(find.text('Event name is required'), findsOneWidget);
-
-      await tester.enterText(find.byKey(const ValueKey('event-name')), 'M');
-      await tester.pumpAndSettle();
-
-      expect(find.text('Event name is required'), findsNothing);
-    });
-  });
-
-  group('saving', () {
-    testWidgets('writes the event and pops true', (tester) async {
-      await pumpAddEvent(tester);
-
-      await tester.enterText(find.byKey(const ValueKey('event-name')), 'Midterm');
-      await pickDate(tester, 5);
-      await pickTime(tester);
-      await tapVisible(tester, find.text('Save Event'));
-
-      final saved = calendarService.addedEvents.single;
-      expect(saved.eventName, 'Midterm');
-      expect(saved.eventDate, DateTime(2026, 5, 5));
-      expect(saved.eventTime, '12:00');
-      expect(saved.reminderEnabled, isFalse);
-      expect(saved.reminderBefore, isNull);
-      expect(saved.reminderUnit, isNull);
-      expect(poppedResult, isTrue);
-    });
-
-    testWidgets('a save failure shows the banner and stays on the form', (
-      tester,
-    ) async {
-      await pumpAddEvent(
-        tester,
-        service: FakeCalendarService(
-          addError: CalendarFailure('Network unavailable.'),
-        ),
-      );
-
-      await tester.enterText(find.byKey(const ValueKey('event-name')), 'Midterm');
-      await pickDate(tester, 5);
-      await pickTime(tester);
-      await tapVisible(tester, find.text('Save Event'));
-
-      expect(find.text("Couldn't save your event"), findsOneWidget);
-      expect(find.text('Network unavailable.'), findsOneWidget);
-      expect(find.text('Save Event'), findsOneWidget);
-      expect(poppedResult, isNull);
-    });
-  });
-
-  group('reminder', () {
-    testWidgets('enabling it reveals the amount and unit row', (tester) async {
-      await pumpAddEvent(tester);
-
-      await tapVisible(tester, find.byType(Switch));
-
-      expect(find.byKey(const ValueKey('reminder-unit')), findsOneWidget);
-      expect(find.text('Day'), findsOneWidget);
-    });
-
-    testWidgets('the unit label pluralises with the amount', (tester) async {
-      await pumpAddEvent(tester);
-
-      await tapVisible(tester, find.byType(Switch));
-      expect(find.text('Day'), findsOneWidget);
-
-      await tester.enterText(find.byKey(const ValueKey('reminder-amount')), '3');
-      await tester.pumpAndSettle();
-
-      expect(find.text('Days'), findsOneWidget);
-      expect(find.text('Day'), findsNothing);
-    });
-
-    testWidgets('saving with a reminder stores it and schedules it', (
-      tester,
-    ) async {
-      await pumpAddEvent(tester);
-
-      await tester.enterText(find.byKey(const ValueKey('event-name')), 'Midterm');
-      await pickDate(tester, 5);
-      await pickTime(tester);
-      await tapVisible(tester, find.byType(Switch));
-      await tester.enterText(find.byKey(const ValueKey('reminder-amount')), '2');
-      await tester.pumpAndSettle();
-      await tapVisible(tester, find.text('Save Event'));
-
-      final saved = calendarService.addedEvents.single;
-      expect(saved.reminderEnabled, isTrue);
-      expect(saved.reminderBefore, 2);
-      expect(saved.reminderUnit, ReminderUnit.days);
-
-      // Scheduled against the Firestore-assigned ID, not the empty
-      // placeholder the form builds the event with.
-      expect(scheduler.scheduled.single.eventId, 'new-event-id');
-    });
-
-    testWidgets('no reminder is scheduled when the toggle is off', (
-      tester,
-    ) async {
-      await pumpAddEvent(tester);
-
-      await tester.enterText(find.byKey(const ValueKey('event-name')), 'Midterm');
-      await pickDate(tester, 5);
-      await pickTime(tester);
-      await tapVisible(tester, find.text('Save Event'));
-
-      expect(scheduler.scheduled, isEmpty);
-    });
-  });
-
-  group('event name length (SRS: VARCHAR(100))', () {
-    testWidgets('input stops at 100 characters and saves at most 100', (
-      tester,
-    ) async {
-      await pumpAddEvent(tester);
-
-      await tester.enterText(
-        find.byKey(const ValueKey('event-name')),
-        'a' * 150,
-      );
-      await tester.pumpAndSettle();
+      await enterName(tester, 'A' * 150);
 
       final field = tester.widget<TextField>(
         find.byKey(const ValueKey('event-name')),
       );
       expect(field.controller!.text.length, kEventNameMaxLength);
+    });
 
-      await pickDate(tester, 5);
-      await pickTime(tester);
+    testWidgets('a whitespace-only name does not satisfy the gate', (
+      tester,
+    ) async {
+      await pumpAddEvent(tester);
+      await enterName(tester, '    ');
+
+      expect(find.text(kSaveReasonName), findsOneWidget);
+    });
+  });
+
+  group('course dropdown', () {
+    testWidgets('opens inline and lists the student\'s courses', (
+      tester,
+    ) async {
+      await pumpAddEvent(tester, courses: [aCourse]);
+
+      await tapVisible(tester, find.byKey(const ValueKey('course-field')));
+
+      expect(
+        find.byKey(const ValueKey('course-option-IS230')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('course-option-No course selected')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('picking a course swaps the swatches for the colour chip', (
+      tester,
+    ) async {
+      await pumpAddEvent(tester, courses: [aCourse]);
+
+      expect(find.text('EVENT COLOR'), findsOneWidget);
+
+      await tapVisible(tester, find.byKey(const ValueKey('course-field')));
+      await tapVisible(tester, find.byKey(const ValueKey('course-option-IS230')));
+
+      expect(find.text('EVENT COLOR'), findsNothing);
+      expect(find.text('Event will use this course color'), findsOneWidget);
+      // Once in the course field, once in the colour chip below it.
+      expect(find.text('IS230'), findsNWidgets(2));
+    });
+
+    testWidgets('an empty course list still explains itself', (tester) async {
+      await pumpAddEvent(tester);
+
+      await tapVisible(tester, find.byKey(const ValueKey('course-field')));
+
+      expect(
+        find.textContaining("You haven't added any courses yet"),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('choosing "No course selected" restores the swatches', (
+      tester,
+    ) async {
+      await pumpAddEvent(tester, courses: [aCourse]);
+
+      await tapVisible(tester, find.byKey(const ValueKey('course-field')));
+      await tapVisible(tester, find.byKey(const ValueKey('course-option-IS230')));
+      await tapVisible(tester, find.byKey(const ValueKey('course-field')));
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('course-option-No course selected')),
+      );
+
+      expect(find.text('EVENT COLOR'), findsOneWidget);
+    });
+  });
+
+  group('colour swatches', () {
+    testWidgets('excludes hues the student\'s courses already use', (
+      tester,
+    ) async {
+      // IS230 is #16A34A, the first entry in the pool.
+      await pumpAddEvent(tester, courses: [aCourse]);
+
+      expect(find.bySemanticsLabel('Event color #16A34A'), findsNothing);
+      expect(find.bySemanticsLabel('Event color #2563EB'), findsOneWidget);
+    });
+
+    testWidgets('offers the head of the pool when no courses exist', (
+      tester,
+    ) async {
+      await pumpAddEvent(tester);
+
+      expect(find.bySemanticsLabel('Event color #16A34A'), findsOneWidget);
+      expect(find.bySemanticsLabel('Event color #2563EB'), findsOneWidget);
+    });
+
+    testWidgets('saves the picked swatch as the event colour', (tester) async {
+      await pumpAddEvent(tester);
+      await tapVisible(tester, find.bySemanticsLabel('Event color #2563EB'));
+      await fillValidForm(tester);
       await tapVisible(tester, find.text('Save Event'));
 
-      expect(calendarService.addedEvents.single.eventName.length, 100);
+      expect(calendarService.addedEvents.single.color, '#2563EB');
     });
 
-    testWidgets('a name of exactly 100 characters is kept whole', (
+    testWidgets('the custom "+" opens a free colour picker', (tester) async {
+      await pumpAddEvent(tester);
+
+      await tapVisible(tester, find.byKey(const ValueKey('custom-color')));
+
+      expect(find.text('Pick a color'), findsOneWidget);
+      expect(find.byType(Slider), findsOneWidget);
+      expect(find.text('Use this color'), findsOneWidget);
+    });
+
+    testWidgets('a custom colour is applied to the saved event', (
       tester,
     ) async {
       await pumpAddEvent(tester);
-      final exactly100 = 'b' * 100;
 
-      await tester.enterText(
-        find.byKey(const ValueKey('event-name')),
-        exactly100,
-      );
+      await tapVisible(tester, find.byKey(const ValueKey('custom-color')));
+      await tester.drag(find.byType(Slider), const Offset(60, 0));
       await tester.pumpAndSettle();
+      await tapVisible(tester, find.text('Use this color'));
+      await fillValidForm(tester);
+      await tapVisible(tester, find.text('Save Event'));
 
-      final field = tester.widget<TextField>(
-        find.byKey(const ValueKey('event-name')),
-      );
-      expect(field.controller!.text, exactly100);
+      final saved = calendarService.addedEvents.single.color;
+      expect(saved, startsWith('#'));
+      expect(saved.length, 7);
     });
   });
 
-  group('date picker sheet (SRS Figure 98)', () {
-    BoxDecoration dayDecoration(WidgetTester tester, int day) {
-      final box = tester.widget<Container>(
-        find.descendant(
-          of: find.byKey(ValueKey('picker-day-$day')),
-          matching: find.byType(Container),
-        ),
-      );
-      return box.decoration! as BoxDecoration;
-    }
-
-    testWidgets('is the custom sheet, not the Material date picker', (
+  group('date and time pickers', () {
+    testWidgets('the date picker fills the field with a long date', (
       tester,
     ) async {
       await pumpAddEvent(tester);
-      await tapVisible(tester, find.text('Select a date'));
+      await pickDate(tester, 14);
 
-      expect(find.byType(DatePickerDialog), findsNothing);
-      expect(find.text('May 2026'), findsOneWidget);
-      expect(find.text('Su'), findsOneWidget);
-      expect(find.text('Sa'), findsOneWidget);
-      expect(find.text('Cancel'), findsOneWidget);
+      expect(find.text('May 14, 2026'), findsOneWidget);
+      expect(find.text('Select a date'), findsNothing);
     });
 
-    testWidgets('outlines today in red', (tester) async {
+    testWidgets('a past date is selectable', (tester) async {
       await pumpAddEvent(tester);
-      await tapVisible(tester, find.text('Select a date'));
-
-      final today = dayDecoration(tester, 3);
-      expect((today.border! as Border).top.color, AppColors.red);
-      expect(dayDecoration(tester, 4).border, isNull);
-    });
-
-    testWidgets('tapping a day fills the form and closes the sheet', (
-      tester,
-    ) async {
-      await pumpAddEvent(tester);
-
-      await pickDate(tester, 5);
-
-      expect(find.text('May 5, 2026'), findsOneWidget);
-      expect(find.text('Cancel'), findsNothing);
-    });
-
-    testWidgets('reopening highlights the day already chosen', (tester) async {
-      await pumpAddEvent(tester);
-      await pickDate(tester, 5);
-
-      await tapVisible(tester, find.text('May 5, 2026'));
-
-      expect(dayDecoration(tester, 5).color, const Color(0xFFC7CBD2));
-      expect(dayDecoration(tester, 6).color, isNull);
-    });
-
-    testWidgets('Cancel leaves the date unset', (tester) async {
-      await pumpAddEvent(tester);
-      await tapVisible(tester, find.text('Select a date'));
-
-      await tapVisible(tester, find.text('Cancel'));
-
-      expect(find.text('Select a date'), findsOneWidget);
-    });
-
-    testWidgets('pages to the next month', (tester) async {
-      await pumpAddEvent(tester);
-      await tapVisible(tester, find.text('Select a date'));
-
-      await tapVisible(tester, find.bySemanticsLabel('Next month'));
-      await tapVisible(tester, find.byKey(const ValueKey('picker-day-10')));
-
-      expect(find.text('June 10, 2026'), findsOneWidget);
-    });
-  });
-
-  group('past dates', () {
-    testWidgets('a day earlier this month is selectable', (tester) async {
-      // Today is May 3; May 1 is in the past.
-      await pumpAddEvent(tester);
-
+      // The 1st of May is before "today" (the 3rd).
       await pickDate(tester, 1);
 
       expect(find.text('May 1, 2026'), findsOneWidget);
     });
 
-    testWidgets('an earlier month is reachable and selectable', (tester) async {
+    testWidgets('the time picker fills the field in 12-hour form', (
+      tester,
+    ) async {
       await pumpAddEvent(tester);
-      await tapVisible(tester, find.text('Select a date'));
+      await pickDefaultTime(tester);
 
-      await tapVisible(tester, find.bySemanticsLabel('Previous month'));
-      expect(find.text('April 2026'), findsOneWidget);
-      await tapVisible(tester, find.byKey(const ValueKey('picker-day-20')));
-
-      expect(find.text('April 20, 2026'), findsOneWidget);
+      expect(find.text('9:00 AM'), findsOneWidget);
+      expect(find.text('Select a time'), findsNothing);
     });
 
-    testWidgets('a past event without a reminder saves normally', (
+    testWidgets('cancelling a picker leaves the field untouched', (
       tester,
     ) async {
       await pumpAddEvent(tester);
 
-      await tester.enterText(
-        find.byKey(const ValueKey('event-name')),
-        'Quiz 1',
-      );
-      await pickDate(tester, 1);
-      await pickTime(tester);
-      await tapVisible(tester, find.text('Save Event'));
+      await tapVisible(tester, find.byKey(const ValueKey('event-date')));
+      await tapVisible(tester, find.text('Cancel'));
 
-      expect(calendarService.addedEvents.single.eventDate, DateTime(2026, 5, 1));
-      expect(poppedResult, isTrue);
+      expect(find.text('Select a date'), findsOneWidget);
+    });
+
+    testWidgets('a filled field takes the navy border', (tester) async {
+      await pumpAddEvent(tester);
+      await pickDate(tester, 14);
+
+      final box = tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('event-date')),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      final border = (box.decoration! as BoxDecoration).border! as Border;
+      expect(border.top.color, AppColors.navy);
     });
   });
 
-  group('time picker sheet (SRS Figure 99)', () {
-    String preview(WidgetTester tester) =>
-        tester.widget<Text>(find.byKey(const ValueKey('time-preview'))).data!;
-
-    testWidgets('is the custom sheet, not the Material time picker', (
+  group('reminder card', () {
+    testWidgets('turning it on reveals the stepper, unit and note', (
       tester,
     ) async {
       await pumpAddEvent(tester);
-      await tapVisible(tester, find.text('Select a time'));
 
-      expect(find.byType(TimePickerDialog), findsNothing);
-      expect(find.text('Select Time'), findsOneWidget);
-      expect(preview(tester), '12:00 PM');
-      expect(find.text('Hour'), findsOneWidget);
-      expect(find.text('Minute'), findsOneWidget);
-      expect(find.text('Period'), findsOneWidget);
-      expect(find.text('✓ Confirm'), findsOneWidget);
-    });
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
 
-    testWidgets('offers hours 1–12 and minutes in 5-minute steps', (
-      tester,
-    ) async {
-      await pumpAddEvent(tester);
-      await tapVisible(tester, find.text('Select a time'));
-
-      for (var hour = 1; hour <= 12; hour++) {
-        expect(find.byKey(ValueKey('hour-$hour')), findsOneWidget);
-      }
-      expect(find.byKey(const ValueKey('hour-0')), findsNothing);
-      expect(find.byKey(const ValueKey('hour-13')), findsNothing);
-      for (var minute = 0; minute < 60; minute += 5) {
-        expect(find.byKey(ValueKey('minute-$minute')), findsOneWidget);
-      }
-      expect(find.byKey(const ValueKey('minute-1')), findsNothing);
-    });
-
-    testWidgets('the preview updates live, before Confirm', (tester) async {
-      await pumpAddEvent(tester);
-      await tapVisible(tester, find.text('Select a time'));
-
-      await tapVisible(tester, find.byKey(const ValueKey('hour-3')));
-      await tapVisible(tester, find.byKey(const ValueKey('minute-45')));
-      await tapVisible(tester, find.byKey(const ValueKey('period-am')));
-
-      expect(preview(tester), '3:45 AM');
-    });
-
-    testWidgets('Confirm fills the form and stores 24-hour time', (
-      tester,
-    ) async {
-      await pumpAddEvent(tester);
-      await tester.enterText(
-        find.byKey(const ValueKey('event-name')),
-        'Midterm',
+      expect(find.byKey(const ValueKey('reminder-amount')), findsOneWidget);
+      expect(find.byKey(const ValueKey('reminder-unit')), findsOneWidget);
+      expect(find.byKey(const ValueKey('reminder-note')), findsOneWidget);
+      expect(
+        find.textContaining('Pick a date and time'),
+        findsOneWidget,
       );
-      await pickDate(tester, 5);
-
-      await pickTime(tester, hour: 3, minute: 45, isPm: true);
-      expect(find.text('3:45 PM'), findsOneWidget);
-
-      await tapVisible(tester, find.text('Save Event'));
-      expect(calendarService.addedEvents.single.eventTime, '15:45');
     });
 
-    testWidgets('12 AM is stored as midnight, not noon', (tester) async {
-      await pumpAddEvent(tester);
-      await tester.enterText(
-        find.byKey(const ValueKey('event-name')),
-        'Midterm',
-      );
-      await pickDate(tester, 5);
-
-      await pickTime(tester, hour: 12, minute: 30, isPm: false);
-      await tapVisible(tester, find.text('Save Event'));
-
-      expect(calendarService.addedEvents.single.eventTime, '00:30');
-    });
-
-    testWidgets('closing with ✕ leaves the time unset', (tester) async {
-      await pumpAddEvent(tester);
-      await tapVisible(tester, find.text('Select a time'));
-
-      await tapVisible(tester, find.bySemanticsLabel('Close'));
-
-      expect(find.text('Select a time'), findsOneWidget);
-    });
-
-    testWidgets('reopening starts from the time already chosen', (
+    testWidgets('the note turns green once the reminder is valid', (
       tester,
     ) async {
       await pumpAddEvent(tester);
-      await pickTime(tester, hour: 9, minute: 15, isPm: false);
+      await fillValidForm(tester);
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
 
-      await tapVisible(tester, find.text('9:15 AM'));
-
-      expect(preview(tester), '9:15 AM');
-    });
-  });
-
-  group('reminder that has already passed', () {
-    Future<void> fillTodayAt10Am(WidgetTester tester) async {
-      await tester.enterText(
-        find.byKey(const ValueKey('event-name')),
-        'Midterm',
+      expect(
+        find.text('You will be notified 1 day before this event.'),
+        findsOneWidget,
       );
-      // Today (May 3, 09:00) at 10:00 AM — the event is still ahead.
+    });
+
+    testWidgets('the note turns red when the lead time has already passed', (
+      tester,
+    ) async {
+      await pumpAddEvent(tester);
+      await enterName(tester);
+      // 3 May at 09:00 is exactly "now", so a day earlier is in the past.
       await pickDate(tester, 3);
-      await pickTime(tester, hour: 10, minute: 0, isPm: false);
-    }
+      await pickDefaultTime(tester);
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
 
-    testWidgets('a lead time that has passed is called out, not skipped', (
-      tester,
-    ) async {
-      await pumpAddEvent(tester);
-      await fillTodayAt10Am(tester);
-      // 1 day before 10:00 today was yesterday.
-      await tapVisible(tester, find.byType(Switch));
-
-      await tapVisible(tester, find.text('Save Event'));
-
-      expect(find.text(kReminderPassedMessage), findsOneWidget);
-      expect(calendarService.addedEvents, isEmpty);
-      expect(scheduler.scheduled, isEmpty);
-      expect(poppedResult, isNull);
+      expect(
+        find.text('1 day before this event has already passed.'),
+        findsOneWidget,
+      );
+      expect(find.text(kSaveReasonReminder), findsOneWidget);
     });
 
-    testWidgets('a reminder on a past event is called out too', (
-      tester,
-    ) async {
+    testWidgets('the stepper raises and lowers the amount', (tester) async {
       await pumpAddEvent(tester);
-      await tester.enterText(
-        find.byKey(const ValueKey('event-name')),
-        'Quiz 1',
+      await fillValidForm(tester);
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
+
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-increment')));
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('reminder-amount'))).data,
+        '2',
       );
-      await pickDate(tester, 1);
-      await pickTime(tester);
-      await tapVisible(tester, find.byType(Switch));
 
-      await tapVisible(tester, find.text('Save Event'));
-
-      expect(find.text(kReminderPassedMessage), findsOneWidget);
-      expect(calendarService.addedEvents, isEmpty);
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-decrement')));
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('reminder-amount'))).data,
+        '1',
+      );
     });
 
-    testWidgets('shortening the lead time clears it and saves', (tester) async {
+    testWidgets('the stepper will not go below 1', (tester) async {
       await pumpAddEvent(tester);
-      await fillTodayAt10Am(tester);
-      await tapVisible(tester, find.byType(Switch));
-      await tapVisible(tester, find.text('Save Event'));
-      expect(find.text(kReminderPassedMessage), findsOneWidget);
+      await fillValidForm(tester);
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
 
-      // 30 minutes before 10:00 is 09:30, still ahead of 09:00.
-      await tester.enterText(
-        find.byKey(const ValueKey('reminder-amount')),
-        '30',
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-decrement')));
+
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('reminder-amount'))).data,
+        '1',
       );
-      await tester.pumpAndSettle();
-      expect(find.text(kReminderPassedMessage), findsNothing);
+    });
+
+    testWidgets('the unit label pluralises with the amount', (tester) async {
+      await pumpAddEvent(tester);
+      await fillValidForm(tester);
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
+
+      expect(find.text('Day'), findsOneWidget);
+
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-increment')));
+
+      expect(find.text('Days'), findsOneWidget);
+    });
+
+    testWidgets('the unit button expands an inline chip row', (tester) async {
+      await pumpAddEvent(tester);
+      await fillValidForm(tester);
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
       await tapVisible(tester, find.byKey(const ValueKey('reminder-unit')));
-      await tapVisible(tester, find.text('Minutes'));
+
+      expect(
+        find.byKey(const ValueKey('reminder-unit-chip-Minute')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('reminder-unit-chip-Week')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('picking a unit updates the button and closes the row', (
+      tester,
+    ) async {
+      await pumpAddEvent(tester);
+      await fillValidForm(tester);
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-unit')));
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('reminder-unit-chip-Hour')),
+      );
+
+      expect(
+        find.byKey(const ValueKey('reminder-unit-chip-Hour')),
+        findsNothing,
+      );
+      expect(find.text('Hour'), findsOneWidget);
+    });
+
+    testWidgets(
+      'a unit whose lead time has already passed is refused, not accepted',
+      (tester) async {
+        await pumpAddEvent(tester);
+        await enterName(tester);
+        // The 5th at 09:00 is 48h away, so "1 day before" is still in the
+        // future while "1 week before" is well in the past. (The 4th would
+        // not work: 1 day before it lands exactly on "now", which counts as
+        // passed.)
+        await pickDate(tester, 5);
+        await pickDefaultTime(tester);
+        await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
+        await tapVisible(tester, find.byKey(const ValueKey('reminder-unit')));
+        await tapVisible(
+          tester,
+          find.byKey(const ValueKey('reminder-unit-chip-Week')),
+        );
+
+        // Still on Day: the tap was ignored rather than accepted-then-warned.
+        // The row stays open, so "Day" is on both the button and its chip —
+        // assert against the button to be unambiguous.
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('reminder-unit')),
+            matching: find.text('Day'),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text(kSaveReasonReminder), findsNothing);
+      },
+    );
+  });
+
+  group('saving', () {
+    testWidgets('writes the event and pops true', (tester) async {
+      await pumpAddEvent(tester);
+      await fillValidForm(tester);
       await tapVisible(tester, find.text('Save Event'));
 
       final saved = calendarService.addedEvents.single;
-      expect(saved.reminderBefore, 30);
-      expect(saved.reminderUnit, ReminderUnit.minutes);
-      expect(scheduler.scheduled, hasLength(1));
+      expect(saved.eventName, 'Midterm');
+      expect(saved.eventDate, DateTime(2026, 5, 14));
+      expect(saved.eventTime, '09:00');
+      expect(saved.reminderEnabled, isFalse);
+      expect(poppedResult, isTrue);
     });
 
-    testWidgets('turning the reminder off clears it and saves without one', (
+    testWidgets('stores the linked course id', (tester) async {
+      await pumpAddEvent(tester, courses: [aCourse]);
+      await tapVisible(tester, find.byKey(const ValueKey('course-field')));
+      await tapVisible(tester, find.byKey(const ValueKey('course-option-IS230')));
+      await fillValidForm(tester);
+      await tapVisible(tester, find.text('Save Event'));
+
+      final saved = calendarService.addedEvents.single;
+      expect(saved.courseId, 'c1');
+      expect(saved.color, aCourse.color);
+    });
+
+    testWidgets('schedules the reminder before writing, and stores it on', (
       tester,
     ) async {
       await pumpAddEvent(tester);
-      await fillTodayAt10Am(tester);
-      await tapVisible(tester, find.byType(Switch));
+      await fillValidForm(tester);
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
       await tapVisible(tester, find.text('Save Event'));
-
-      await tapVisible(tester, find.byType(Switch));
-      expect(find.text(kReminderPassedMessage), findsNothing);
-      await tapVisible(tester, find.text('Save Event'));
-
-      expect(calendarService.addedEvents.single.reminderEnabled, isFalse);
-      expect(scheduler.scheduled, isEmpty);
-    });
-  });
-
-  group('reminder that cannot be scheduled', () {
-    Future<void> saveWithReminder(WidgetTester tester) async {
-      await tester.enterText(
-        find.byKey(const ValueKey('event-name')),
-        'Midterm',
-      );
-      await pickDate(tester, 5);
-      await pickTime(tester);
-      await tapVisible(tester, find.byType(Switch));
-      await tapVisible(tester, find.text('Save Event'));
-    }
-
-    testWidgets('asks for notification permission when saving a reminder', (
-      tester,
-    ) async {
-      await pumpAddEvent(tester);
-
-      await saveWithReminder(tester);
 
       expect(scheduler.permissionRequests, 1);
       expect(scheduler.scheduled, hasLength(1));
-      expect(find.byType(SnackBar), findsNothing);
-    });
-
-    testWidgets('does not ask for permission when there is no reminder', (
-      tester,
-    ) async {
-      await pumpAddEvent(tester);
-      await tester.enterText(
-        find.byKey(const ValueKey('event-name')),
-        'Midterm',
-      );
-      await pickDate(tester, 5);
-      await pickTime(tester);
-
-      await tapVisible(tester, find.text('Save Event'));
-
-      expect(scheduler.permissionRequests, 0);
-    });
-
-    testWidgets('declined permission still saves, and says so', (
-      tester,
-    ) async {
-      await pumpAddEvent(
-        tester,
-        reminderScheduler: FakeReminderScheduler(permissionGranted: false),
-      );
-
-      await saveWithReminder(tester);
-
-      expect(calendarService.addedEvents, hasLength(1));
-      expect(scheduler.scheduled, isEmpty);
-      expect(poppedResult, isTrue);
-      expect(find.text(kReminderPermissionDeniedMessage), findsOneWidget);
-    });
-
-    testWidgets('declined permission stores the reminder as off', (
-      tester,
-    ) async {
-      await pumpAddEvent(
-        tester,
-        reminderScheduler: FakeReminderScheduler(permissionGranted: false),
-      );
-
-      await saveWithReminder(tester);
-
-      final saved = calendarService.addedEvents.single;
-      expect(saved.reminderEnabled, isFalse);
-      expect(saved.reminderBefore, isNull);
-      expect(saved.reminderUnit, isNull);
-    });
-
-    testWidgets('a platform refusal still saves, and says so', (tester) async {
-      await pumpAddEvent(
-        tester,
-        reminderScheduler: FakeReminderScheduler(scheduleResult: false),
-      );
-
-      await saveWithReminder(tester);
-
-      expect(calendarService.addedEvents, hasLength(1));
-      expect(poppedResult, isTrue);
-      expect(find.text(kReminderNotScheduledMessage), findsOneWidget);
-    });
-
-    testWidgets('a platform refusal stores the reminder as off', (
-      tester,
-    ) async {
-      await pumpAddEvent(
-        tester,
-        reminderScheduler: FakeReminderScheduler(scheduleResult: false),
-      );
-
-      await saveWithReminder(tester);
-
-      final saved = calendarService.addedEvents.single;
-      expect(saved.reminderEnabled, isFalse);
-      expect(saved.reminderBefore, isNull);
-      expect(saved.reminderUnit, isNull);
-    });
-
-    testWidgets('a scheduled reminder is stored as on, under the same ID', (
-      tester,
-    ) async {
-      await pumpAddEvent(tester);
-
-      await saveWithReminder(tester);
-
       final saved = calendarService.addedEvents.single;
       expect(saved.reminderEnabled, isTrue);
-      expect(saved.reminderBefore, isNotNull);
-      // The notification's handle and the document ID must match, or
-      // deleting the event could never cancel its reminder.
-      expect(saved.eventId, 'new-event-id');
-      expect(scheduler.scheduled.single.eventId, saved.eventId);
+      expect(saved.reminderBefore, 1);
+      expect(saved.reminderUnit, ReminderUnit.days);
     });
 
-    testWidgets('a failed save cancels the reminder it just scheduled', (
+    testWidgets(
+      'a declined permission still saves, with reminderEnabled false',
+      (tester) async {
+        await pumpAddEvent(
+          tester,
+          reminderScheduler: FakeReminderScheduler(permissionGranted: false),
+        );
+        await fillValidForm(tester);
+        await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
+        await tapVisible(tester, find.text('Save Event'));
+
+        final saved = calendarService.addedEvents.single;
+        expect(saved.reminderEnabled, isFalse);
+        expect(saved.reminderBefore, isNull);
+        expect(saved.reminderUnit, isNull);
+        expect(scheduler.scheduled, isEmpty);
+        expect(find.text(kReminderPermissionDeniedMessage), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a refused schedule still saves, with reminderEnabled false',
+      (tester) async {
+        await pumpAddEvent(
+          tester,
+          reminderScheduler: FakeReminderScheduler(scheduleResult: false),
+        );
+        await fillValidForm(tester);
+        await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
+        await tapVisible(tester, find.text('Save Event'));
+
+        final saved = calendarService.addedEvents.single;
+        expect(saved.reminderEnabled, isFalse);
+        expect(find.text(kReminderNotScheduledMessage), findsOneWidget);
+      },
+    );
+
+    testWidgets('a write failure shows the banner and cancels the reminder', (
       tester,
     ) async {
       await pumpAddEvent(
         tester,
         service: FakeCalendarService(
-          addError: CalendarFailure("Couldn't save your event."),
+          addError: CalendarFailure('Could not save your event.'),
         ),
       );
+      await fillValidForm(tester);
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
+      await tapVisible(tester, find.text('Save Event'));
 
-      await saveWithReminder(tester);
-
-      expect(scheduler.scheduled, hasLength(1));
-      expect(scheduler.cancelled, ['new-event-id']);
+      expect(find.text("Couldn't save your event"), findsOneWidget);
+      expect(find.text('Could not save your event.'), findsOneWidget);
+      // The event never landed, so its reminder must not fire.
+      expect(scheduler.cancelled, [calendarService.nextEventId]);
       expect(poppedResult, isNull);
-      expect(find.text("Couldn't save your event."), findsOneWidget);
+    });
+
+    testWidgets('shows "Saving…" while the write is in flight', (
+      tester,
+    ) async {
+      await pumpAddEvent(
+        tester,
+        service: _SlowCalendarService(),
+      );
+      await fillValidForm(tester);
+      await tester.tap(find.text('Save Event'));
+      await tester.pump();
+
+      expect(find.text('Saving…'), findsOneWidget);
+      // The reason line never shows alongside the in-flight state.
+      expect(find.byKey(const ValueKey('save-reason')), findsNothing);
     });
   });
+
+  group('swatch selection logic', () {
+    test('excludes every colour a course already uses', () {
+      final swatches = eventSwatchesFor(['#16A34A', '#2563EB']);
+
+      expect(swatches, hasLength(kEventSwatchCount));
+      expect(swatches, isNot(contains('#16A34A')));
+      expect(swatches, isNot(contains('#2563EB')));
+    });
+
+    test('matches course colours case-insensitively', () {
+      final swatches = eventSwatchesFor(['#16a34a']);
+
+      expect(swatches, isNot(contains('#16A34A')));
+    });
+
+    test('falls back to the head of the pool when too few remain', () {
+      // Every pool colour is taken, so there is nothing free to offer.
+      final swatches = eventSwatchesFor(kEventSwatchPool);
+
+      expect(swatches, hasLength(kEventSwatchCount));
+      expect(swatches, kEventSwatchPool.take(kEventSwatchCount));
+    });
+
+    test('offers the pool head when no course has a colour', () {
+      expect(eventSwatchesFor(const []), kEventSwatchPool.take(4));
+    });
+  });
+}
+
+/// Never resolves its write, so the "Saving…" state can be observed.
+///
+/// A Completer rather than `Future.delayed`: a pending timer fails the test
+/// at teardown, an uncompleted future does not.
+class _SlowCalendarService extends FakeCalendarService {
+  final Completer<String> _never = Completer<String>();
+
+  @override
+  Future<String> addEvent(String uid, CalendarEvent event) => _never.future;
 }

@@ -90,6 +90,24 @@ class CalendarService {
         .handleError((Object _) => throw CalendarFailure(_loadFailureMessage));
   }
 
+  /// Every event whose date falls inside [year], soonest first.
+  ///
+  /// Backs the year view, which fills each date with its first event's
+  /// colour and so needs all twelve months at once. Exactly the same
+  /// single-field range + order-by shape as [watchEventsForMonth], so it
+  /// also needs no composite index.
+  Stream<List<CalendarEvent>> watchEventsForYear(String uid, int year) {
+    final start = DateTime(year, 1, 1);
+    final end = DateTime(year + 1, 1, 1);
+    return _events(uid)
+        .where('eventDate', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .where('eventDate', isLessThan: Timestamp.fromDate(end))
+        .orderBy('eventDate')
+        .snapshots()
+        .map((snap) => snap.docs.map(CalendarEvent.fromFirestore).toList())
+        .handleError((Object _) => throw CalendarFailure(_loadFailureMessage));
+  }
+
   /// Reserves a document ID for a new event without writing anything.
   ///
   /// Firestore generates this locally, so it needs no network call. The Add

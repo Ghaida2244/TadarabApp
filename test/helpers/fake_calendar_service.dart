@@ -30,9 +30,18 @@ class FakeCalendarService extends CalendarService {
   final List<CalendarEvent> addedEvents = [];
   final List<DateTime> watchedMonths = [];
 
+  final List<int> watchedYears = [];
+
   @override
   Stream<List<CalendarEvent>> watchEventsForMonth(String uid, DateTime month) {
     watchedMonths.add(month);
+    if (loadError != null) return Stream.error(loadError!);
+    return Stream.value(events);
+  }
+
+  @override
+  Stream<List<CalendarEvent>> watchEventsForYear(String uid, int year) {
+    watchedYears.add(year);
     if (loadError != null) return Stream.error(loadError!);
     return Stream.value(events);
   }

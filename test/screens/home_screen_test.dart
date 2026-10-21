@@ -1043,7 +1043,7 @@ void main() {
         await tester.pumpAndSettle();
         // The real Calendar tab, not a placeholder: its month title and
         // Add Event action are what prove the right screen is mounted.
-        expect(find.text('+ Add Event'), findsOneWidget);
+        expect(find.text('Add Event'), findsOneWidget);
         expect(find.text('March 2026'), findsOneWidget);
 
         await tester.tap(find.text('Profile'));
@@ -1084,9 +1084,11 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('14'));
         await tester.pumpAndSettle();
-        await tester.tap(find.byIcon(Icons.delete_outline));
+        // The row's delete control is now a labelled tinted button, and the
+        // confirm's action reads "Delete event" (the unified Calendar design).
+        await tester.tap(find.bySemanticsLabel('Delete event'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Delete'));
+        await tester.tap(find.text('Delete event'));
         await tester.pumpAndSettle();
 
         expect(calendarService.deletedEventIds, ['e9']);

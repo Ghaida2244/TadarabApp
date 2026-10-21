@@ -20,18 +20,6 @@ const List<String> kWeekdayHeaders = [
   'Sat',
 ];
 
-/// Two-letter weekday headers for the Add Event date picker sheet, which
-/// uses a narrower grid than the Calendar tab (Figure 98).
-const List<String> kWeekdayHeadersShort = [
-  'Su',
-  'Mo',
-  'Tu',
-  'We',
-  'Th',
-  'Fr',
-  'Sa',
-];
-
 /// Full month names used by the month title ("May 2026") and the
 /// event-details sheet heading ("May 14, 2026").
 const List<String> kMonthNames = [
@@ -80,6 +68,12 @@ List<DateTime?> monthGridCells(DateTime month) {
 /// True when [a] and [b] fall on the same local calendar day.
 bool isSameDay(DateTime a, DateTime b) => dateOnly(a) == dateOnly(b);
 
+/// True when [a] and [b] fall in the same calendar month of the same year.
+/// Drives the "Back to today" pill, which the handoff shows whenever the
+/// viewed month isn't the one containing today.
+bool isSameMonth(DateTime a, DateTime b) =>
+    a.year == b.year && a.month == b.month;
+
 /// Parses the `"HH:mm"` form stored on [CalendarEvent.eventTime]. Returns
 /// null for anything malformed rather than throwing, since a bad stored
 /// value should degrade the display, not crash the Calendar.
@@ -97,22 +91,6 @@ TimeOfDay? parseEventTime(String value) {
 String formatEventTimeForStorage(TimeOfDay time) =>
     '${time.hour.toString().padLeft(2, '0')}:'
     '${time.minute.toString().padLeft(2, '0')}';
-
-/// Converts the time picker's 12-hour selection into a [TimeOfDay].
-///
-/// 12 is the edge case both ways: 12 AM is midnight (hour 0) and 12 PM is
-/// noon (hour 12) — naively adding 12 for PM would turn noon into 24.
-/// Returns null for an hour outside 1–12 or a minute outside 0–59 rather
-/// than building an invalid time.
-TimeOfDay? timeOfDayFrom12Hour({
-  required int hour12,
-  required int minute,
-  required bool isPm,
-}) {
-  if (hour12 < 1 || hour12 > 12 || minute < 0 || minute > 59) return null;
-  final base = hour12 % 12; // 12 -> 0, so AM/PM can be added uniformly.
-  return TimeOfDay(hour: isPm ? base + 12 : base, minute: minute);
-}
 
 /// Formats a [TimeOfDay] for display as `"12:00 PM"`. Deliberately not
 /// locale-aware: every mockup frame shows 12-hour time with an uppercase
@@ -195,3 +173,64 @@ String formatReminderUnitLabel(int amount, ReminderUnit unit) {
   };
   return amount == 1 ? singular : '${singular}s';
 }
+
+/// "1 event" / "3 events" — the count line under the day sheet's date.
+String formatEventCount(int count) =>
+    count == 1 ? '1 event' : '$count events';
+
+/// "reminder 1 day before" — appended after the time on an event row in the
+/// day sheet. Lower-cased because it reads as part of a sentence there,
+/// unlike [formatReminderUnitLabel]'s title-case form in the Add Event row.
+String formatReminderSummary(int amount, ReminderUnit unit) =>
+    'reminder $amount '
+    '${formatReminderUnitLabel(amount, unit).toLowerCase()} before';
+
+/// The same summary for [event], or null when it has no usable reminder —
+/// so a caller can omit the clause entirely rather than print "no reminder".
+String? eventReminderSummary(CalendarEvent event) {
+  if (!event.reminderEnabled) return null;
+  final amount = event.reminderBefore;
+  final unit = event.reminderUnit;
+  if (amount == null || unit == null) return null;
+  return formatReminderSummary(amount, unit);
+}
+
+/// True when a reminder [amount] [unit] ahead of [date] at [time] would fire
+/// at or before [now], so it could never be delivered.
+///
+/// The form the Add Event screen validates *live* against, before an event
+/// exists: [reminderAlreadyPassed] answers the same question for an event
+/// that has already been built. With no date or time picked yet there is
+/// nothing to check against, so the answer is false — matching the handoff,
+/// where the note box reads "Pick a date and time and we will check this
+/// reminder against them" until both are set.
+bool reminderLeadPassed({
+  required DateTime? date,
+  required TimeOfDay? time,
+  required int amount,
+  required ReminderUnit unit,
+  required DateTime now,
+}) {
+  if (date == null || time == null) return false;
+  final at = DateTime(
+    date.year,
+    date.month,
+    date.day,
+    time.hour,
+    time.minute,
+  ).subtract(reminderLeadTime(amount, unit));
+  return !at.isAfter(now);
+}
+
+/// "3 hours before this event has already passed." — the handoff's wording
+/// for a rejected reminder, which states the offending value rather than
+/// instructing. Shown in the red variant of the reminder note box.
+String formatReminderPassedMessage(int amount, ReminderUnit unit) =>
+    '$amount ${formatReminderUnitLabel(amount, unit).toLowerCase()} '
+    'before this event has already passed.';
+
+/// "You will be notified 3 hours before this event." — the green variant,
+/// shown once a valid date, time and lead time are all set.
+String formatReminderConfirmMessage(int amount, ReminderUnit unit) =>
+    'You will be notified $amount '
+    '${formatReminderUnitLabel(amount, unit).toLowerCase()} before this event.';

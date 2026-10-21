@@ -1,25 +1,32 @@
 import 'package:flutter/material.dart';
 
 import '../../models/calendar_event.dart';
+import '../../models/course.dart';
 import '../../services/calendar_service.dart';
+import '../../services/courses_service.dart';
 import '../../services/home_data_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/event_time.dart';
 import '../../widgets/app_error_banner.dart';
 import 'add_event_screen.dart';
+import 'calendar_styles.dart';
+import 'widgets/calendar_header.dart';
 import 'widgets/day_events_sheet.dart';
 import 'widgets/delete_event_dialog.dart';
 import 'widgets/month_grid.dart';
+import 'widgets/year_grid.dart';
 
-/// The Calendar tab: a month grid of the student's events with a dot per
-/// event, month navigation, and a day-details sheet for adding context and
-/// deleting. Deliberately grid-only — the Upcoming Events list belongs on
-/// Home, not here.
+/// The Calendar tab: a month grid of the student's events with a colour dot
+/// per event, a year overview, month navigation, and a day-details sheet for
+/// deleting.
+///
+/// Deliberately grid-only — the Upcoming Events list belongs on Home.
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({
     super.key,
     required this.uid,
     this.calendarService,
+    this.coursesService,
     this.homeDataService,
     this.now,
     this.onEventsChanged,
@@ -29,6 +36,17 @@ class CalendarScreen extends StatefulWidget {
 
   /// Overridable for tests; defaults to the real Firestore-backed services.
   final CalendarService? calendarService;
+
+  /// Source for the student's courses, used for the course name on an event
+  /// row and for the Add Event dropdown. [CoursesService] rather than
+  /// [HomeDataService] because it wraps its failures in a `CoursesFailure`
+  /// with a readable message instead of throwing raw.
+  final CoursesService? coursesService;
+
+  /// Retained because the navigation shell passes it in. No longer used:
+  /// courses now come from [coursesService], which is the Courses feature's
+  /// own source of truth. Removing the parameter would mean editing
+  /// `home_screen.dart`, a shared file frozen after Phase B.
   final HomeDataService? homeDataService;
 
   /// Overridable for tests, so the today marker and the initially shown
@@ -47,18 +65,69 @@ class CalendarScreen extends StatefulWidget {
 class _CalendarScreenState extends State<CalendarScreen> {
   late final CalendarService _calendarService =
       widget.calendarService ?? CalendarService();
-  late final HomeDataService _homeDataService =
-      widget.homeDataService ?? HomeDataService();
+  late final CoursesService _coursesService =
+      widget.coursesService ?? CoursesService();
 
   late DateTime _month = firstOfMonth(_now);
+  bool _yearView = false;
 
   /// Bumped to force the StreamBuilder to resubscribe after a retry.
   int _retryToken = 0;
 
+  /// The student's courses, for the course name under an event and for the
+  /// Add Event dropdown. Empty when the fetch failed — see [_loadCourses].
+  List<Course> _courses = const [];
+
   DateTime get _now => widget.now ?? DateTime.now();
 
-  void _stepMonth(int delta) {
-    setState(() => _month = addMonths(_month, delta));
+  @override
+  void initState() {
+    super.initState();
+    _loadCourses();
+  }
+
+  /// Course names are enrichment, not the screen's subject: a failure here
+  /// leaves [_courses] empty so rows simply omit the course line, rather
+  /// than blocking events that loaded perfectly well. The events themselves
+  /// keep the full error-and-retry treatment below.
+  Future<void> _loadCourses() async {
+    try {
+      final courses = await _coursesService.fetchCourses(widget.uid);
+      if (!mounted) return;
+      setState(() => _courses = courses);
+    } on CoursesFailure {
+      // Intentionally silent — see above.
+    }
+  }
+
+  /// Courses keyed by ID. An event pointing at a course that has since been
+  /// deleted simply won't be found here.
+  Map<String, Course> get _coursesById => {
+    for (final course in _courses) course.courseId: course,
+  };
+
+  void _step(int delta) {
+    setState(() {
+      _month = _yearView
+          ? DateTime(_month.year + delta, _month.month, 1)
+          : addMonths(_month, delta);
+    });
+  }
+
+  void _toggleView() => setState(() => _yearView = !_yearView);
+
+  void _backToToday() {
+    setState(() {
+      _month = firstOfMonth(_now);
+      _yearView = false;
+    });
+  }
+
+  void _openMonthFromYear(int month) {
+    setState(() {
+      _month = DateTime(_month.year, month, 1);
+      _yearView = false;
+    });
   }
 
   Future<void> _openAddEvent() async {
@@ -67,7 +136,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         builder: (_) => AddEventScreen(
           uid: widget.uid,
           calendarService: _calendarService,
-          homeDataService: _homeDataService,
+          courses: _courses,
           initialDate: _month,
           now: _now,
         ),
@@ -81,10 +150,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
+      barrierColor: AppColors.navy.withValues(alpha: 0.5),
       isScrollControlled: true,
+      // The handoff caps the sheet at 62% of the screen.
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.62,
+      ),
       builder: (sheetContext) => DayEventsSheet(
         day: day,
         events: events,
+        coursesById: _coursesById,
         onDeleteRequested: (event) => _confirmDelete(sheetContext, event),
       ),
     );
@@ -94,7 +169,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     BuildContext sheetContext,
     CalendarEvent event,
   ) async {
-    final confirmed = await showDeleteEventDialog(sheetContext);
+    final confirmed = await showDeleteEventDialog(sheetContext, event: event);
     if (!confirmed) return;
 
     try {
@@ -110,7 +185,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           backgroundColor: AppColors.error,
           content: Text(
             failure.message,
-            style: AppTypography.button.copyWith(fontSize: 14),
+            style: CalendarText.save.copyWith(fontSize: 14),
           ),
         ),
       );
@@ -120,19 +195,32 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppColors.homeBackground,
+      color: Colors.white,
       child: Column(
         children: [
-          _CalendarHeader(
+          CalendarHeader(
             month: _month,
-            onPreviousMonth: () => _stepMonth(-1),
-            onNextMonth: () => _stepMonth(1),
+            isYearView: _yearView,
+            showBackToToday: !isSameMonth(_month, _now),
+            onPrevious: () => _step(-1),
+            onNext: () => _step(1),
+            onToggleView: _toggleView,
+            onBackToToday: _backToToday,
             onAddEvent: _openAddEvent,
           ),
           Expanded(
             child: StreamBuilder<List<CalendarEvent>>(
-              key: ValueKey('$_month-$_retryToken'),
-              stream: _calendarService.watchEventsForMonth(widget.uid, _month),
+              key: ValueKey(
+                _yearView
+                    ? 'year-${_month.year}-$_retryToken'
+                    : 'month-$_month-$_retryToken',
+              ),
+              stream: _yearView
+                  ? _calendarService.watchEventsForYear(
+                      widget.uid,
+                      _month.year,
+                    )
+                  : _calendarService.watchEventsForMonth(widget.uid, _month),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return _CalendarError(
@@ -142,166 +230,52 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     onRetry: () => setState(() => _retryToken++),
                   );
                 }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-                final events = snapshot.data;
-                final grouped = groupEventsByDay(events ?? const []);
+                final events = snapshot.data ?? const <CalendarEvent>[];
+                final grouped = groupEventsByDay(events);
 
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-                  child: Column(
-                    children: [
-                      MonthGrid(
-                        month: _month,
-                        eventsByDay: grouped,
-                        today: _now,
-                        onDayTap: (day) =>
-                            _openDay(day, grouped[day] ?? const []),
-                      ),
-                      const SizedBox(height: 18),
-                      // Only once the month's events have actually loaded —
-                      // showing the empty line while the first snapshot is
-                      // still in flight would flash "no events" at a student
-                      // who has them.
-                      if (events != null && events.isEmpty)
-                        Text(
-                          'No events yet. Tap "Add Event" to schedule your first one.',
-                          textAlign: TextAlign.center,
-                          style: AppTypography.subtitle.copyWith(fontSize: 15),
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+                  child: _yearView
+                      ? YearGrid(
+                          year: _month.year,
+                          eventsByDay: grouped,
+                          today: _now,
+                          onMonthSelected: _openMonthFromYear,
+                        )
+                      : Column(
+                          children: [
+                            Expanded(
+                              child: MonthGrid(
+                                month: _month,
+                                eventsByDay: grouped,
+                                today: _now,
+                                onDayTap: (day) =>
+                                    _openDay(day, grouped[day] ?? const []),
+                              ),
+                            ),
+                            // Not in the handoff, whose empty-month branch
+                            // renders nothing — kept so a blank month doesn't
+                            // read as a failed load.
+                            if (events.isEmpty) ...[
+                              const SizedBox(height: 14),
+                              Text(
+                                'No events yet. Tap "Add Event" to schedule '
+                                'your first one.',
+                                textAlign: TextAlign.center,
+                                style: CalendarText.monthEmpty,
+                              ),
+                            ],
+                          ],
                         ),
-                    ],
-                  ),
                 );
               },
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _CalendarHeader extends StatelessWidget {
-  const _CalendarHeader({
-    required this.month,
-    required this.onPreviousMonth,
-    required this.onNextMonth,
-    required this.onAddEvent,
-  });
-
-  final DateTime month;
-  final VoidCallback onPreviousMonth;
-  final VoidCallback onNextMonth;
-  final VoidCallback onAddEvent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      color: AppColors.navy,
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-      child: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Calendar',
-                  style: TextStyle(
-                    fontSize: 30,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                  ),
-                ),
-                GestureDetector(
-                  onTap: onAddEvent,
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 13,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.red,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: const Text(
-                      '+ Add Event',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                _MonthArrow(
-                  icon: Icons.chevron_left,
-                  onTap: onPreviousMonth,
-                  semanticLabel: 'Previous month',
-                ),
-                Expanded(
-                  child: Center(
-                    child: Text(
-                      formatMonthTitle(month),
-                      style: const TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-                _MonthArrow(
-                  icon: Icons.chevron_right,
-                  onTap: onNextMonth,
-                  semanticLabel: 'Next month',
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MonthArrow extends StatelessWidget {
-  const _MonthArrow({
-    required this.icon,
-    required this.onTap,
-    required this.semanticLabel,
-  });
-
-  final IconData icon;
-  final VoidCallback onTap;
-  final String semanticLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: semanticLabel,
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          width: 48,
-          height: 48,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.12),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, size: 24, color: Colors.white),
-        ),
       ),
     );
   }

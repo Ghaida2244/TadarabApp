@@ -5,24 +5,20 @@ import '../../models/calendar_event.dart';
 import '../../models/course.dart';
 import '../../models/enums.dart';
 import '../../services/calendar_service.dart';
-import '../../services/home_data_service.dart';
 import '../../services/reminder_scheduler.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/event_time.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_error_banner.dart';
 import '../../widgets/dashed_border.dart';
-import 'widgets/event_date_picker_sheet.dart';
-import 'widgets/event_time_picker_sheet.dart';
+import 'calendar_styles.dart';
+import 'widgets/calendar_pickers.dart';
+import 'widgets/reminder_card.dart';
 
 /// Maximum length of an event name — `eventName` is VARCHAR(100) in the SRS
-/// Attributes Dictionary Table.
+/// Attributes Dictionary Table. Not in the unified design, which sets no
+/// limit; kept because the column does.
 const int kEventNameMaxLength = 100;
-
-/// Shown under the reminder row when the chosen lead time has already
-/// passed, so the reminder could never fire.
-const kReminderPassedMessage =
-    'This reminder time has already passed. Choose a shorter reminder or turn it off.';
 
 /// Shown after saving when the student declined notification permission.
 const kReminderPermissionDeniedMessage =
@@ -33,15 +29,11 @@ const kReminderPermissionDeniedMessage =
 const kReminderNotScheduledMessage =
     "Event saved, but its reminder couldn't be set.";
 
-/// The four preset event colors offered when no course is selected
-/// (05_add_event_no_course.png). Green is first and pre-selected, and is
-/// the same value as CalendarEvent's default color.
-const List<String> kEventColorPresets = [
-  '#10B981',
-  '#4F7DF3',
-  '#F0A93B',
-  '#E31B23',
-];
+/// The reasons Save stays disabled, in the order the design checks them.
+const kSaveReasonName = 'Add an event name to continue.';
+const kSaveReasonDate = 'Pick a date to continue.';
+const kSaveReasonTime = 'Pick a time to continue.';
+const kSaveReasonReminder = 'Fix the reminder to continue.';
 
 /// The Add Event form. Writes straight to Firestore via [CalendarService]
 /// and, when a reminder is enabled, schedules the local notification.
@@ -53,7 +45,7 @@ class AddEventScreen extends StatefulWidget {
     super.key,
     required this.uid,
     required this.calendarService,
-    required this.homeDataService,
+    required this.courses,
     this.reminderScheduler,
     this.initialDate,
     this.now,
@@ -61,7 +53,10 @@ class AddEventScreen extends StatefulWidget {
 
   final String uid;
   final CalendarService calendarService;
-  final HomeDataService homeDataService;
+
+  /// The student's courses, already fetched by the Calendar screen — so the
+  /// feature reads them once, from one source, rather than per screen.
+  final List<Course> courses;
 
   /// Overridable for tests; defaults to the real notification-backed one.
   final ReminderScheduler? reminderScheduler;
@@ -70,7 +65,7 @@ class AddEventScreen extends StatefulWidget {
   /// adding an event to a browsed month doesn't jump back to today.
   final DateTime? initialDate;
 
-  /// Overridable for tests, so the date picker's bounds are deterministic.
+  /// Overridable for tests, so reminder validation is deterministic.
   final DateTime? now;
 
   @override
@@ -79,110 +74,98 @@ class AddEventScreen extends StatefulWidget {
 
 class _AddEventScreenState extends State<AddEventScreen> {
   final _nameController = TextEditingController();
-  final _reminderAmountController = TextEditingController(text: '1');
 
   late final ReminderScheduler _scheduler =
       widget.reminderScheduler ?? ReminderScheduler();
-  late final Future<List<Course>> _courses = widget.homeDataService
-      .fetchCourses(widget.uid);
 
   Course? _selectedCourse;
-  String _selectedColor = kEventColorPresets.first;
+  bool _coursesOpen = false;
+  late String _selectedColor = _swatches.first;
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
+
   bool _reminderEnabled = false;
+  int _reminderAmount = 1;
   ReminderUnit _reminderUnit = ReminderUnit.days;
+  bool _unitsOpen = false;
 
   bool _saving = false;
   String? _errorMessage;
-  String? _nameError;
-  String? _dateError;
-  String? _timeError;
-  String? _reminderError;
 
   DateTime get _now => widget.now ?? DateTime.now();
 
-  /// A course's color wins over the presets — the chip in the mockup says
-  /// the event "will use this course color", so the picker is replaced
-  /// rather than merely overridden.
+  /// The four offered swatches: the pool minus every hue the student's
+  /// courses already use, so a hand-coloured event can't be mistaken for a
+  /// course-linked one.
+  List<String> get _swatches =>
+      eventSwatchesFor(widget.courses.map((c) => c.color));
+
+  /// A course's colour wins over the presets — the chip says the event
+  /// "will use this course color", so the picker is replaced, not merely
+  /// overridden.
   String get _effectiveColor => _selectedCourse?.color ?? _selectedColor;
+
+  bool get _nameFilled => _nameController.text.trim().isNotEmpty;
+
+  /// True when the enabled reminder's lead time has already passed.
+  bool get _reminderInvalid =>
+      _reminderEnabled &&
+      reminderLeadPassed(
+        date: _selectedDate,
+        time: _selectedTime,
+        amount: _reminderAmount,
+        unit: _reminderUnit,
+        now: _now,
+      );
+
+  /// Why Save is disabled, or null when the form is ready to submit.
+  String? get _saveReason {
+    if (!_nameFilled) return kSaveReasonName;
+    if (_selectedDate == null) return kSaveReasonDate;
+    if (_selectedTime == null) return kSaveReasonTime;
+    if (_reminderInvalid) return kSaveReasonReminder;
+    return null;
+  }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _reminderAmountController.dispose();
     super.dispose();
   }
 
   Future<void> _pickDate() async {
-    // Past dates stay selectable (the picker applies no lower bound): a
-    // calendar is as much a record of what happened as a plan.
-    final picked = await showEventDatePicker(
+    final picked = await pickEventDate(
       context: context,
       initialDate: _selectedDate ?? widget.initialDate ?? _now,
-      today: _now,
-      selectedDate: _selectedDate,
+      now: _now,
     );
     if (picked == null) return;
-    setState(() {
-      _selectedDate = picked;
-      _dateError = null;
-      _reminderError = null;
-    });
+    setState(() => _selectedDate = picked);
   }
 
   Future<void> _pickTime() async {
-    final picked = await showEventTimePicker(
+    final picked = await pickEventTime(
       context: context,
       initialTime: _selectedTime,
     );
     if (picked == null) return;
-    setState(() {
-      _selectedTime = picked;
-      _timeError = null;
-      _reminderError = null;
-    });
+    setState(() => _selectedTime = picked);
   }
 
-  Future<void> _pickCourse(List<Course> courses) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => _CoursePickerSheet(
-        courses: courses,
-        selected: _selectedCourse,
-        onSelected: (course) {
-          Navigator.of(sheetContext).pop();
-          setState(() => _selectedCourse = course);
-        },
-      ),
-    );
-  }
-
-  Future<void> _pickReminderUnit() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => _ReminderUnitSheet(
-        selected: _reminderUnit,
-        amount: _reminderAmount,
-        onSelected: (unit) {
-          Navigator.of(sheetContext).pop();
-          setState(() {
-            _reminderUnit = unit;
-            _reminderError = null;
-          });
-        },
-      ),
-    );
-  }
-
-  /// The reminder amount as typed, falling back to 1 for an empty or
-  /// non-numeric box so a half-typed value can never be saved as 0.
-  int get _reminderAmount {
-    final parsed = int.tryParse(_reminderAmountController.text.trim());
-    if (parsed == null || parsed < 1) return 1;
-    return parsed;
+  /// Shows why a reminder change was refused. The reminder card rejects the
+  /// value itself; this only surfaces the explanation.
+  void _onReminderRejected(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.navy,
+          content: Text(
+            message,
+            style: CalendarText.save.copyWith(fontSize: 14),
+          ),
+        ),
+      );
   }
 
   /// A copy of [event] with a new ID and/or the reminder switched off.
@@ -210,21 +193,20 @@ class _AddEventScreenState extends State<AddEventScreen> {
   }
 
   Future<void> _save() async {
-    final name = _nameController.text.trim();
+    // Save is disabled until the form is valid, so there is nothing left to
+    // validate here — the reason line below the button carries the feedback.
+    if (_saveReason != null) return;
+
     setState(() {
       _errorMessage = null;
-      _nameError = name.isEmpty ? 'Event name is required' : null;
-      _dateError = _selectedDate == null ? 'Pick a date for this event' : null;
-      _timeError = _selectedTime == null ? 'Pick a time for this event' : null;
-      _reminderError = null;
+      _saving = true;
     });
-    if (_nameError != null || _dateError != null || _timeError != null) return;
 
     final event = CalendarEvent(
-      // Replaced by the ID reserved just before saving; the model requires
-      // a non-null eventId, and this value is never stored.
+      // Replaced by the ID reserved just below; the model requires a
+      // non-null eventId and this value is never stored.
       eventId: '',
-      eventName: name,
+      eventName: _nameController.text.trim(),
       eventDate: DateTime(
         _selectedDate!.year,
         _selectedDate!.month,
@@ -240,16 +222,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
       email: '',
       courseId: _selectedCourse?.courseId,
     );
-
-    // A reminder whose fire time has already passed can never be delivered.
-    // Say so on the form rather than saving it and silently skipping it, so
-    // the student can shorten the lead time or turn the reminder off.
-    if (reminderAlreadyPassed(event, _now)) {
-      setState(() => _reminderError = kReminderPassedMessage);
-      return;
-    }
-
-    setState(() => _saving = true);
 
     // The reminder is set up *before* the event is written, so the one
     // write can store whether it actually exists: reminderEnabled must
@@ -296,7 +268,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
             backgroundColor: AppColors.navy,
             content: Text(
               reminderNotice,
-              style: AppTypography.button.copyWith(fontSize: 14),
+              style: CalendarText.save.copyWith(fontSize: 14),
             ),
           ),
         );
@@ -314,14 +286,16 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final reason = _saveReason;
+
     return Scaffold(
-      backgroundColor: AppColors.homeBackground,
+      backgroundColor: Colors.white,
       body: Column(
         children: [
           _AddEventHeader(enabled: !_saving),
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+              padding: const EdgeInsets.all(22),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -330,11 +304,13 @@ class _AddEventScreenState extends State<AddEventScreen> {
                       heading: "Couldn't save your event",
                       body: _errorMessage!,
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 24),
                   ],
-                  const _SectionLabel(emoji: '🏷️', text: 'Event Name'),
+
+                  const _FieldLabel('EVENT NAME'),
+                  const SizedBox(height: 8),
                   _FieldBox(
-                    errorText: _nameError,
+                    filled: _nameFilled,
                     child: TextField(
                       key: const ValueKey('event-name'),
                       controller: _nameController,
@@ -342,110 +318,137 @@ class _AddEventScreenState extends State<AddEventScreen> {
                       inputFormatters: [
                         LengthLimitingTextInputFormatter(kEventNameMaxLength),
                       ],
-                      style: AppTypography.fieldInput.copyWith(fontSize: 16),
+                      style: CalendarText.fieldInput(AppColors.navy),
                       decoration: InputDecoration(
                         border: InputBorder.none,
                         isDense: true,
-                        hintText: 'e.g. Midterm Exam, Assignment 1',
-                        hintStyle: AppTypography.fieldInput.copyWith(
-                          fontSize: 16,
-                          color: AppColors.placeholder,
-                        ),
+                        hintText: 'e.g. Midterm exam, Assignment 1',
+                        hintStyle:
+                            CalendarText.fieldInput(AppColors.placeholder),
                       ),
-                      onChanged: (_) {
-                        if (_nameError != null) {
-                          setState(() => _nameError = null);
-                        }
-                      },
+                      onChanged: (_) => setState(() {}),
                     ),
                   ),
-                  const SizedBox(height: 18),
-                  const _SectionLabel(
-                    emoji: '📖',
-                    text: 'Course',
-                    suffix: '(Optional)',
+                  const SizedBox(height: 24),
+
+                  const _FieldLabel('COURSE', optional: '· OPTIONAL'),
+                  const SizedBox(height: 8),
+                  _CourseField(
+                    courses: widget.courses,
+                    selected: _selectedCourse,
+                    open: _coursesOpen,
+                    enabled: !_saving,
+                    onToggle: () =>
+                        setState(() => _coursesOpen = !_coursesOpen),
+                    onSelected: (course) => setState(() {
+                      _selectedCourse = course;
+                      _coursesOpen = false;
+                    }),
                   ),
-                  FutureBuilder<List<Course>>(
-                    future: _courses,
-                    builder: (context, snapshot) {
-                      final courses = snapshot.data ?? const <Course>[];
-                      return _PickerBox(
-                        enabled: !_saving,
-                        onTap: () => _pickCourse(courses),
-                        placeholder: 'No course selected',
-                        value: _selectedCourse?.courseName,
-                        trailing: const Icon(
-                          Icons.keyboard_arrow_down,
-                          size: 22,
-                          color: AppColors.textSecondary,
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 14),
-                  if (_selectedCourse != null)
-                    _CourseColorChip(course: _selectedCourse!)
-                  else ...[
-                    const _SectionLabel(emoji: '🎨', text: 'Event Color'),
-                    _ColorPresetRow(
+
+                  if (_selectedCourse == null) ...[
+                    const SizedBox(height: 24),
+                    const _FieldLabel('EVENT COLOR'),
+                    const SizedBox(height: 10),
+                    _ColorSwatchRow(
+                      swatches: _swatches,
                       selected: _selectedColor,
                       onSelected: (hex) =>
                           setState(() => _selectedColor = hex),
                       onCustom: _pickCustomColor,
                     ),
                   ],
-                  const SizedBox(height: 18),
-                  const _SectionLabel(emoji: '📅', text: 'Date'),
-                  _PickerBox(
+
+                  const SizedBox(height: 24),
+                  const _FieldLabel('DATE'),
+                  const SizedBox(height: 8),
+                  _PickerField(
+                    fieldKey: const ValueKey('event-date'),
                     enabled: !_saving,
                     onTap: _pickDate,
                     placeholder: 'Select a date',
                     value: _selectedDate == null
                         ? null
                         : formatLongDate(_selectedDate!),
-                    errorText: _dateError,
-                    trailing: const Text('📅', style: TextStyle(fontSize: 18)),
                   ),
-                  const SizedBox(height: 18),
-                  const _SectionLabel(emoji: '🕐', text: 'Time'),
-                  _PickerBox(
+
+                  const SizedBox(height: 24),
+                  const _FieldLabel('TIME'),
+                  const SizedBox(height: 8),
+                  _PickerField(
+                    fieldKey: const ValueKey('event-time'),
                     enabled: !_saving,
                     onTap: _pickTime,
                     placeholder: 'Select a time',
                     value: _selectedTime == null
                         ? null
                         : formatEventTimeForDisplay(_selectedTime!),
-                    errorText: _timeError,
-                    trailing: const Text('🕐', style: TextStyle(fontSize: 18)),
                   ),
-                  const SizedBox(height: 18),
-                  _ReminderToggleCard(
+
+                  const SizedBox(height: 24),
+                  ReminderCard(
                     enabled: _reminderEnabled,
-                    onChanged: _onReminderToggled,
-                  ),
-                  if (_reminderEnabled) ...[
-                    const SizedBox(height: 12),
-                    _ReminderAmountRow(
-                      controller: _reminderAmountController,
-                      unitLabel: formatReminderUnitLabel(
-                        _reminderAmount,
-                        _reminderUnit,
-                      ),
-                      onUnitTap: _pickReminderUnit,
-                      onAmountChanged: () =>
-                          setState(() => _reminderError = null),
-                      errorText: _reminderError,
-                    ),
-                  ],
-                  const SizedBox(height: 26),
-                  AppButton(
-                    label: 'Save Event',
-                    loading: _saving,
-                    loadingLabel: 'Saving…',
-                    onPressed: _saving ? null : _save,
+                    amount: _reminderAmount,
+                    unit: _reminderUnit,
+                    unitsOpen: _unitsOpen,
+                    date: _selectedDate,
+                    time: _selectedTime,
+                    now: _now,
+                    onToggled: (value) => setState(() {
+                      _reminderEnabled = value;
+                      _unitsOpen = false;
+                    }),
+                    onAmountChanged: (value) =>
+                        setState(() => _reminderAmount = value),
+                    onUnitChanged: (value) => setState(() {
+                      _reminderUnit = value;
+                      _unitsOpen = false;
+                    }),
+                    onToggleUnits: () =>
+                        setState(() => _unitsOpen = !_unitsOpen),
+                    onRejected: _onReminderRejected,
                   ),
                 ],
               ),
+            ),
+          ),
+          // Pinned footer, outside the scroll area.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(22, 14, 22, 26),
+            child: Column(
+              children: [
+                Semantics(
+                  button: true,
+                  enabled: reason == null && !_saving,
+                  // A disabled AppButton has no onPressed, so a screen
+                  // reader would otherwise announce nothing at all; the
+                  // reason travels with the button instead.
+                  hint: reason,
+                  child: AppButton(
+                    label: 'Save Event',
+                    variant: AppButtonVariant.accent,
+                    height: 56,
+                    borderRadius: 18,
+                    fontSize: 16,
+                    loading: _saving,
+                    loadingLabel: 'Saving…',
+                    disabledBackgroundColor: AppColors.disabledRedFill,
+                    disabledRemovesShadow: true,
+                    onPressed: reason == null && !_saving ? _save : null,
+                  ),
+                ),
+                // Only while the form is incomplete: once saving starts the
+                // button itself says "Saving…" and the reason is moot.
+                if (reason != null && !_saving) ...[
+                  const SizedBox(height: 9),
+                  Text(
+                    reason,
+                    key: const ValueKey('save-reason'),
+                    textAlign: TextAlign.center,
+                    style: CalendarText.saveReason,
+                  ),
+                ],
+              ],
             ),
           ),
         ],
@@ -453,29 +456,22 @@ class _AddEventScreenState extends State<AddEventScreen> {
     );
   }
 
-  void _onReminderToggled(bool value) {
-    setState(() {
-      _reminderEnabled = value;
-      _reminderError = null;
-    });
-  }
-
   Future<void> _pickCustomColor() async {
-    await showModalBottomSheet<void>(
+    final picked = await showDialog<Color>(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => _CustomColorSheet(
-        selected: _selectedColor,
-        onSelected: (hex) {
-          Navigator.of(sheetContext).pop();
-          setState(() => _selectedColor = hex);
-        },
+      builder: (_) => _CustomColorDialog(
+        initial: parseHexColor(_selectedColor),
       ),
     );
+    if (picked == null) return;
+    setState(() {
+      _selectedColor =
+          '#${picked.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
+    });
   }
 }
 
-/// Navy header with the circular back chip, matching the Add Event mockup.
+/// Navy header with the circular back chip.
 class _AddEventHeader extends StatelessWidget {
   const _AddEventHeader({required this.enabled});
 
@@ -485,8 +481,11 @@ class _AddEventHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      color: AppColors.navy,
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 22),
+      decoration: const BoxDecoration(
+        color: AppColors.navy,
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+      ),
+      padding: const EdgeInsets.fromLTRB(22, 0, 22, 22),
       child: SafeArea(
         bottom: false,
         child: Row(
@@ -498,30 +497,23 @@ class _AddEventHeader extends StatelessWidget {
                 onTap: enabled ? () => Navigator.of(context).pop() : null,
                 behavior: HitTestBehavior.opaque,
                 child: Container(
-                  width: 48,
-                  height: 48,
+                  width: 38,
+                  height: 38,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.12),
+                    color: Colors.white.withValues(alpha: 0.2),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     Icons.chevron_left,
-                    size: 26,
+                    size: 19,
                     color: Colors.white.withValues(alpha: enabled ? 1 : 0.4),
                   ),
                 ),
               ),
             ),
-            const SizedBox(width: 14),
-            const Text(
-              'Add Event',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-              ),
-            ),
+            const SizedBox(width: 13),
+            Text('Add Event', style: CalendarText.headerTitle),
           ],
         ),
       ),
@@ -529,134 +521,240 @@ class _AddEventHeader extends StatelessWidget {
   }
 }
 
-/// An emoji + label heading above a field, e.g. "🏷️ Event Name".
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({required this.emoji, required this.text, this.suffix});
+/// An all-caps field label, e.g. "EVENT NAME" or "COURSE · OPTIONAL".
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.text, {this.optional});
 
-  final String emoji;
   final String text;
-  final String? suffix;
+
+  /// The lighter "· OPTIONAL" half, when there is one.
+  final String? optional;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          Text(emoji, style: const TextStyle(fontSize: 16)),
-          const SizedBox(width: 7),
-          Text(
-            text,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-              color: AppColors.navy,
-            ),
-          ),
-          if (suffix != null) ...[
-            const SizedBox(width: 7),
-            Text(
-              suffix!,
-              style: AppTypography.subtitle.copyWith(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ],
+    return Text.rich(
+      TextSpan(
+        text: text,
+        style: CalendarText.fieldLabel,
+        children: optional == null
+            ? null
+            : [
+                TextSpan(
+                  text: ' $optional',
+                  style: CalendarText.fieldLabelOptional,
+                ),
+              ],
       ),
     );
   }
 }
 
-/// The white rounded input box the mockup uses for every field. Separate
-/// from [AppTextField] because these have no leading icon and their label
-/// sits outside the box as a [_SectionLabel].
+/// The white rounded box every field sits in. Its border reads the field's
+/// state: navy once filled or open, otherwise the default light edge.
+///
+/// Separate from the shared `AppTextField` because these have no leading
+/// icon and their label sits outside the box.
 class _FieldBox extends StatelessWidget {
-  const _FieldBox({required this.child, this.errorText});
+  const _FieldBox({required this.child, this.filled = false});
 
   final Widget child;
-  final String? errorText;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 54,
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: filled ? AppColors.navy : AppColors.borderLight,
+          width: 2,
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// A [_FieldBox] that opens a picker instead of accepting typed input.
+class _PickerField extends StatelessWidget {
+  const _PickerField({
+    required this.fieldKey,
+    required this.enabled,
+    required this.onTap,
+    required this.placeholder,
+    required this.value,
+  });
+
+  final Key fieldKey;
+  final bool enabled;
+  final VoidCallback onTap;
+  final String placeholder;
+  final String? value;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: fieldKey,
+      onTap: enabled ? onTap : null,
+      behavior: HitTestBehavior.opaque,
+      child: _FieldBox(
+        filled: value != null,
+        child: Text(
+          value ?? placeholder,
+          style: CalendarText.fieldInput(
+            value == null ? AppColors.placeholder : AppColors.navy,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The course field plus its inline dropdown and selected-course chip.
+class _CourseField extends StatelessWidget {
+  const _CourseField({
+    required this.courses,
+    required this.selected,
+    required this.open,
+    required this.enabled,
+    required this.onToggle,
+    required this.onSelected,
+  });
+
+  final List<Course> courses;
+  final Course? selected;
+  final bool open;
+  final bool enabled;
+  final VoidCallback onToggle;
+  final ValueChanged<Course?> onSelected;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          height: 60,
-          alignment: Alignment.centerLeft,
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: errorText == null
-                  ? AppColors.borderLight
-                  : AppColors.error,
-              width: 1.5,
+        GestureDetector(
+          key: const ValueKey('course-field'),
+          onTap: enabled ? onToggle : null,
+          behavior: HitTestBehavior.opaque,
+          child: _FieldBox(
+            filled: open || selected != null,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    selected?.courseName ?? 'No course selected',
+                    style: CalendarText.fieldInput(
+                      selected == null
+                          ? AppColors.placeholder
+                          : AppColors.navy,
+                    ),
+                  ),
+                ),
+                Icon(
+                  open ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                  size: 22,
+                  color: AppColors.textSecondary,
+                ),
+              ],
             ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.navy.withValues(alpha: 0.05),
-                offset: const Offset(0, 2),
-              ),
-            ],
           ),
-          child: child,
         ),
-        if (errorText != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6, left: 4),
-            child: Text(
-              errorText!,
-              style: AppTypography.helper.copyWith(color: AppColors.errorText),
+        if (open) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                const BoxShadow(color: AppColors.cardTint, spreadRadius: 2),
+                BoxShadow(
+                  color: AppColors.navy.withValues(alpha: 0.06),
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                _CourseOption(
+                  label: 'No course selected',
+                  hue: AppColors.borderLight,
+                  selected: selected == null,
+                  onTap: () => onSelected(null),
+                ),
+                // Not in the handoff, whose course list is never empty.
+                if (courses.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                    child: Text(
+                      "You haven't added any courses yet. Events can still "
+                      'be saved without one.',
+                      style: CalendarText.courseEmpty,
+                    ),
+                  )
+                else
+                  for (final course in courses)
+                    _CourseOption(
+                      label: course.courseName,
+                      hue: parseHexColor(course.color),
+                      selected: course.courseId == selected?.courseId,
+                      onTap: () => onSelected(course),
+                    ),
+              ],
             ),
           ),
+        ],
+        if (selected != null) ...[
+          const SizedBox(height: 14),
+          _CourseColorChip(course: selected!),
+        ],
       ],
     );
   }
 }
 
-/// A [_FieldBox] that opens a picker instead of accepting typed input.
-class _PickerBox extends StatelessWidget {
-  const _PickerBox({
-    required this.enabled,
+/// One row in the inline course dropdown.
+class _CourseOption extends StatelessWidget {
+  const _CourseOption({
+    required this.label,
+    required this.hue,
+    required this.selected,
     required this.onTap,
-    required this.placeholder,
-    required this.value,
-    this.trailing,
-    this.errorText,
   });
 
-  final bool enabled;
+  final String label;
+  final Color hue;
+  final bool selected;
   final VoidCallback onTap;
-  final String placeholder;
-  final String? value;
-  final Widget? trailing;
-  final String? errorText;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: enabled ? onTap : null,
+      key: ValueKey('course-option-$label'),
+      onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: _FieldBox(
-        errorText: errorText,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: selected ? CalendarColors.selectedRow : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+        ),
         child: Row(
           children: [
-            Expanded(
-              child: Text(
-                value ?? placeholder,
-                style: AppTypography.fieldInput.copyWith(
-                  fontSize: 16,
-                  color: value == null
-                      ? AppColors.placeholder
-                      : AppColors.navy,
-                ),
-              ),
+            Container(
+              width: 18,
+              height: 18,
+              decoration: BoxDecoration(color: hue, shape: BoxShape.circle),
             ),
-            ?trailing,
+            const SizedBox(width: 11),
+            Expanded(
+              child: Text(label, style: CalendarText.courseOption),
+            ),
           ],
         ),
       ),
@@ -664,69 +762,7 @@ class _PickerBox extends StatelessWidget {
   }
 }
 
-/// The four preset swatches plus the dashed "+" for a custom color.
-class _ColorPresetRow extends StatelessWidget {
-  const _ColorPresetRow({
-    required this.selected,
-    required this.onSelected,
-    required this.onCustom,
-  });
-
-  final String selected;
-  final ValueChanged<String> onSelected;
-  final VoidCallback onCustom;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        for (final hex in kEventColorPresets) ...[
-          Semantics(
-            button: true,
-            selected: hex == selected,
-            label: 'Event color $hex',
-            child: GestureDetector(
-              onTap: () => onSelected(hex),
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                width: 62,
-                height: 62,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: parseHexColor(hex),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: hex == selected
-                    ? const Icon(Icons.check, size: 26, color: Colors.white)
-                    : null,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-        ],
-        Semantics(
-          button: true,
-          label: 'Custom event color',
-          child: GestureDetector(
-            onTap: onCustom,
-            behavior: HitTestBehavior.opaque,
-            child: DashedRoundedBorder(
-              color: AppColors.borderDefault,
-              borderRadius: 16,
-              child: const SizedBox(
-                width: 62,
-                height: 62,
-                child: Icon(Icons.add, size: 24, color: AppColors.placeholder),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Replaces the preset row once a course is chosen, per the mockup.
+/// Replaces the swatch row once a course is chosen.
 class _CourseColorChip extends StatelessWidget {
   const _CourseColorChip({required this.course});
 
@@ -735,38 +771,34 @@ class _CourseColorChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.borderLight, width: 1.5),
+        color: AppColors.surfaceMuted,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(color: AppColors.cardTint, spreadRadius: 2),
+        ],
       ),
       child: Row(
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: 30,
+            height: 30,
             decoration: BoxDecoration(
               color: parseHexColor(course.color),
-              borderRadius: BorderRadius.circular(12),
+              shape: BoxShape.circle,
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  course.courseName,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.navy,
-                  ),
-                ),
+                Text(course.courseName, style: CalendarText.chipName),
+                const SizedBox(height: 1),
                 Text(
                   'Event will use this course color',
-                  style: AppTypography.subtitle.copyWith(fontSize: 14),
+                  style: CalendarText.chipCaption,
                 ),
               ],
             ),
@@ -777,339 +809,156 @@ class _CourseColorChip extends StatelessWidget {
   }
 }
 
-class _ReminderToggleCard extends StatelessWidget {
-  const _ReminderToggleCard({required this.enabled, required this.onChanged});
-
-  final bool enabled;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 68,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.borderLight, width: 1.5),
-      ),
-      child: Row(
-        children: [
-          const Text('🔔', style: TextStyle(fontSize: 18)),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text(
-              'Enable Reminder',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
-                color: AppColors.navy,
-              ),
-            ),
-          ),
-          Switch(
-            value: enabled,
-            onChanged: onChanged,
-            activeThumbColor: Colors.white,
-            activeTrackColor: AppColors.navy,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ReminderAmountRow extends StatelessWidget {
-  const _ReminderAmountRow({
-    required this.controller,
-    required this.unitLabel,
-    required this.onUnitTap,
-    required this.onAmountChanged,
-    this.errorText,
-  });
-
-  final TextEditingController controller;
-  final String unitLabel;
-  final VoidCallback onUnitTap;
-  final VoidCallback onAmountChanged;
-
-  /// Shown under the row, e.g. when the reminder's lead time has passed.
-  final String? errorText;
-
-  @override
-  Widget build(BuildContext context) {
-    return _FieldBox(
-      errorText: errorText,
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              key: const ValueKey('reminder-amount'),
-              controller: controller,
-              keyboardType: TextInputType.number,
-              style: AppTypography.fieldInput.copyWith(fontSize: 16),
-              decoration: const InputDecoration(
-                border: InputBorder.none,
-                isDense: true,
-              ),
-              onChanged: (_) => onAmountChanged(),
-            ),
-          ),
-          Semantics(
-            button: true,
-            label: 'Reminder unit',
-            child: GestureDetector(
-              key: const ValueKey('reminder-unit'),
-              onTap: onUnitTap,
-              behavior: HitTestBehavior.opaque,
-              child: Row(
-                children: [
-                  Text(
-                    unitLabel,
-                    style: AppTypography.fieldInput.copyWith(
-                      fontSize: 16,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  const Icon(
-                    Icons.keyboard_arrow_down,
-                    size: 20,
-                    color: AppColors.textSecondary,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Shared chrome for the small option sheets below.
-class _OptionSheet extends StatelessWidget {
-  const _OptionSheet({required this.title, required this.children});
-
-  final String title;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-                color: AppColors.navy,
-              ),
-            ),
-            const SizedBox(height: 14),
-            ...children,
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SheetRow extends StatelessWidget {
-  const _SheetRow({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.leading,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  final Widget? leading;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.cardTint : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected ? AppColors.navy : AppColors.borderLight,
-            width: 1.5,
-          ),
-        ),
-        child: Row(
-          children: [
-            ?leading,
-            if (leading != null) const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.navy,
-                ),
-              ),
-            ),
-            if (selected)
-              const Icon(Icons.check, size: 20, color: AppColors.navy),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CoursePickerSheet extends StatelessWidget {
-  const _CoursePickerSheet({
-    required this.courses,
+/// The four course-aware swatches plus the dashed "+" for a custom colour.
+class _ColorSwatchRow extends StatelessWidget {
+  const _ColorSwatchRow({
+    required this.swatches,
     required this.selected,
     required this.onSelected,
+    required this.onCustom,
   });
 
-  final List<Course> courses;
-  final Course? selected;
-  final ValueChanged<Course?> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return _OptionSheet(
-      title: 'Choose a course',
-      children: [
-        _SheetRow(
-          label: 'No course',
-          selected: selected == null,
-          onTap: () => onSelected(null),
-        ),
-        if (courses.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              "You haven't added any courses yet. Events can still be saved without one.",
-              style: AppTypography.subtitle,
-            ),
-          )
-        else
-          for (final course in courses)
-            _SheetRow(
-              label: course.courseName,
-              selected: course.courseId == selected?.courseId,
-              onTap: () => onSelected(course),
-              leading: Container(
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  color: parseHexColor(course.color),
-                  borderRadius: BorderRadius.circular(7),
-                ),
-              ),
-            ),
-      ],
-    );
-  }
-}
-
-class _ReminderUnitSheet extends StatelessWidget {
-  const _ReminderUnitSheet({
-    required this.selected,
-    required this.amount,
-    required this.onSelected,
-  });
-
-  final ReminderUnit selected;
-  final int amount;
-  final ValueChanged<ReminderUnit> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return _OptionSheet(
-      title: 'Remind me',
-      children: [
-        for (final unit in ReminderUnit.values)
-          _SheetRow(
-            label: formatReminderUnitLabel(amount, unit),
-            selected: unit == selected,
-            onTap: () => onSelected(unit),
-          ),
-      ],
-    );
-  }
-}
-
-class _CustomColorSheet extends StatelessWidget {
-  const _CustomColorSheet({required this.selected, required this.onSelected});
-
+  final List<String> swatches;
   final String selected;
   final ValueChanged<String> onSelected;
-
-  /// A wider palette behind the dashed "+", so "custom" is still a
-  /// fixed, on-brand set rather than a free-form colour wheel.
-  static const _customColors = [
-    '#0B0F5B',
-    '#7C3AED',
-    '#EC4899',
-    '#0EA5E9',
-    '#14B8A6',
-    '#65A30D',
-    '#F97316',
-    '#78716C',
-  ];
+  final VoidCallback onCustom;
 
   @override
   Widget build(BuildContext context) {
-    return _OptionSheet(
-      title: 'Pick a colour',
+    return Row(
       children: [
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            for (final hex in _customColors)
-              Semantics(
-                button: true,
-                selected: hex == selected,
-                label: 'Event color $hex',
-                child: GestureDetector(
-                  onTap: () => onSelected(hex),
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    width: 58,
-                    height: 58,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: parseHexColor(hex),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: hex == selected
-                        ? const Icon(
-                            Icons.check,
-                            size: 24,
-                            color: Colors.white,
-                          )
-                        : null,
-                  ),
+        for (final hex in swatches) ...[
+          Semantics(
+            button: true,
+            selected: hex == selected,
+            label: 'Event color $hex',
+            child: GestureDetector(
+              onTap: () => onSelected(hex),
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                width: 52,
+                height: 52,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: parseHexColor(hex),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: hex == selected
+                      ? [
+                          BoxShadow(
+                            color: AppColors.navy.withValues(alpha: 0.22),
+                            offset: const Offset(0, 3),
+                          ),
+                        ]
+                      : const [
+                          BoxShadow(
+                            color: AppColors.cardTint,
+                            spreadRadius: 2,
+                          ),
+                        ],
                 ),
+                child: hex == selected
+                    ? const Icon(Icons.check, size: 22, color: Colors.white)
+                    : null,
               ),
+            ),
+          ),
+          const SizedBox(width: 10),
+        ],
+        Semantics(
+          button: true,
+          label: 'Custom event color',
+          child: GestureDetector(
+            key: const ValueKey('custom-color'),
+            onTap: onCustom,
+            behavior: HitTestBehavior.opaque,
+            child: DashedRoundedBorder(
+              color: AppColors.textOnDisabled,
+              borderRadius: 16,
+              child: const SizedBox(
+                width: 52,
+                height: 52,
+                child: Icon(Icons.add, size: 20, color: AppColors.textSecondary),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A free-form colour picker behind the dashed "+".
+///
+/// A hue slider rather than a package: the Courses feature already solves
+/// the same problem this way (`_CustomColorDialog` in
+/// `add_course_screen.dart`), so the app keeps one custom-colour behaviour
+/// and `pubspec.yaml` — a shared file — stays untouched.
+class _CustomColorDialog extends StatefulWidget {
+  const _CustomColorDialog({required this.initial});
+
+  final Color initial;
+
+  @override
+  State<_CustomColorDialog> createState() => _CustomColorDialogState();
+}
+
+class _CustomColorDialogState extends State<_CustomColorDialog> {
+  late double _hue = HSVColor.fromColor(widget.initial).hue;
+
+  Color get _color => HSVColor.fromAHSV(1, _hue, 1, 1).toColor();
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      insetPadding: const EdgeInsets.all(26),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Pick a color', style: CalendarText.dialogTitle),
+            const SizedBox(height: 16),
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: _color,
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Slider(
+              value: _hue,
+              max: 360,
+              activeColor: _color,
+              onChanged: (value) => setState(() => _hue = value),
+            ),
+            const SizedBox(height: 8),
+            AppButton(
+              label: 'Use this color',
+              variant: AppButtonVariant.accent,
+              height: 52,
+              borderRadius: 16,
+              fontSize: 15,
+              onPressed: () => Navigator.of(context).pop(_color),
+            ),
+            const SizedBox(height: 13),
+            AppButton(
+              label: 'Cancel',
+              variant: AppButtonVariant.outlinedNeutral,
+              height: 46,
+              borderRadius: 16,
+              borderColor: AppColors.borderDefault,
+              fontSize: 14,
+              onPressed: () => Navigator.of(context).pop(),
+            ),
           ],
         ),
-        const SizedBox(height: 8),
-      ],
+      ),
     );
   }
 }
