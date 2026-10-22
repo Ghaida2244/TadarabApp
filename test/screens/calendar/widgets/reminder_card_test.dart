@@ -32,7 +32,7 @@ void main() {
               time: time,
               now: now,
               onToggled: (v) => recorder.toggled = v,
-              onAmountChanged: (v) => recorder.amount = v,
+              onAmountChanged: recorder.record,
               onUnitChanged: (v) => recorder.unit = v,
               onToggleUnits: () => recorder.unitsToggled++,
               onRejected: (m) => recorder.rejections.add(m),
@@ -43,6 +43,19 @@ void main() {
     );
     await tester.pumpAndSettle();
     return recorder;
+  }
+
+  String amountText(WidgetTester tester) => tester
+      .widget<TextField>(find.byKey(const ValueKey('reminder-amount')))
+      .controller!
+      .text;
+
+  Future<void> typeAmount(WidgetTester tester, String value) async {
+    await tester.enterText(
+      find.byKey(const ValueKey('reminder-amount')),
+      value,
+    );
+    await tester.pumpAndSettle();
   }
 
   group('collapsed', () {
@@ -134,6 +147,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(recorder.amount, isNull);
+      expect(amountText(tester), '$kReminderAmountMin');
     });
 
     testWidgets('the plus button is inert at the maximum', (tester) async {
@@ -143,6 +157,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(recorder.amount, isNull);
+      expect(amountText(tester), '$kReminderAmountMax');
     });
 
     testWidgets('a disabled stepper button is greyed', (tester) async {
@@ -254,13 +269,160 @@ void main() {
       expect(recorder.rejections, isEmpty);
     });
   });
+
+  group('typed amount', () {
+    testWidgets('starts showing the current amount', (tester) async {
+      await pumpCard(tester, amount: 4);
+
+      expect(amountText(tester), '4');
+    });
+
+    testWidgets('a usable value is reported upward', (tester) async {
+      final recorder = await pumpCard(
+        tester,
+        date: DateTime(2026, 7, 1),
+        time: const TimeOfDay(hour: 9, minute: 0),
+      );
+
+      await typeAmount(tester, '7');
+
+      expect(recorder.amount, 7);
+      expect(recorder.reportedNull, isFalse);
+    });
+
+    testWidgets('exactly the minimum and maximum are usable', (tester) async {
+      // Far enough out that even 60 days ahead is still in the future, so
+      // only the bounds themselves are under test.
+      // Starts at 5 so typing the minimum is a real change — enterText on
+      // identical text fires no onChanged.
+      final recorder = await pumpCard(
+        tester,
+        amount: 5,
+        date: DateTime(2026, 12, 1),
+        time: const TimeOfDay(hour: 9, minute: 0),
+      );
+
+      await typeAmount(tester, '$kReminderAmountMin');
+      expect(recorder.amount, kReminderAmountMin);
+      expect(find.text(kReminderAmountRangeMessage), findsNothing);
+
+      await typeAmount(tester, '$kReminderAmountMax');
+      expect(recorder.amount, kReminderAmountMax);
+      expect(find.text(kReminderAmountRangeMessage), findsNothing);
+      expect(
+        find.text('You will be notified 60 days before this event.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an empty box reports null and shows the range note', (
+      tester,
+    ) async {
+      final recorder = await pumpCard(tester);
+
+      await typeAmount(tester, '');
+
+      expect(recorder.reportedNull, isTrue);
+      expect(find.text(kReminderAmountRangeMessage), findsOneWidget);
+    });
+
+    testWidgets('zero and 61 both report null', (tester) async {
+      final recorder = await pumpCard(tester);
+
+      await typeAmount(tester, '0');
+      expect(recorder.reportedNull, isTrue);
+      expect(find.text(kReminderAmountRangeMessage), findsOneWidget);
+
+      recorder.reportedNull = false;
+      await typeAmount(tester, '61');
+      expect(recorder.reportedNull, isTrue);
+    });
+
+    testWidgets('the range note outranks the awaiting-date note', (
+      tester,
+    ) async {
+      // No date or time set, so the grey note would normally show.
+      await pumpCard(tester);
+      await typeAmount(tester, '');
+
+      expect(find.text(kReminderAmountRangeMessage), findsOneWidget);
+      expect(find.textContaining('Pick a date and time'), findsNothing);
+    });
+
+    testWidgets('the range note uses the red treatment', (tester) async {
+      await pumpCard(tester);
+      await typeAmount(tester, '');
+
+      final box = tester.widget<Container>(
+        find.byKey(const ValueKey('reminder-note')),
+      );
+      expect(
+        (box.decoration! as BoxDecoration).color,
+        AppColors.errorBannerBackground,
+      );
+    });
+
+    testWidgets('a typed lead time in the past is warned, not refused', (
+      tester,
+    ) async {
+      final recorder = await pumpCard(
+        tester,
+        date: DateTime(2026, 5, 5),
+        time: const TimeOfDay(hour: 9, minute: 0),
+      );
+
+      await typeAmount(tester, '30');
+
+      // Accepted — unlike the stepper, which refuses the same value.
+      expect(amountText(tester), '30');
+      expect(recorder.amount, 30);
+      expect(recorder.rejections, isEmpty);
+    });
+
+    testWidgets('stepping after typing continues from the typed value', (
+      tester,
+    ) async {
+      final recorder = await pumpCard(
+        tester,
+        amount: 1,
+        date: DateTime(2026, 12, 1),
+        time: const TimeOfDay(hour: 9, minute: 0),
+      );
+
+      await typeAmount(tester, '9');
+      expect(recorder.amount, 9);
+    });
+
+    testWidgets('an external change is mirrored into the box', (tester) async {
+      // What happens when the stepper moves the value: the parent rebuilds
+      // the card with a new amount and the box must follow.
+      await pumpCard(tester, amount: 3);
+      expect(amountText(tester), '3');
+
+      await pumpCard(tester, amount: 8);
+      expect(amountText(tester), '8');
+    });
+  });
 }
 
 /// Captures what the card reported back.
 class _Recorder {
   bool? toggled;
+
+  /// The last value the card reported. `null` is meaningful: it is how the
+  /// card says "the box holds no usable number", so [reportedNull] tracks
+  /// whether that ever happened.
   int? amount;
+  bool reportedNull = false;
   ReminderUnit? unit;
   int unitsToggled = 0;
   final List<String> rejections = [];
+
+  void record(int? value) {
+    if (value == null) {
+      reportedNull = true;
+    } else {
+      amount = value;
+    }
+  }
 }

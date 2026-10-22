@@ -1687,6 +1687,137 @@ mark it done, note decisions made, note what starts next.)*
   notification permission dialog and whether scheduled reminders actually
   appear.
 
+  **Emulator-testing fixes (three), after the unified UI pass.**
+
+  1. **The reminder amount is now typable as well as steppable.**
+     `ReminderCard` became a `StatefulWidget` so it can own the field's
+     controller and focus node; the box takes digits only, capped at two
+     (60 is the ceiling). `onAmountChanged` widened to
+     `ValueChanged<int?>`, where **null means "the box holds no usable
+     number"** — Add Event tracks that as `_reminderAmountIncomplete` and
+     holds Save on the existing "Fix the reminder to continue." reason, so
+     an empty or out-of-range amount can never be written. On losing focus
+     the box snaps back to something usable: empty reverts to the last
+     committed value, out-of-range clamps to the nearer bound (`0 → 1`,
+     `99 → 60`). The note box gained a fourth state,
+     `amountOutOfRange`, which **reuses the existing red treatment** with
+     its own message (`kReminderAmountRangeMessage`) — three visual states,
+     as specified, with only the red wording varying.
+
+     **A deliberate, scoped divergence from the handoff**, confirmed with
+     the team: its rule is "an invalid value is rejected, not
+     accepted-then-warned", and the stepper and unit chips still refuse.
+     **Typed input cannot work that way** — refusing keystrokes would fight
+     the typist, since typing "30" passes through "3" — so a typed lead time
+     already in the past is accepted, shown red, and blocks Save instead.
+
+     While building this the card turned out to be reading `widget.amount`
+     for its own validation, i.e. waiting for the parent to echo the value
+     back before the note box could update. It now validates
+     `_effectiveAmount` — the box's contents while usable, else the last
+     committed value — so the note and the stepper bounds are correct in the
+     same frame the student types. That also removed a frame of lag in the
+     running app, not just in the tests.
+
+  2. **The day cell's "+N" label was clipped and misaligned — fixed.** The
+     dot row was a `SizedBox(height: 6)`, which handed the `Row` a 6px
+     cross-axis constraint and painted the 9px label clipped. **Cross-axis
+     overflow throws no Flutter error**, which is exactly why the test suite
+     stayed green while the device showed it. The row is now sized by its
+     tallest child, with the handoff's 4px gap applied *between* the dots
+     and before the label (the label previously butted against the last dot
+     — the misalignment). Verified with 3, 4 and 10 events on one day, in a
+     six-row month: May 2026 is itself a six-row month (the 1st is a Friday,
+     so five blanks plus 31 days fills 36 cells), so the existing suite was
+     already exercising the tight case.
+
+     That surfaced a second, real bug: on a **320dp phone** two dots plus a
+     two-digit "+N" need about 38px and the cell gives about 31, so the row
+     overflowed horizontally by 2.8px. The row is now wrapped in a
+     `FittedBox(scaleDown)`, the same treatment the day number already had —
+     everything stays on one line and fully visible, and the scale does
+     nothing at all when there is room (gaps measure exactly 4px at 412dp).
+
+  3. **The custom colour picker is now `flutter_colorpicker` ^1.1.0**
+     (resolved to 1.1.0), matching the handoff's native colour input: a
+     saturation/value area, a hue slider and a hex field.
+     **`pubspec.yaml` is a shared file and this is a real dependency
+     change — accepted by Leen, who is telling the team.** `pubspec.lock`
+     regenerated. Calendar only: **Manar's `_CustomColorDialog` in
+     `add_course_screen.dart` is untouched**, so the two custom-colour
+     dialogs are deliberately no longer identical. The dialog lives in
+     `widgets/color_picker_dialog.dart`, restyled into the Calendar's shell
+     (white, 26px radius, `CalendarText.dialogTitle`, `AppButton` accent
+     "Use this color" over outlined "Cancel"), with `enableAlpha: false`
+     because events store a 6-digit hex.
+
+     **Two traps in that package, both found by probing it before wiring it
+     up.** It picks its layout from `MediaQuery.orientation`, and its
+     *landscape* branch lays the picker beside a hard-coded 260px slider,
+     which overflows any dialog — `portraitOnly: true` pins the stacked
+     layout, which is what a phone dialog wants regardless. And its hex
+     input row overflows its own `Row` below roughly 240px of content width
+     (measured: it breaks between 230 and 240), so the bar is gated behind a
+     `LayoutBuilder` at `kHexInputMinWidth`; this dialog also uses a tighter
+     16px inset than the delete dialog's 26px so a 320dp phone still clears
+     that threshold and keeps the hex field.
+
+     Hex conversion moved out of the screen into a pure
+     `hexFromColor(Color)` in `calendar_styles.dart`, unit-tested directly
+     (padding short values, dropping alpha, and round-tripping every pool
+     colour through `parseHexColor`) rather than trying to drive a
+     saturation area by gesture. The old inline
+     `toARGB32().toRadixString(16).substring(2)` silently lost digits for
+     near-black colours; the replacement pads.
+
+  **225 Calendar tests** now (screen 28, Add Event 59, reminder card 23,
+  month grid 14, day sheet 14, year grid 8, delete dialog 7, styles 5,
+  `event_time` 51, service 16). **Whole suite: 842 passing, 1 failing** —
+  still only `text_extraction_service_test`'s PPTX case, pre-existing on
+  `main` and not this feature's. `flutter analyze` reports only the same two
+  pre-existing infos, and `flutter build apk --debug` succeeds with the new
+  dependency. Harness note: `tester.enterText` fires no `onChanged` when the
+  text is unchanged, so a test typing the value the field already holds must
+  seed a different starting amount.
+
+  **Date/time pickers restyled.** On the emulator the platform pickers were
+  still showing Android's defaults — lavender surfaces, the system font and
+  default shapes — because the local override only set `colorScheme` and
+  `textButtonTheme`, which Material 3 largely ignores for these dialogs. The
+  lavender comes from M3 reaching past the scheme's `surface` into
+  `surfaceContainerHigh` (the dialog), `primaryContainer` (the selected day)
+  and `secondaryContainer` (the time picker's hour/minute fields and AM/PM
+  toggle). `calendar_pickers.dart` now sets full `DatePickerThemeData` and
+  `TimePickerThemeData` blocks — white surfaces with `surfaceTintColor`
+  cleared (M3 tints by elevation otherwise), Nunito on every text slot both
+  dialogs own, navy selection with white ink, today outlined in red exactly
+  as the month grid draws it, `kPickerCornerRadius` (26px, matching the
+  Calendar's other dialogs), and Cancel/OK styled like the delete dialog's
+  "Keep it"/"Delete event" — muted grey and red. The input-mode text fields
+  and the entry-mode icon buttons are covered too. **Still a local `Theme`
+  wrapper; `AppTheme` is untouched.** The standard layouts are deliberately
+  kept — `CalendarDatePicker`'s month grid and the clock dial are the whole
+  reason for using the platform pickers — and past dates stay selectable.
+
+  Two SDK details worth recording: `TimePickerThemeData`'s colour slots take
+  a plain `Color?` and resolve through **`WidgetStateColor`**, not
+  `WidgetStateProperty` like `DatePickerThemeData`'s, and a `library`
+  directive has to precede every import, so the file's overview comment sits
+  on the theme function instead.
+
+  16 new tests in `test/screens/calendar/widgets/calendar_pickers_test.dart`
+  open each picker for real and read the theme the subtree actually
+  resolves, rather than inspecting a `ThemeData` object — including two that
+  assert the **rendered** `Material`'s colour is white, since a resolved
+  theme value alone wouldn't catch a surface the dialog takes from
+  elsewhere, and two that confirm the standard grid/dial still work and a
+  past date is still pickable. **241 Calendar tests; whole suite 858
+  passing, 1 failing** (still only the pre-existing
+  `text_extraction_service_test` PPTX fixture). `flutter analyze` clean
+  apart from the same two pre-existing infos; `flutter build apk --debug`
+  succeeds. The pickers' new look is **not yet confirmed on a device** —
+  the tests check the theme that reaches them, not pixels.
+
 ## Design handoffs
 
 - `docs/mockups/android-study-app-redesign/` — Phase 0 (Auth: Welcome, Log

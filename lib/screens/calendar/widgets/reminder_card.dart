@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../models/enums.dart';
 import '../../../theme/app_theme.dart';
@@ -10,7 +11,14 @@ import '../calendar_styles.dart';
 const int kReminderAmountMin = 1;
 const int kReminderAmountMax = 60;
 
-/// Which of the three states the note box under the reminder controls is in.
+/// Shown when the amount box holds something that isn't a usable number.
+const kReminderAmountRangeMessage =
+    'Enter a reminder amount between $kReminderAmountMin and '
+    '$kReminderAmountMax.';
+
+/// Which state the note box under the reminder controls is in. Three visual
+/// treatments: grey for [awaitingDateTime], green for [valid], and red
+/// shared by [passed] and [amountOutOfRange].
 enum ReminderNoteState {
   /// No date or time picked yet, so there is nothing to validate against.
   awaitingDateTime,
@@ -20,18 +28,25 @@ enum ReminderNoteState {
 
   /// The reminder would fire in the past, so it can never be delivered.
   passed,
+
+  /// The amount box is empty, or holds a number outside 1–60.
+  amountOutOfRange,
 }
 
 /// The reminder block on Add Event: an enable toggle, and — once on — the
 /// amount stepper, the unit chips and a note box explaining the current
 /// state.
 ///
-/// Validation is *live* and refuses invalid input rather than accepting it
-/// and complaining later: a unit whose lead time has already passed is
-/// greyed out and ignores taps, and the stepper won't commit a value that
-/// would put the reminder in the past. The handoff is explicit about this —
-/// "an invalid value is rejected, not accepted-then-warned".
-class ReminderCard extends StatelessWidget {
+/// The amount can be stepped or typed. Validation is *live*, and for the
+/// stepper and the unit chips it refuses invalid input rather than accepting
+/// it and complaining later — the handoff is explicit about this: "an
+/// invalid value is rejected, not accepted-then-warned". **Typed input is
+/// the deliberate exception**: refusing keystrokes would fight the typist
+/// (typing "30" passes through "3"), so a typed value is accepted, shown in
+/// red on the note box, and blocks Save instead. Out-of-range or empty text
+/// is clamped back to a usable value when the field loses focus, so nothing
+/// unusable can persist.
+class ReminderCard extends StatefulWidget {
   const ReminderCard({
     super.key,
     required this.enabled,
@@ -69,7 +84,11 @@ class ReminderCard extends StatelessWidget {
   final DateTime now;
 
   final ValueChanged<bool> onToggled;
-  final ValueChanged<int> onAmountChanged;
+
+  /// Reports the amount on every change: the parsed value while it is a
+  /// whole number inside 1–60, or **null** while the box is empty or out of
+  /// range, so the form knows the reminder is incomplete and can hold Save.
+  final ValueChanged<int?> onAmountChanged;
   final ValueChanged<ReminderUnit> onUnitChanged;
   final VoidCallback onToggleUnits;
 
@@ -77,39 +96,128 @@ class ReminderCard extends StatelessWidget {
   /// lead time has already passed.
   final ValueChanged<String> onRejected;
 
+  @override
+  State<ReminderCard> createState() => _ReminderCardState();
+}
+
+class _ReminderCardState extends State<ReminderCard> {
+  late final TextEditingController _amountController =
+      TextEditingController(text: '${widget.amount}');
+  late final FocusNode _amountFocus = FocusNode()
+    ..addListener(_onFocusChanged);
+
+  @override
+  void didUpdateWidget(ReminderCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Mirror a change made elsewhere (the stepper, or a reset) into the box
+    // — but never while the box already reads as that number, which would
+    // move the caret mid-typing.
+    if (widget.amount != oldWidget.amount &&
+        _parsed != widget.amount) {
+      _amountController.text = '${widget.amount}';
+    }
+  }
+
+  @override
+  void dispose() {
+    _amountFocus.dispose();
+    _amountController.dispose();
+    super.dispose();
+  }
+
+  /// The box's contents as an int, or null when empty or unparseable.
+  int? get _parsed => int.tryParse(_amountController.text.trim());
+
+  /// Whether the box currently holds a whole number inside 1–60.
+  bool get _amountUsable {
+    final value = _parsed;
+    return value != null &&
+        value >= kReminderAmountMin &&
+        value <= kReminderAmountMax;
+  }
+
+  /// The amount this card should validate and describe: what the box holds
+  /// while that is usable, otherwise the last value committed upward.
+  ///
+  /// Reading the box rather than `widget.amount` keeps the note box and the
+  /// stepper correct in the same frame the student types, instead of waiting
+  /// for the parent to echo the value back.
+  int get _effectiveAmount => _amountUsable ? _parsed! : widget.amount;
+
   /// Whether a reminder [candidateAmount] [candidateUnit] ahead would
   /// already have fired.
   bool _passed(int candidateAmount, ReminderUnit candidateUnit) =>
       reminderLeadPassed(
-        date: date,
-        time: time,
+        date: widget.date,
+        time: widget.time,
         amount: candidateAmount,
         unit: candidateUnit,
-        now: now,
+        now: widget.now,
       );
 
   ReminderNoteState get _noteState {
-    if (date == null || time == null) return ReminderNoteState.awaitingDateTime;
-    return _passed(amount, unit)
+    // An unusable amount outranks everything else: there is no lead time to
+    // check until the box holds a number.
+    if (!_amountUsable) return ReminderNoteState.amountOutOfRange;
+    if (widget.date == null || widget.time == null) {
+      return ReminderNoteState.awaitingDateTime;
+    }
+    return _passed(_effectiveAmount, widget.unit)
         ? ReminderNoteState.passed
         : ReminderNoteState.valid;
   }
 
-  /// Applies a candidate amount/unit, or rejects it when its lead time has
-  /// already passed.
+  /// Applies a candidate amount/unit from the stepper or a unit chip, or
+  /// rejects it when its lead time has already passed.
   void _apply(int candidateAmount, ReminderUnit candidateUnit) {
     if (_passed(candidateAmount, candidateUnit)) {
-      onRejected(
+      widget.onRejected(
         formatReminderPassedMessage(candidateAmount, candidateUnit),
       );
       return;
     }
-    if (candidateAmount != amount) onAmountChanged(candidateAmount);
-    if (candidateUnit != unit) onUnitChanged(candidateUnit);
+    if (candidateAmount != widget.amount) {
+      // Keep the box in step with a stepped value even when the parent
+      // rebuilds with the same `amount` it already had.
+      _amountController.text = '$candidateAmount';
+      widget.onAmountChanged(candidateAmount);
+    }
+    if (candidateUnit != widget.unit) widget.onUnitChanged(candidateUnit);
+  }
+
+  /// Every keystroke reports upward: the parsed value when it is usable, or
+  /// null to tell the form the reminder is incomplete and Save must wait.
+  void _onAmountTyped(String _) {
+    setState(() {});
+    widget.onAmountChanged(_amountUsable ? _parsed : null);
+  }
+
+  /// On losing focus, snap an unusable box back to something usable: empty
+  /// reverts to the last committed amount, anything out of range clamps to
+  /// the nearer bound.
+  void _onFocusChanged() {
+    if (_amountFocus.hasFocus || _amountUsable) return;
+    final value = _parsed;
+    final int settled;
+    if (value == null) {
+      settled = widget.amount;
+    } else {
+      settled = value < kReminderAmountMin
+          ? kReminderAmountMin
+          : kReminderAmountMax;
+    }
+    _amountController.text = '$settled';
+    setState(() {});
+    widget.onAmountChanged(settled);
   }
 
   @override
   Widget build(BuildContext context) {
+    final enabled = widget.enabled;
+    final amount = _effectiveAmount;
+    final unit = widget.unit;
+    final unitsOpen = widget.unitsOpen;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -126,7 +234,7 @@ class ReminderCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _ToggleRow(enabled: enabled, onToggled: onToggled),
+          _ToggleRow(enabled: enabled, onToggled: widget.onToggled),
           if (enabled) ...[
             const SizedBox(height: 14),
             Text(
@@ -138,8 +246,13 @@ class ReminderCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _AmountStepper(
-                    amount: amount,
-                    hasError: _noteState == ReminderNoteState.passed,
+                    controller: _amountController,
+                    focusNode: _amountFocus,
+                    hasError: _noteState == ReminderNoteState.passed ||
+                        _noteState == ReminderNoteState.amountOutOfRange,
+                    onTyped: _onAmountTyped,
+                    // The box can hold an unusable value mid-typing, so the
+                    // stepper steps from the last committed amount.
                     onDecrement: amount > kReminderAmountMin
                         ? () => _apply(amount - 1, unit)
                         : null,
@@ -154,7 +267,7 @@ class ReminderCard extends StatelessWidget {
                   child: _UnitButton(
                     label: formatReminderUnitLabel(amount, unit),
                     open: unitsOpen,
-                    onTap: onToggleUnits,
+                    onTap: widget.onToggleUnits,
                   ),
                 ),
               ],
@@ -251,17 +364,25 @@ class _ToggleRow extends StatelessWidget {
   }
 }
 
-/// − value + , bounded by [kReminderAmountMin]/[kReminderAmountMax].
+/// − value + , where the value is also a numeric text field.
+///
+/// Bounded by [kReminderAmountMin]/[kReminderAmountMax]: the buttons stop at
+/// the bounds, and the field refuses anything but two digits, so the worst a
+/// student can type is a number the note box then explains.
 class _AmountStepper extends StatelessWidget {
   const _AmountStepper({
-    required this.amount,
+    required this.controller,
+    required this.focusNode,
     required this.hasError,
+    required this.onTyped,
     required this.onDecrement,
     required this.onIncrement,
   });
 
-  final int amount;
+  final TextEditingController controller;
+  final FocusNode focusNode;
   final bool hasError;
+  final ValueChanged<String> onTyped;
 
   /// Null at the corresponding bound, which greys that button out.
   final VoidCallback? onDecrement;
@@ -289,11 +410,29 @@ class _AmountStepper extends StatelessWidget {
             buttonKey: const ValueKey('reminder-decrement'),
           ),
           Expanded(
-            child: Text(
-              '$amount',
+            child: TextField(
               key: const ValueKey('reminder-amount'),
+              controller: controller,
+              focusNode: focusNode,
+              onChanged: onTyped,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: false,
+                signed: false,
+              ),
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                // 60 is the ceiling, so two digits is all that can be valid.
+                LengthLimitingTextInputFormatter(2),
+              ],
               textAlign: TextAlign.center,
               style: CalendarText.reminderValue,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.zero,
+                hintText: '$kReminderAmountMin',
+                hintStyle: CalendarText.reminderValueHint,
+              ),
             ),
           ),
           _StepperButton(
@@ -464,6 +603,12 @@ class _NoteBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (background, ink, icon, message) = switch (state) {
+      ReminderNoteState.amountOutOfRange => (
+        AppColors.errorBannerBackground,
+        AppColors.errorBannerBody,
+        Icons.error_outline,
+        kReminderAmountRangeMessage,
+      ),
       ReminderNoteState.awaitingDateTime => (
         AppColors.surfaceMuted,
         AppColors.textSecondary,

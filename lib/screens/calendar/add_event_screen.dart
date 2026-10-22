@@ -13,6 +13,7 @@ import '../../widgets/app_error_banner.dart';
 import '../../widgets/dashed_border.dart';
 import 'calendar_styles.dart';
 import 'widgets/calendar_pickers.dart';
+import 'widgets/color_picker_dialog.dart';
 import 'widgets/reminder_card.dart';
 
 /// Maximum length of an event name — `eventName` is VARCHAR(100) in the SRS
@@ -85,7 +86,15 @@ class _AddEventScreenState extends State<AddEventScreen> {
   TimeOfDay? _selectedTime;
 
   bool _reminderEnabled = false;
+
+  /// The last amount that was a whole number inside 1–60. Always safe to
+  /// save; the box may transiently hold something else while being typed.
   int _reminderAmount = 1;
+
+  /// True while the amount box holds an empty or out-of-range value. The
+  /// reminder is incomplete until it clears, so Save waits.
+  bool _reminderAmountIncomplete = false;
+
   ReminderUnit _reminderUnit = ReminderUnit.days;
   bool _unitsOpen = false;
 
@@ -107,8 +116,14 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   bool get _nameFilled => _nameController.text.trim().isNotEmpty;
 
-  /// True when the enabled reminder's lead time has already passed.
+  /// True when the enabled reminder can't be used as it stands — either its
+  /// amount box is empty/out of range, or its lead time has already passed.
   bool get _reminderInvalid =>
+      _reminderEnabled &&
+      (_reminderAmountIncomplete || _reminderLeadPassed);
+
+  /// True when the enabled reminder's lead time has already passed.
+  bool get _reminderLeadPassed =>
       _reminderEnabled &&
       reminderLeadPassed(
         date: _selectedDate,
@@ -397,9 +412,14 @@ class _AddEventScreenState extends State<AddEventScreen> {
                     onToggled: (value) => setState(() {
                       _reminderEnabled = value;
                       _unitsOpen = false;
+                      // The card rebuilds its box from _reminderAmount, so a
+                      // half-typed value can't survive a toggle.
+                      _reminderAmountIncomplete = false;
                     }),
-                    onAmountChanged: (value) =>
-                        setState(() => _reminderAmount = value),
+                    onAmountChanged: (value) => setState(() {
+                      _reminderAmountIncomplete = value == null;
+                      if (value != null) _reminderAmount = value;
+                    }),
                     onUnitChanged: (value) => setState(() {
                       _reminderUnit = value;
                       _unitsOpen = false;
@@ -457,17 +477,12 @@ class _AddEventScreenState extends State<AddEventScreen> {
   }
 
   Future<void> _pickCustomColor() async {
-    final picked = await showDialog<Color>(
+    final picked = await showEventColorPicker(
       context: context,
-      builder: (_) => _CustomColorDialog(
-        initial: parseHexColor(_selectedColor),
-      ),
+      initial: parseHexColor(_selectedColor),
     );
     if (picked == null) return;
-    setState(() {
-      _selectedColor =
-          '#${picked.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
-    });
+    setState(() => _selectedColor = hexFromColor(picked));
   }
 }
 
@@ -887,78 +902,3 @@ class _ColorSwatchRow extends StatelessWidget {
   }
 }
 
-/// A free-form colour picker behind the dashed "+".
-///
-/// A hue slider rather than a package: the Courses feature already solves
-/// the same problem this way (`_CustomColorDialog` in
-/// `add_course_screen.dart`), so the app keeps one custom-colour behaviour
-/// and `pubspec.yaml` — a shared file — stays untouched.
-class _CustomColorDialog extends StatefulWidget {
-  const _CustomColorDialog({required this.initial});
-
-  final Color initial;
-
-  @override
-  State<_CustomColorDialog> createState() => _CustomColorDialogState();
-}
-
-class _CustomColorDialogState extends State<_CustomColorDialog> {
-  late double _hue = HSVColor.fromColor(widget.initial).hue;
-
-  Color get _color => HSVColor.fromAHSV(1, _hue, 1, 1).toColor();
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.white,
-      insetPadding: const EdgeInsets.all(26),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(26),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Pick a color', style: CalendarText.dialogTitle),
-            const SizedBox(height: 16),
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: _color,
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Slider(
-              value: _hue,
-              max: 360,
-              activeColor: _color,
-              onChanged: (value) => setState(() => _hue = value),
-            ),
-            const SizedBox(height: 8),
-            AppButton(
-              label: 'Use this color',
-              variant: AppButtonVariant.accent,
-              height: 52,
-              borderRadius: 16,
-              fontSize: 15,
-              onPressed: () => Navigator.of(context).pop(_color),
-            ),
-            const SizedBox(height: 13),
-            AppButton(
-              label: 'Cancel',
-              variant: AppButtonVariant.outlinedNeutral,
-              height: 46,
-              borderRadius: 16,
-              borderColor: AppColors.borderDefault,
-              fontSize: 14,
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

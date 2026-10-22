@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/models/calendar_event.dart';
 import 'package:tadarab_app/models/course.dart';
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/screens/calendar/add_event_screen.dart';
 import 'package:tadarab_app/screens/calendar/calendar_styles.dart';
+import 'package:tadarab_app/screens/calendar/widgets/reminder_card.dart';
 import 'package:tadarab_app/services/calendar_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
@@ -77,6 +79,20 @@ void main() {
 
   Future<void> tapVisible(WidgetTester tester, Finder finder) async {
     await tester.tap(finder);
+    await tester.pumpAndSettle();
+  }
+
+  /// The reminder amount box's current contents.
+  String amountText(WidgetTester tester) => tester
+      .widget<TextField>(find.byKey(const ValueKey('reminder-amount')))
+      .controller!
+      .text;
+
+  Future<void> typeAmount(WidgetTester tester, String value) async {
+    await tester.enterText(
+      find.byKey(const ValueKey('reminder-amount')),
+      value,
+    );
     await tester.pumpAndSettle();
   }
 
@@ -314,24 +330,21 @@ void main() {
       expect(calendarService.addedEvents.single.color, '#2563EB');
     });
 
-    testWidgets('the custom "+" opens a free colour picker', (tester) async {
+    testWidgets('the custom "+" opens the full colour picker', (tester) async {
       await pumpAddEvent(tester);
 
       await tapVisible(tester, find.byKey(const ValueKey('custom-color')));
 
       expect(find.text('Pick a color'), findsOneWidget);
-      expect(find.byType(Slider), findsOneWidget);
+      expect(find.byType(ColorPicker), findsOneWidget);
       expect(find.text('Use this color'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
     });
 
-    testWidgets('a custom colour is applied to the saved event', (
-      tester,
-    ) async {
+    testWidgets('confirming the picker stores a 6-digit hex', (tester) async {
       await pumpAddEvent(tester);
 
       await tapVisible(tester, find.byKey(const ValueKey('custom-color')));
-      await tester.drag(find.byType(Slider), const Offset(60, 0));
-      await tester.pumpAndSettle();
       await tapVisible(tester, find.text('Use this color'));
       await fillValidForm(tester);
       await tapVisible(tester, find.text('Save Event'));
@@ -339,6 +352,20 @@ void main() {
       final saved = calendarService.addedEvents.single.color;
       expect(saved, startsWith('#'));
       expect(saved.length, 7);
+    });
+
+    testWidgets('cancelling the picker leaves the colour alone', (
+      tester,
+    ) async {
+      await pumpAddEvent(tester);
+      await tapVisible(tester, find.bySemanticsLabel('Event color #2563EB'));
+
+      await tapVisible(tester, find.byKey(const ValueKey('custom-color')));
+      await tapVisible(tester, find.text('Cancel'));
+      await fillValidForm(tester);
+      await tapVisible(tester, find.text('Save Event'));
+
+      expect(calendarService.addedEvents.single.color, '#2563EB');
     });
   });
 
@@ -452,16 +479,10 @@ void main() {
       await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
 
       await tapVisible(tester, find.byKey(const ValueKey('reminder-increment')));
-      expect(
-        tester.widget<Text>(find.byKey(const ValueKey('reminder-amount'))).data,
-        '2',
-      );
+      expect(amountText(tester), '2');
 
       await tapVisible(tester, find.byKey(const ValueKey('reminder-decrement')));
-      expect(
-        tester.widget<Text>(find.byKey(const ValueKey('reminder-amount'))).data,
-        '1',
-      );
+      expect(amountText(tester), '1');
     });
 
     testWidgets('the stepper will not go below 1', (tester) async {
@@ -471,10 +492,7 @@ void main() {
 
       await tapVisible(tester, find.byKey(const ValueKey('reminder-decrement')));
 
-      expect(
-        tester.widget<Text>(find.byKey(const ValueKey('reminder-amount'))).data,
-        '1',
-      );
+      expect(amountText(tester), '1');
     });
 
     testWidgets('the unit label pluralises with the amount', (tester) async {
@@ -555,6 +573,161 @@ void main() {
         expect(find.text(kSaveReasonReminder), findsNothing);
       },
     );
+  });
+
+  group('typing the reminder amount', () {
+    Future<void> openReminder(WidgetTester tester, {int day = 14}) async {
+      await pumpAddEvent(tester);
+      await fillValidForm(tester, day: day);
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
+    }
+
+    testWidgets('a typed value drives the note box live', (tester) async {
+      await openReminder(tester);
+      await typeAmount(tester, '3');
+
+      expect(
+        find.text('You will be notified 3 days before this event.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a typed value is saved', (tester) async {
+      await openReminder(tester);
+      await typeAmount(tester, '6');
+      await tapVisible(tester, find.text('Save Event'));
+
+      expect(calendarService.addedEvents.single.reminderBefore, 6);
+    });
+
+    testWidgets('non-digits never reach the box', (tester) async {
+      await openReminder(tester);
+      await typeAmount(tester, '1a2.5-');
+
+      expect(amountText(tester), '12');
+    });
+
+    testWidgets('the box is capped at two digits', (tester) async {
+      await openReminder(tester);
+      await typeAmount(tester, '1234');
+
+      expect(amountText(tester), '12');
+    });
+
+    testWidgets('an empty box blocks Save and explains the range', (
+      tester,
+    ) async {
+      await openReminder(tester);
+      await typeAmount(tester, '');
+
+      expect(find.text(kReminderAmountRangeMessage), findsOneWidget);
+      expect(find.text(kSaveReasonReminder), findsOneWidget);
+    });
+
+    testWidgets('zero blocks Save and explains the range', (tester) async {
+      await openReminder(tester);
+      await typeAmount(tester, '0');
+
+      expect(find.text(kReminderAmountRangeMessage), findsOneWidget);
+      expect(find.text(kSaveReasonReminder), findsOneWidget);
+    });
+
+    testWidgets('above the maximum blocks Save and explains the range', (
+      tester,
+    ) async {
+      await openReminder(tester);
+      await typeAmount(tester, '61');
+
+      expect(find.text(kReminderAmountRangeMessage), findsOneWidget);
+      expect(find.text(kSaveReasonReminder), findsOneWidget);
+    });
+
+    testWidgets('exactly the maximum clears the range message', (
+      tester,
+    ) async {
+      await openReminder(tester);
+      await typeAmount(tester, '60');
+
+      // 60 is in range. Whether that *lead time* is reachable is a separate
+      // check with its own message — see the reminder card's own suite,
+      // where the date can be injected directly.
+      expect(find.text(kReminderAmountRangeMessage), findsNothing);
+      expect(amountText(tester), '60');
+    });
+
+    testWidgets(
+      'a typed lead time already in the past is warned, not refused',
+      (tester) async {
+        // Unlike the stepper and the unit chips, typing is accepted and then
+        // blocked at Save — refusing keystrokes would fight the typist.
+        await openReminder(tester, day: 5);
+        await typeAmount(tester, '30');
+
+        expect(amountText(tester), '30');
+        expect(
+          find.text('30 days before this event has already passed.'),
+          findsOneWidget,
+        );
+        expect(find.text(kSaveReasonReminder), findsOneWidget);
+      },
+    );
+
+    testWidgets('an empty box reverts to the last valid value on blur', (
+      tester,
+    ) async {
+      await openReminder(tester);
+      await typeAmount(tester, '4');
+      await typeAmount(tester, '');
+      // Moving focus to the name field is what a student does by tapping
+      // elsewhere on the form.
+      await tester.tap(find.byKey(const ValueKey('event-name')));
+      await tester.pumpAndSettle();
+
+      expect(amountText(tester), '4');
+      expect(find.text(kReminderAmountRangeMessage), findsNothing);
+    });
+
+    testWidgets('an out-of-range value clamps to the bound on blur', (
+      tester,
+    ) async {
+      await openReminder(tester);
+      await typeAmount(tester, '99');
+      await tester.tap(find.byKey(const ValueKey('event-name')));
+      await tester.pumpAndSettle();
+
+      expect(amountText(tester), '60');
+    });
+
+    testWidgets('zero clamps up to the minimum on blur', (tester) async {
+      await openReminder(tester);
+      await typeAmount(tester, '0');
+      await tester.tap(find.byKey(const ValueKey('event-name')));
+      await tester.pumpAndSettle();
+
+      expect(amountText(tester), '1');
+    });
+
+    testWidgets('the stepper keeps working after a typed value', (
+      tester,
+    ) async {
+      await openReminder(tester);
+      await typeAmount(tester, '5');
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-decrement')));
+
+      expect(amountText(tester), '4');
+    });
+
+    testWidgets('turning the reminder off clears a half-typed amount', (
+      tester,
+    ) async {
+      await openReminder(tester);
+      await typeAmount(tester, '');
+      expect(find.text(kSaveReasonReminder), findsOneWidget);
+
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
+
+      expect(find.byKey(const ValueKey('save-reason')), findsNothing);
+    });
   });
 
   group('saving', () {

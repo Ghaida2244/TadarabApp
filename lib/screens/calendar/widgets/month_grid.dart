@@ -9,6 +9,10 @@ import '../calendar_styles.dart';
 /// "+N" label, per the handoff's `list.slice(0, 2)`.
 const int kMaxDayDots = 2;
 
+/// Space between the dots, and between the last dot and the "+N" label —
+/// the handoff's `gap: 4px` on that row.
+const double kDayDotGap = 4;
+
 /// The white month card: Sunday-first weekday headers, one cell per day, an
 /// outlined today marker, and up to [kMaxDayDots] colour dots per day plus a
 /// "+N" overflow label.
@@ -174,26 +178,45 @@ class _DayCell extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 5),
-              SizedBox(
-                height: 6,
+              // Sized by its tallest child rather than pinned to the dots'
+              // 6px: the "+N" label is 9px, and a fixed 6px box handed the
+              // Row a 6px cross-axis constraint that painted the label
+              // clipped. Cross-axis overflow throws no error, which is why
+              // this only showed up on a device.
+              // Scaled down, like the number above it, for the narrow case:
+              // two dots plus a two-digit "+N" need ~38px, which a 320dp
+              // phone's ~31px cell can't give. Scaling keeps everything on
+              // one line and fully visible instead of clipping a digit, and
+              // does nothing at all when there is room.
+              FittedBox(
+                fit: BoxFit.scaleDown,
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    for (final event in events.take(kMaxDayDots))
-                      Padding(
+                    for (final (index, event)
+                        in events.take(kMaxDayDots).indexed) ...[
+                      if (index > 0) const SizedBox(width: kDayDotGap),
+                      Container(
                         key: ValueKey('day-dot-${event.eventId}'),
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                        child: Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: parseHexColor(event.color),
-                            shape: BoxShape.circle,
-                          ),
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: parseHexColor(event.color),
+                          shape: BoxShape.circle,
                         ),
                       ),
-                    if (overflow > 0)
-                      Text('+$overflow', style: CalendarText.dayOverflow),
+                    ],
+                    if (overflow > 0) ...[
+                      if (events.isNotEmpty)
+                        const SizedBox(width: kDayDotGap),
+                      Text(
+                        '+$overflow',
+                        style: CalendarText.dayOverflow,
+                        maxLines: 1,
+                      ),
+                    ],
                   ],
                 ),
               ),

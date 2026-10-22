@@ -189,8 +189,12 @@ class CalendarText {
     height: 1.5,
   );
 
-  /// The stepper's current amount — 17px.
+  /// The stepper's current amount, typed or stepped — 17px.
   static TextStyle get reminderValue => _nunito(17, FontWeight.w900);
+
+  /// The amount field's hint, shown only while the box is empty.
+  static TextStyle get reminderValueHint =>
+      _nunito(17, FontWeight.w900, color: AppColors.textOnDisabled);
 
   /// The "−" / "+" glyphs — 22px.
   static TextStyle reminderStepper(Color color) =>
@@ -254,6 +258,17 @@ const List<String> kEventSwatchPool = [
   '#0F766E',
   '#0B0F5B',
 ];
+
+/// Formats [color] as the `"#RRGGBB"` string events are stored with.
+///
+/// Alpha is dropped deliberately: `CalendarEvent.color` is a 6-digit hex and
+/// every swatch in [kEventSwatchPool] is fully opaque, so carrying an alpha
+/// channel through would produce a value `parseHexColor` reads back as a
+/// different colour. Always returns 7 characters, upper-case.
+String hexFromColor(Color color) {
+  final rgb = color.toARGB32() & 0xFFFFFF;
+  return '#${rgb.toRadixString(16).padLeft(6, '0').toUpperCase()}';
+}
 
 /// How many swatches the colour row shows, per the handoff's `.slice(0, 4)`.
 const int kEventSwatchCount = 4;
