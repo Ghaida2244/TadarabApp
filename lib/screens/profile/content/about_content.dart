@@ -1,6 +1,12 @@
 /// The written copy behind the three "classic" About documents — About Us,
-/// Privacy Policy and Terms of Use — transcribed verbatim from the Profile
-/// design handoff's `DOCS` constant.
+/// Privacy Policy and Terms of Use.
+///
+/// Started from the Profile design handoff's `DOCS` constant and since
+/// revised by the team: the handoff's wording is a draft, not a
+/// requirement, so several paragraphs were rewritten to be shorter, to use
+/// American spelling, and to describe what the app actually does (for
+/// example, Your Rights now points at Edit Profile and an email address,
+/// because there is no in-app account deletion).
 ///
 /// Kept as data in one file, as the design does, so the wording can be
 /// corrected without touching a screen.
@@ -38,24 +44,22 @@ const kAboutUsDocument = AboutDocument(
     AboutBlock(
       heading: 'About Tadarab',
       body:
-          'Tadarab is an AI-powered study assistant built to help students '
-          'study more effectively and more efficiently. Upload your own '
-          'lecture material and Tadarab turns it into quizzes and flashcards '
-          'tailored to what you chose to study.',
+          'Tadarab is an AI-powered study assistant. Upload your lecture '
+          'material, and Tadarab turns it into quizzes and flashcards based '
+          'on what you choose to study.',
     ),
     AboutBlock(
-      heading: 'How it helps',
+      heading: 'How It Helps',
       body:
-          'Tadarab builds practice from the mistakes you actually make, '
-          'tracks your progress as points and ranks, and keeps important '
-          'dates in one calendar with reminders — so studying stays '
-          'organised instead of scattered.',
+          'Tadarab builds practice from the mistakes you make, tracks your '
+          'progress with points and ranks, and keeps your important dates in '
+          "one calendar with reminders, so your studying stays organized.",
     ),
     AboutBlock(
       heading: 'Contact Us',
       body:
-          'Questions or feedback? We would love to hear from you. Reach us '
-          'at tadarabapp@gmail.com and we will get back to you.',
+          'Questions or feedback? Email us at tadarabapp@gmail.com, and '
+          "we'll get back to you.",
     ),
   ],
 );
@@ -73,16 +77,16 @@ const kPrivacyPolicyDocument = AboutDocument(
     AboutBlock(
       heading: 'Data We Collect',
       body:
-          'We collect basic account information, the study materials you '
-          'upload, the quizzes and flashcards generated from them, your '
-          'study progress and your calendar events — all to provide the '
-          'features of the app.',
+          'We collect your account details (name and email), the study '
+          'materials you upload, the quizzes and flashcards generated from '
+          'them, your study progress, and your calendar events. We use this '
+          "data only to provide the app's features.",
     ),
     AboutBlock(
       heading: 'AI Processing',
       body:
-          'Your uploaded materials may be processed by trusted AI services '
-          'in order to generate quizzes and flashcards.',
+          'Your uploaded materials are processed by a trusted AI service to '
+          'generate quizzes and flashcards.',
     ),
     AboutBlock(
       heading: 'Data Security',
@@ -93,8 +97,8 @@ const kPrivacyPolicyDocument = AboutDocument(
     AboutBlock(
       heading: 'Your Rights',
       body:
-          'You can update your account information or delete your account at '
-          'any time.',
+          'You can update your name in Edit Profile. To delete your account, '
+          'contact us at tadarabapp@gmail.com.',
     ),
   ],
 );
@@ -119,8 +123,8 @@ const kTermsOfUseDocument = AboutDocument(
       heading: 'Generated Content',
       body:
           'Quizzes and flashcards are generated automatically and may '
-          'contain mistakes. Always check them against your original '
-          'material before relying on them.',
+          'contain mistakes. Check them against your original material '
+          'before relying on them.',
     ),
     AboutBlock(
       heading: 'Account',

@@ -3,8 +3,12 @@ import 'package:flutter/material.dart';
 import '../../../theme/app_theme.dart';
 
 
-/// Copy and colours for the "lively" Learning Guide, transcribed verbatim
-/// from the Profile design handoff's `GUIDE` constant.
+/// Copy and colours for the "lively" Learning Guide.
+///
+/// Started from the Profile design handoff's `GUIDE` constant. The Retake
+/// paragraph has since been corrected against the code — see the note on
+/// that item — and the Streak paragraph carries a note about a known gap
+/// between the copy and current behaviour.
 ///
 /// The handoff ships two variants of this screen and its own prop default
 /// — and its code fallback — both say **lively**, so that is the one built.
@@ -90,9 +94,15 @@ const kGuideRankBody =
 const kGuideItems = [
   GuideItem(
     heading: 'Retake',
+    // Corrected against the code: `QuizSessionService.retakeSession`
+    // creates a brand-new session and never touches the source, and each
+    // retake's completion runs its own `totalPoints` increment — so results
+    // and points accumulate in a stack rather than being replaced. The
+    // handoff's original wording said the opposite.
     body:
-        'Redoes the session with the same settings but new questions.\n'
-        'Replaces your old results completely (correct, wrong, and points).',
+        'Redoes the session with the same settings but new questions or '
+        'cards. Your original session is kept — retakes are added to it as '
+        'a stack, and each one earns its own points.',
     color: Color(0xFF2563EB),
     tint: Color(0xFFE8F0FE),
     icon: Icons.refresh,
@@ -129,6 +139,13 @@ const kGuideItems = [
   ),
   GuideItem(
     heading: 'Streak',
+    // Describes the rule CLAUDE.md specifies, which is the intended
+    // behaviour. **Known gap, reported to the team:** only quiz sessions
+    // currently advance the streak — `StreakService.recordStudyActivity` is
+    // called from `QuizSessionService` twice and from `FlashcardService`
+    // not at all, so completing a flashcard session awards points but
+    // leaves the streak untouched. The copy is deliberately left describing
+    // the intended rule rather than the current bug.
     body:
         'Finish one full session (quiz or flashcards) each day to keep your '
         'streak alive.',
