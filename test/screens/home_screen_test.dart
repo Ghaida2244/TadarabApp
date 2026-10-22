@@ -1048,7 +1048,10 @@ void main() {
 
         await tester.tap(find.text('Profile'));
         await tester.pumpAndSettle();
-        expect(find.text('Profile screen'), findsOneWidget);
+        // The real Profile tab, not a placeholder: its section headings are
+        // what prove the right screen is mounted.
+        expect(find.text('Student Summary'), findsOneWidget);
+        expect(find.text('Log Out'), findsOneWidget);
 
         await tester.tap(find.text('Home'));
         await tester.pumpAndSettle();
@@ -1123,31 +1126,53 @@ void main() {
     );
 
     testWidgets(
-      'Profile placeholder shows a working Log out button when onSignOut is provided',
+      'Profile Log Out signs out once the confirmation is accepted',
       (tester) async {
+        // Taller than the 800x600 default so Profile's Log Out button is
+        // on screen — tap() does not scroll. Width is left alone so Home's
+        // own layout is unchanged.
+        tester.view.physicalSize = const Size(800, 1600);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
         var signedOut = false;
         await pumpHome(tester, onSignOut: () => signedOut = true);
 
         await tester.tap(find.text('Profile'));
         await tester.pumpAndSettle();
-        expect(find.text('Log out'), findsOneWidget);
+        await tester.tap(find.text('Log Out'));
+        await tester.pumpAndSettle();
+
+        // The confirm is a team decision departing from the SRS, so assert
+        // that signing out really does wait for it.
+        expect(signedOut, isFalse);
 
         await tester.tap(find.text('Log out'));
-        await tester.pump();
+        await tester.pumpAndSettle();
 
         expect(signedOut, isTrue);
       },
     );
 
     testWidgets(
-      'Profile placeholder has no Log out button when onSignOut is not provided',
+      'declining the Profile Log Out confirmation stays signed in',
       (tester) async {
-        await pumpHome(tester);
+        // Taller than the 800x600 default so Profile's Log Out button is
+        // on screen — tap() does not scroll. Width is left alone so Home's
+        // own layout is unchanged.
+        tester.view.physicalSize = const Size(800, 1600);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+        var signedOut = false;
+        await pumpHome(tester, onSignOut: () => signedOut = true);
 
         await tester.tap(find.text('Profile'));
         await tester.pumpAndSettle();
+        await tester.tap(find.text('Log Out'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Stay signed in'));
+        await tester.pumpAndSettle();
 
-        expect(find.text('Log out'), findsNothing);
+        expect(signedOut, isFalse);
       },
     );
   });

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
@@ -15,8 +16,33 @@ const kEventReminderTitle = 'Event Reminder';
 /// shows it.
 const kEventReminderBody = "Don't forget your upcoming event.";
 
+/// Notification title for the daily study reminder, exactly as the SRS
+/// specifies. Distinct from the event reminder above: this one nudges the
+/// student to study at all, not about a specific event.
+const kStudyReminderTitle = 'Time to Study!';
+
+/// Notification body for the daily study reminder, exactly as the SRS
+/// specifies.
+const kStudyReminderBody =
+    'Open Tadarab and continue your learning journey.';
+
+/// The notification ID reserved for the daily study reminder.
+///
+/// **Negative on purpose, and that is what makes it collision-proof.**
+/// [notificationIdFor] masks an event's hash with `& 0x7FFFFFFF`, so it can
+/// only ever return a value in `[0, 2^31-1]` — no event ID can produce a
+/// negative number, for any input. The plugin takes a bare `int id` with no
+/// validation, and Android accepts negative notification IDs and
+/// PendingIntent request codes.
+///
+/// The alternative — reserving a positive constant — would carry the same
+/// (vanishingly small) hash-collision risk that event IDs already carry
+/// against each other, and renumbering event IDs to free up a range would
+/// orphan every reminder already scheduled on a device.
+const int kStudyReminderNotificationId = -1;
+
 /// Schedules and cancels the local notification for a calendar event's
-/// reminder.
+/// reminder, and the student's daily study reminder.
 ///
 /// Every method is a no-op that swallows platform errors rather than
 /// throwing: a reminder is a convenience on top of the event, so failing to
@@ -48,6 +74,17 @@ class ReminderScheduler {
     'event_reminders',
     'Event reminders',
     channelDescription: 'Reminders for events you added to your calendar.',
+    importance: Importance.high,
+    priority: Priority.high,
+  );
+
+  /// Android notification channel for the daily study reminder. Separate
+  /// from the event channel so a student can silence study nudges without
+  /// losing event reminders, and vice versa.
+  static const _studyAndroidDetails = AndroidNotificationDetails(
+    'study_reminder',
+    'Daily study reminder',
+    channelDescription: 'Your daily nudge to open Tadarab and study.',
     importance: Importance.high,
     priority: Priority.high,
   );
@@ -130,6 +167,65 @@ class ReminderScheduler {
     } catch (_) {
       // Nothing to do — the reminder is gone either way.
     }
+  }
+
+  /// Schedules the daily study reminder for [time], replacing any previous
+  /// one, and reports whether it was actually set.
+  ///
+  /// Repeats every day at the same wall-clock time via
+  /// `DateTimeComponents.time`. The first occurrence is today if [time] is
+  /// still ahead, otherwise tomorrow — so enabling a 9am reminder at 10am
+  /// doesn't fire immediately or wait a day to start repeating.
+  ///
+  /// Like [scheduleReminder], this never throws: a reminder that can't be
+  /// set must not stop the student's choice from being saved, so the caller
+  /// is told by the return value instead.
+  Future<bool> scheduleDailyStudyReminder(TimeOfDay time) async {
+    await init();
+    if (!_initialized) return false;
+
+    try {
+      await _plugin.zonedSchedule(
+        id: kStudyReminderNotificationId,
+        title: kStudyReminderTitle,
+        body: kStudyReminderBody,
+        scheduledDate: _nextOccurrenceOf(time),
+        notificationDetails: const NotificationDetails(
+          android: _studyAndroidDetails,
+        ),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        // What makes it daily rather than one-shot: the plugin re-fires it
+        // whenever the clock next matches this time-of-day.
+        matchDateTimeComponents: DateTimeComponents.time,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Cancels the daily study reminder. Safe to call when none is set.
+  Future<void> cancelDailyStudyReminder() async {
+    try {
+      await _plugin.cancel(id: kStudyReminderNotificationId);
+    } catch (_) {
+      // Nothing to do — the reminder is gone either way.
+    }
+  }
+
+  /// The next moment the clock reads [time], today or tomorrow.
+  tz.TZDateTime _nextOccurrenceOf(TimeOfDay time) {
+    final now = tz.TZDateTime.now(tz.local);
+    var next = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      time.hour,
+      time.minute,
+    );
+    if (!next.isAfter(now)) next = next.add(const Duration(days: 1));
+    return next;
   }
 }
 

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:tadarab_app/models/calendar_event.dart';
 import 'package:tadarab_app/services/reminder_scheduler.dart';
 
@@ -40,5 +41,22 @@ class FakeReminderScheduler extends ReminderScheduler {
   @override
   Future<void> cancelReminder(String eventId) async {
     cancelled.add(eventId);
+  }
+
+  /// Times the daily study reminder was scheduled for.
+  final List<TimeOfDay> dailyScheduled = [];
+
+  /// How many times the daily study reminder was cancelled.
+  int dailyCancelled = 0;
+
+  @override
+  Future<bool> scheduleDailyStudyReminder(TimeOfDay time) async {
+    dailyScheduled.add(time);
+    return scheduleResult;
+  }
+
+  @override
+  Future<void> cancelDailyStudyReminder() async {
+    dailyCancelled++;
   }
 }

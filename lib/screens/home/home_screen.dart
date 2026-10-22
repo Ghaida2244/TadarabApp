@@ -16,7 +16,7 @@ import '../calendar/calendar_screen.dart';
 import '../courses/add_course_screen.dart';
 import '../courses/course_detail_screen.dart';
 import '../courses/courses_list_screen.dart';
-import '../placeholder_screen.dart';
+import '../profile/profile_screen.dart';
 import '../quiz/quiz_navigation.dart';
 import '../quiz/quiz_play_screen.dart';
 import '../quiz/quiz_sessions_screen.dart';
@@ -138,16 +138,13 @@ class _HomeScreenState extends State<HomeScreen> {
               onEventsChanged: () => setState(() => _homeRefreshToken++),
             ),
           ),
-          PlaceholderScreen(
-            label: 'Profile screen',
-            actions: widget.onSignOut == null
-                ? null
-                : [
-                    ElevatedButton(
-                      onPressed: widget.onSignOut,
-                      child: const Text('Log out'),
-                    ),
-                  ],
+          _lazyTab(
+            3,
+            () => ProfileScreen(
+              uid: widget.uid,
+              homeDataService: _dataService,
+              onSignOut: widget.onSignOut,
+            ),
           ),
         ],
       ),

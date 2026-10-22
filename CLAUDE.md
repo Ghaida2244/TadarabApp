@@ -1535,9 +1535,8 @@ mark it done, note decisions made, note what starts next.)*
   device: whether the permission dialog and scheduled reminders actually
   appear.
 
-  Still to do on this branch: Points/Ranks and Profile (`05_ranks.png`,
-  `06_profile.png` were removed from the mockups folder as out of scope
-  for Calendar and need to be re-added when that work starts).
+  Still to do on this branch: Points/Ranks and Profile — **done, see the
+  Profile section entry below.**
 
   **Post-merge follow-up (this merge).** `main`'s Courses & Material upload
   feature cascade-deletes a course's calendar events with a direct inline
@@ -1818,6 +1817,156 @@ mark it done, note decisions made, note what starts next.)*
   succeeds. The pickers' new look is **not yet confirmed on a device** —
   the tests check the theme that reaches them, not pixels.
 
+  **Profile section (Profile, Edit Profile, Ranks, Study Reminder, About) —
+  done.** Built from
+  `docs/mockups/design-handoff_profile/android-study-app-redesign/project/
+  Tadarab Phase 3b - Profile.dc.html` (identical to the copy in
+  `design-handoff_Calendar`; same bundle traps as the Calendar one — ignore
+  `project/design_handoff/` and `_ds/`, and `uploads/` is the old SRS
+  screens, not design). Nothing existed before this: the Profile tab was a
+  `PlaceholderScreen`, and no teammate had started Edit Account on any
+  branch.
+
+  **`rankForPoints` is the shared entry point** (`lib/utils/rank.dart`):
+  the ten tiers with the design's names, ranges and colours — which match
+  SRS Figures 109/110 exactly — plus `nextRankAfter`, `pointsToNextRank`,
+  `progressWithinRank` and `formatPoints`. Deliberately in `lib/utils/`
+  rather than inside the feature so Home, Quiz and Flashcards can all call
+  it; **rank colours live there as rank data, not in `AppColors`**. Edge
+  cases are covered: 0, every tier floor and ceiling, one point past each
+  ceiling, 7000+, negative, and null (both fall back to Beginner rather
+  than throwing). A test also asserts the table is contiguous, so no total
+  can fall between two ranks.
+
+  **INTEGRATION POINT — `currentRank` is still not written anywhere.** Every
+  screen derives the rank from `totalPoints`, so what students see is always
+  correct, but the stored field keeps its signup value
+  (`'Beginner Learner'`) and will disagree. **Nothing in the app displays
+  the stored field** — searched repo-wide: it appears only inside
+  `student.dart`'s own plumbing (default, declaration, `fromFirestore`,
+  `toFirestore`, `copyWith`) and one prose line here. Home's badge shows
+  `totalPoints` only. Closing the gap means setting
+  `currentRank: rankForPoints(newTotal).name` wherever `totalPoints` is
+  incremented — two places, both in Ghaida's services (`QuizSessionService`
+  on the complete and retake-complete paths, `FlashcardService` in its
+  completion batch) — and each needs the new total read back, since
+  `FieldValue.increment` never reveals it. **Not done here on purpose:
+  those are another member's files. Leen is coordinating it with Ghaida.**
+  The note also lives as a doc comment on `rankForPoints`.
+
+  **Three team decisions that depart from the SRS**, all following the
+  unified design:
+  1. **Log Out now asks first.** The SRS's `Profile Page Log Out Option.png`
+     logs out immediately; the design adds a confirm ("Log out of Tadarab?"
+     / "Log out" / "Stay signed in") and its own notes call for it.
+  2. **Edit Profile edits the name only.** The SRS's `Edit Account Page.png`
+     offers Change Name, Change Email *and* Change Password with a
+     current-password field; the design replaces all that with name-only
+     editing and an explicitly locked email ("Your email can't be changed
+     here."). Consequences, accepted: no reauthentication flow, no verified
+     email change, and no duplicate-email validation — unreachable when the
+     email can't be edited. It also avoids the problem that changing an
+     email would strand the old address on the student doc and on every
+     `CalendarEvent`, which stamps `email` as a non-null FK.
+  3. **The Study Reminder uses the themed Material time picker** from
+     `calendar_pickers.dart`, not the design's custom hour/minute sheet, for
+     consistency with the Calendar — which is itself the reverse of the
+     Calendar's own history, where a custom sheet was replaced by the
+     platform picker. The two features' designs disagree on this; the app
+     now has one answer.
+
+  **Firebase Auth is untouched, and `AuthService` gained no method.**
+  `displayName` is written once at signup (`auth_service.dart:123`) and
+  **never read** — every name the UI shows comes from Firestore via
+  `watchStudent`. So the new `ProfileService.updateName` writes only the
+  `name` field. **Known consequence:** after an edit, Auth's `displayName`
+  and Firestore's `name` drift apart. Harmless today; worth knowing if
+  anyone later reads `user.displayName` and gets a stale value.
+
+  **`ProfileService`** (`lib/services/profile_service.dart`) does narrow
+  field writes like `CalendarService`, precisely so `Student.copyWith` —
+  which only accepts the streak fields — needn't be widened. Turning the
+  reminder off clears `reminderTime` along with the flag, so it matches the
+  Attributes Dictionary's never-set shape rather than leaving a half-state.
+
+  **Study reminder notifications** reuse the Calendar's plumbing (timezone
+  init, permission request, manifest receivers, desugaring) and add
+  `scheduleDailyStudyReminder` / `cancelDailyStudyReminder` to
+  `ReminderScheduler`, with its own `study_reminder` channel so a student
+  can mute study nudges without losing event reminders. Text is exactly
+  "Time to Study!" / "Open Tadarab and continue your learning journey.".
+  Repeats daily via `DateTimeComponents.time`, first firing today if the
+  time is still ahead and tomorrow otherwise. Permission-denied and
+  schedule-refused both store **`reminderEnabled: false`** and tell the
+  student, exactly as Add Event does.
+
+  **`kStudyReminderNotificationId = -1`, and the sign is the point.**
+  `notificationIdFor` masks event IDs with `& 0x7FFFFFFF`, so its range is
+  `[0, 2^31-1]` — a negative reserved ID therefore cannot collide with any
+  event's, for any event ID whatsoever, and no existing event ID had to be
+  renumbered (which would have orphaned reminders already scheduled on a
+  device). The plugin declares a bare `required int id` with no validation.
+  Note the pre-existing test comment "as the plugin requires" overstates
+  that mask's effect; it still passes, since event IDs remain non-negative.
+  **Not yet confirmed on a device** — Leen is checking it fires on the
+  emulator.
+
+  **The ten rank icons are real CustomPainters**, not Material
+  approximations: each of the design's bespoke SVG paths (circle, triangle,
+  diamond, hexagon, shield, bolt, star, flame, gem, crown) is hand-
+  translated into a `Path` in `rank_icon.dart` and scaled from the 24×24
+  viewBox, so they match the handoff exactly with no new package. Filled for
+  a rank reached, outlined for one not. A test asserts every glyph is
+  non-empty, stays inside the viewBox, and is distinct from the others.
+  The design's **"unique"** icon set is used (its `rankIcons` prop default
+  says `star` while its code fallback says `unique` — contradictory, and
+  Leen chose unique), and the **"CURRENT" badge stays hidden**, per the
+  design's own `currentBadge` default. The Learning Guide is the design's
+  **"lively"** variant, where prop default and code fallback agree.
+
+  **Shared-file change — needs the all-four PR review.** Exactly one:
+  `lib/screens/home/home_screen.dart`, swapping the Profile
+  `PlaceholderScreen` for `_lazyTab(3, () => ProfileScreen(...))` — one
+  import added, one removed (`placeholder_screen.dart` became unused once
+  all four tabs were real; the file itself is left in place). Lazy for the
+  same reason the Calendar tab is: `IndexedStack` would otherwise open a
+  second `watchStudent` subscription the moment Home mounts, for a tab the
+  student may never open. **No other shared file was touched** —
+  `student.dart`, `app_colors.dart`, `app_typography.dart`, `app_theme.dart`,
+  `auth_service.dart`, `main.dart` and `pubspec.yaml` are all unchanged, and
+  Profile styles live in a feature-local `profile_styles.dart` (same bend as
+  the Calendar's, diverging from Quiz, which put its styles in the shared
+  file).
+
+  **Three real bugs the tests caught**, all written during this pass:
+  `CrossAxisAlignment.stretch` on the summary pair and on the Learning
+  Guide's points tiles demanded an infinite height inside a scroll view
+  (both now `IntrinsicHeight`, which is what actually makes the cards match
+  height like the design's flex row); and the rank card's and Ranks row's
+  label pairs overflowed horizontally by ~9px (both now `Flexible` with
+  ellipsis, so a six-figure total or a long rank name can't break the row).
+
+  **Test-harness notes.** Profile pumps at 412×1600 and Ranks at 412×3000:
+  `tap()` does not scroll, `ensureVisible` is unreliable for this
+  `Column > Expanded > SingleChildScrollView` shape, and both lists build
+  lazily, so a short surface leaves later rows unbuilt. The Study Reminder
+  suite is 600 wide for Material's time picker, same as Add Event. And a
+  loop that re-pumps inside one `testWidgets` leaves the previously pushed
+  route on the navigator — the About-row checks are generated as separate
+  tests instead.
+
+  **130 Profile tests** (rank logic 27, rank icons 25, Profile screen 21,
+  Edit Profile 12, Ranks 11, Study Reminder 11, About/Guide 10, service 9,
+  logout dialog 4). **Whole suite: 992 passing, 1 failing** — still only
+  `text_extraction_service_test`'s PPTX case, pre-existing on `main` and
+  not this feature's. `flutter analyze` reports only the same two
+  pre-existing infos; `flutter build apk --debug` succeeds. Still not
+  verified on a device: whether the daily reminder actually fires, and how
+  the hand-painted rank icons look at real size.
+
+  Still to do on this branch: nothing — Calendar and Profile/Ranks/Study
+  Reminder are both complete, pending the `currentRank` coordination above.
+
 ## Design handoffs
 
 - `docs/mockups/android-study-app-redesign/` — Phase 0 (Auth: Welcome, Log
@@ -1833,6 +1982,14 @@ mark it done, note decisions made, note what starts next.)*
   old SRS screens fed into the tool), not design. `Tadarab Phase 3b -
   Profile.dc.html` sits in the same bundle and is Leen's Profile/Ranks
   work, not yet started.
+- `docs/mockups/design-handoff_profile/` — the Profile section
+  (`project/Tadarab Phase 3b - Profile.dc.html`), implemented: Profile,
+  Ranks, Edit Profile, Study Reminder and the four About documents. Same
+  bundle shape and same traps as the Calendar one — read only that file,
+  ignore the nested `project/design_handoff/` and `_ds/` folders, and treat
+  `uploads/`/`ref/` as reference images (the old SRS screens), not design.
+  The Profile file is byte-identical to the copy inside
+  `design-handoff_Calendar`.
 - `docs/mockups/design_handoff_flashcard/` — the same design-system bundle,
   with the Phase 2b (Flashcards) frames and reference PNGs added. Used to
   build the Flashcards feature's screens (see Phase C above); not a
