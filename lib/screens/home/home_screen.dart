@@ -6,15 +6,17 @@ import '../../features/flashcards/screens/flashcard_sessions_screen.dart';
 import '../../models/course.dart';
 import '../../models/student.dart';
 import '../../models/study_material.dart';
+import '../../services/calendar_service.dart';
 import '../../services/courses_service.dart';
 import '../../services/flashcard_service.dart';
 import '../../services/home_data_service.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
+import '../calendar/calendar_screen.dart';
 import '../courses/add_course_screen.dart';
 import '../courses/course_detail_screen.dart';
 import '../courses/courses_list_screen.dart';
-import '../placeholder_screen.dart';
+import '../profile/profile_screen.dart';
 import '../quiz/quiz_navigation.dart';
 import '../quiz/quiz_play_screen.dart';
 import '../quiz/quiz_sessions_screen.dart';
@@ -32,6 +34,7 @@ class HomeScreen extends StatefulWidget {
     super.key,
     required this.uid,
     this.homeDataService,
+    this.calendarService,
     this.coursesService,
     this.flashcardServiceBuilder,
     this.now,
@@ -42,6 +45,9 @@ class HomeScreen extends StatefulWidget {
 
   /// Overridable for tests; defaults to the real Firebase-backed service.
   final HomeDataService? homeDataService;
+
+  /// Overridable for tests; passed straight to the Calendar tab.
+  final CalendarService? calendarService;
 
   /// Overridable for tests; defaults to the real Firebase-backed service.
   /// Used both by the onboarding "Create my first course" button and by
@@ -76,7 +82,29 @@ class _HomeScreenState extends State<HomeScreen> {
           FlashcardService(uid: uid, courseId: courseId);
   int _tabIndex = 0;
 
+  /// Bumped whenever the Calendar adds or deletes an event, so the Home tab
+  /// re-reads its Upcoming section instead of showing a stale list when the
+  /// student switches back to it.
+  int _homeRefreshToken = 0;
+
+  /// Tabs the student has actually opened. [IndexedStack] builds every child
+  /// eagerly, which would subscribe the Calendar to Firestore the moment
+  /// Home mounted — so unvisited tabs render as an empty placeholder until
+  /// they're first selected.
+  final Set<int> _visitedTabs = {0};
+
   DateTime get _now => widget.now ?? DateTime.now();
+
+  void _selectTab(int index) {
+    setState(() {
+      _tabIndex = index;
+      _visitedTabs.add(index);
+    });
+  }
+
+  /// [child] once its tab has been opened, an empty box before that.
+  Widget _lazyTab(int index, Widget Function() child) =>
+      _visitedTabs.contains(index) ? child() : const SizedBox.shrink();
 
   @override
   Widget build(BuildContext context) {
@@ -91,30 +119,38 @@ class _HomeScreenState extends State<HomeScreen> {
             flashcardServiceBuilder: _flashcardServiceBuilder,
             now: _now,
             active: _tabIndex == 0,
-            onCourseCreated: () => setState(() => _tabIndex = 1),
+            refreshToken: _homeRefreshToken,
+            onCourseCreated: () => _selectTab(1),
+            onOpenCalendarTab: () => _selectTab(2),
           ),
           CoursesListScreen(
             uid: widget.uid,
             coursesService: _coursesService,
             active: _tabIndex == 1,
           ),
-          const PlaceholderScreen(label: 'Calendar screen'),
-          PlaceholderScreen(
-            label: 'Profile screen',
-            actions: widget.onSignOut == null
-                ? null
-                : [
-                    ElevatedButton(
-                      onPressed: widget.onSignOut,
-                      child: const Text('Log out'),
-                    ),
-                  ],
+          _lazyTab(
+            2,
+            () => CalendarScreen(
+              uid: widget.uid,
+              calendarService: widget.calendarService,
+              homeDataService: _dataService,
+              now: _now,
+              onEventsChanged: () => setState(() => _homeRefreshToken++),
+            ),
+          ),
+          _lazyTab(
+            3,
+            () => ProfileScreen(
+              uid: widget.uid,
+              homeDataService: _dataService,
+              onSignOut: widget.onSignOut,
+            ),
           ),
         ],
       ),
       bottomNavigationBar: _BottomNav(
         currentIndex: _tabIndex,
-        onTap: (index) => setState(() => _tabIndex = index),
+        onTap: _selectTab,
       ),
     );
   }
@@ -128,7 +164,9 @@ class _HomeTab extends StatefulWidget {
     required this.flashcardServiceBuilder,
     required this.now,
     required this.active,
+    required this.refreshToken,
     required this.onCourseCreated,
+    required this.onOpenCalendarTab,
   });
 
   final String uid;
@@ -145,11 +183,21 @@ class _HomeTab extends StatefulWidget {
   /// zero-courses onboarding state within the same session.
   final bool active;
 
+  /// Changes whenever something outside this tab (today, only the Calendar)
+  /// has altered data Home shows, prompting a re-read. Distinct from
+  /// [active]: an event added on the Calendar tab must refresh Home even
+  /// though Home is not the active tab at that moment.
+  final int refreshToken;
+
   /// Switches HomeScreen's bottom-nav tab to Courses — called once a course
   /// is successfully created from Home's onboarding card, so the student
   /// lands on the Courses tab (with the new course visible) instead of
   /// staying on Home.
   final VoidCallback onCourseCreated;
+
+  /// Switches HomeScreen's bottom-nav tab to Calendar — see
+  /// [_HomeTabState._openCalendarTab].
+  final VoidCallback onOpenCalendarTab;
 
   @override
   State<_HomeTab> createState() => _HomeTabState();
@@ -161,8 +209,10 @@ class _HomeTabState extends State<_HomeTab> {
   // student navigates to a pushed screen (Quiz, Add Course, ...) and back
   // — a `late final` Future computed once at first access would go stale
   // forever (e.g. completing a quiz and returning would never show the
-  // updated points/streak/Continue-card). _reload() re-fetches everything
-  // and is called whenever a pushed screen is popped back to Home.
+  // updated points/streak/Continue-card). The same applies to events
+  // added or deleted on the Calendar tab. _reload() re-fetches everything
+  // and is called whenever a pushed screen is popped back to Home, this
+  // tab becomes active again, or [refreshToken] changes.
   late Future<List<Course>> _courses;
   late Future<WeeklyProgress> _weeklyProgress;
   late Future<InProgressSession?> _inProgress;
@@ -177,7 +227,13 @@ class _HomeTabState extends State<_HomeTab> {
   @override
   void didUpdateWidget(covariant _HomeTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.active && !oldWidget.active) _reload();
+    // Two independent triggers: becoming the active tab again (a course
+    // may have been created on the Courses tab), and the shell bumping
+    // [refreshToken] (an event was added or deleted on the Calendar tab,
+    // which can happen while Home is inactive).
+    final becameActive = widget.active && !oldWidget.active;
+    final dataChangedElsewhere = widget.refreshToken != oldWidget.refreshToken;
+    if (becameActive || dataChangedElsewhere) _reload();
   }
 
   void _loadAll() {
@@ -380,16 +436,9 @@ class _HomeTabState extends State<_HomeTab> {
   }
 
   void _openCalendarTab() {
-    // The bottom-nav Calendar tab isn't reachable from here without lifting
-    // tab state up; "See all" is a reasonable no-op-with-navigation stand-in
-    // until Calendar (Phase C) exists to actually navigate to.
-    Navigator.of(context)
-        .push(
-          MaterialPageRoute(
-            builder: (_) => const PlaceholderScreen(label: 'Calendar screen'),
-          ),
-        )
-        .then((_) => _reload());
+    // Switches the bottom nav to the real Calendar tab (tab state lives in
+    // the shell above), rather than pushing a second Calendar over Home.
+    widget.onOpenCalendarTab();
   }
 
   @override

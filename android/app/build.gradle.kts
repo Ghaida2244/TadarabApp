@@ -13,6 +13,11 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // Required by flutter_local_notifications (10+): it relies on core
+        // library desugaring so scheduled notifications work on older
+        // Android versions. Without this the build fails outright at
+        // :app:checkDebugAarMetadata, whether or not a reminder is ever set.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -39,6 +44,12 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+}
+
+dependencies {
+    // The desugaring runtime itself. 2.1.4 is the minimum the
+    // flutter_local_notifications 22.x README specifies.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 kotlin {

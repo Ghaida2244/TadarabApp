@@ -1364,6 +1364,609 @@ mark it done, note decisions made, note what starts next.)*
   added this time; same pre-existing `docs/Lecture1.pptx` fixture gap,
   still unrelated and still not this feature's to fix).
 
+  **Calendar & reminders** (Leen, `feature/calendar-points`) — done.
+  `CalendarEvent` already existed from Phase A and the required model accuracy audit found
+  **10/10 fields matching** `docs/Attributes Dictionary Table.png` with
+  nothing missing or added, so no model change was needed — the only
+  deviations are the two already-approved project-wide patterns (string
+  document IDs rather than INT, and `#`-prefixed hex colours).
+  No `firestore.rules` change either: the existing owner-scoped rule
+  already covers `users/{uid}/events/{eventId}`.
+
+  Built `lib/utils/event_time.dart` (month-grid construction, `"HH:mm"`
+  ↔ `TimeOfDay` ↔ `"12:00 PM"`, reminder lead-time arithmetic) and
+  `lib/services/calendar_service.dart`, injectable like `AuthService`/
+  `HomeDataService`. `CalendarService.addEvent` returns the new document
+  ID rather than a filled-in `CalendarEvent`, specifically so it needs no
+  `copyWith` on the model — model classes are shared files frozen after
+  Phase B, and the ID is all any caller needs. The month query is a
+  single-field range plus order-by on that same field, which Firestore
+  auto-indexes; this deliberately avoids the two-field shape that forced
+  the composite indexes added for Home in Phase B.
+
+  Screens: the Calendar tab (month grid, red today marker, a colour dot
+  per event, day-details bottom sheet, centred delete confirmation) and
+  Add Event (name, optional course, four-preset colour picker replaced by
+  the course-colour chip once a course is chosen, date/time pickers,
+  reminder toggle with amount + singular/plural unit). Add Event's fields
+  are built locally rather than with `AppTextField`, whose leading-icon
+  layout doesn't match these boxes.
+
+  Design decisions confirmed with the team: the Calendar tab is grid-only
+  — the Upcoming Events list belongs on Home, and an earlier mockup
+  showing it on Calendar was a bad reference, since corrected; dots render
+  on **every** day with events including today and past days (the mockups'
+  "Midterm — Today" vs. Midterm-on-May-5 disagreement was an inconsistency
+  between figures, not a rule); and the reminder unit is pluralised by
+  amount, with the amount in its own field so the dropdown shows the unit
+  word alone.
+
+  Reminders use `flutter_local_notifications` + `timezone`, with
+  `POST_NOTIFICATIONS`/`RECEIVE_BOOT_COMPLETED` and the plugin's receivers
+  added to `AndroidManifest.xml` so a scheduled reminder survives a
+  reboot. Scheduling is best-effort and never throws — an event must still
+  save even when its reminder can't be set — and reports success via its
+  return value instead. `AndroidScheduleMode.inexactAllowWhileIdle` is
+  used so the app doesn't need the `SCHEDULE_EXACT_ALARM` special-access
+  grant; a reminder may therefore fire a little late if the device is
+  dozing. **Not yet verified on a physical device** — the notification
+  plugin has no implementation under `flutter test`, so the scheduling
+  path is covered only by a fake.
+
+  Home wiring turned out to be much smaller than scoped:
+  `HomeDataService.fetchUpcomingEvents` and `UpcomingSection` were already
+  reading real events (they were simply always empty, because nothing
+  created events), so neither was rebuilt. What was needed: point the
+  Calendar tab and "See all" at the real screen, and re-read Home's
+  Upcoming after an event is added or deleted — `_HomeTab`'s futures were
+  `late final`, so they could never refresh. Tabs in the shell are now
+  built lazily: `IndexedStack` builds every child eagerly, which
+  subscribed the Calendar to Firestore the moment Home mounted, for a tab
+  the student may never open.
+
+  26 unit tests + 29 widget tests added; **144 tests total, 0 failures**,
+  `flutter analyze` clean. Harness note for whoever writes the next
+  screen: `tester.ensureVisible` does not reliably scroll this
+  `Column > Expanded > SingleChildScrollView` layout, so the Add Event
+  tests set a tall 420x1600 surface instead. (This originally had to be
+  600 wide, because the Material time picker's OK button overflowed a
+  phone-width surface — no longer the case since the SRS audit below
+  replaced that picker.)
+
+  **Build break fixed on the way in.** `main` did not compile: commit
+  `7084fe4` renamed `ContinueOrStartCard.onFlashcards` to `onNewFlashcards`
+  and retitled two of its buttons, but missed the call site in
+  `home_screen.dart` and the tests tapping those buttons. Anything that
+  renames a widget parameter should be checked with `flutter analyze`
+  before the PR — the tests can't catch it, because a compile error stops
+  them from running at all.
+
+  **SRS audit (Calendar).** Audited Add Event against the SRS before
+  changing anything; state found → action taken:
+  1. *Event name VARCHAR(100)* — not enforced, any length saved → added a
+     `LengthLimitingTextInputFormatter(100)` (`kEventNameMaxLength`).
+  2. *Date picker (Figure 98)* — was Material's `showDatePicker` → replaced
+     with `EventDatePickerSheet`: mini month grid, two-letter weekday
+     headers, red-outlined today, grey (`#C7CBD2`, sampled from the
+     figure) selected day, Cancel; tapping a day selects and closes.
+  3. *Time picker (Figure 99)* — was Material's `showTimePicker` dial →
+     replaced with `EventTimePickerSheet`: "Select Time", live preview,
+     Hour 1–12 grid, Minute grid in 5-minute steps, AM/PM toggle, red
+     Confirm. 12 AM/12 PM conversion lives in the unit-tested
+     `timeOfDayFrom12Hour`.
+     **(Items 2 and 3 were reversed by the unified-UI pass below — both
+     custom sheets, and `timeOfDayFrom12Hour`, have since been deleted in
+     favour of the platform pickers.)**
+  4. *Notification text (Figure 107)* — was the event's name / "Starts at
+     …" → now exactly "Event Reminder" / "Don't forget your upcoming
+     event." (`kEventReminderTitle`/`kEventReminderBody`).
+  5. *Cascade delete* — added `CalendarService.deleteEventsForCourse(uid,
+     courseId)`, returning the count deleted. **No caller yet — Manar's
+     Courses feature should call it when a course is deleted.** It matches
+     the stored `courseId` key (the model's camelCase name for the table's
+     `courseID`), deletes in batches of ≤500 (Firestore's limit), and
+     cancels each batch's reminders once that batch commits.
+  6. *Past dates* — already selectable, kept that way. **This deliberately
+     departs from Figure 98**, which greys out past days and the
+     previous-month arrow; the team chose to let the calendar record past
+     events. Matching the figure is a two-line change in
+     `event_date_picker_sheet.dart`.
+  7. *Reminder already passed* — was a silent skip (the save ignored
+     `scheduleReminder`'s false return) → now an inline error on the
+     reminder row that blocks saving until the lead time is shortened or
+     the reminder turned off (`reminderAlreadyPassed`, unit-tested
+     including the "fires exactly now" edge).
+
+  Three more defects surfaced during the audit and were fixed, all of
+  which made reminders or data silently wrong:
+  - **Notification permission was never requested.** `requestPermission()`
+    existed with no caller, so on Android 13+ every reminder was scheduled
+    and then silently dropped. It's now requested on save when a reminder
+    is on. If it's declined, or the platform refuses to schedule, the
+    event still saves and the student gets a message saying the reminder
+    couldn't be set.
+  - **Deleting an event left its reminder scheduled**, so a deleted event
+    still sent its notification. `CalendarService.deleteEvent` now cancels
+    the reminder itself (only after the delete succeeds), which keeps the
+    rule "a deleted event never notifies" true on every delete path,
+    including the course cascade.
+  - **Every event was saved with an empty `email`**, violating the
+    Attributes Dictionary Table's non-null FK to Student.
+    `CalendarService.addEvent` now stamps the signed-in student's email.
+    Events created before this fix still have `email: ''` in Firestore.
+
+  **`reminderEnabled` now records what's actually true.** If permission
+  is declined or the platform refuses to schedule, the event is stored with
+  `reminderEnabled: false` (and `reminderBefore`/`reminderUnit` null, the
+  same shape as the toggle being off), not what the student asked for.
+  Add Event now schedules the reminder *before* the single Firestore write,
+  using an ID reserved with `CalendarService.newEventId` (generated
+  locally, no network). If the write then fails, the reminder is cancelled.
+  196 tests, 0 failures.
+
+  **Android build config — core library desugaring (build-config fix).**
+  The app did not build at all on an emulator once
+  `flutter_local_notifications` was added: `:app:checkDebugAarMetadata`
+  failed with "Dependency ':flutter_local_notifications' requires core
+  library desugaring to be enabled for :app". The plugin (v10+) relies on
+  desugaring for scheduled notifications on older Android versions, and
+  requires it even in apps that never schedule one. Fixed in
+  `android/app/build.gradle.kts`: `isCoreLibraryDesugaringEnabled = true`
+  in `compileOptions`, plus a `coreLibraryDesugaring("com.android.tools:
+  desugar_jdk_libs:2.1.4")` dependency (2.1.4 is the minimum the plugin's
+  22.x README specifies). `flutter build apk --debug` now succeeds.
+
+  **This should have been caught when the package was added**, not when
+  someone first tried to run the app. Nothing in `flutter test` or
+  `flutter analyze` compiles the Android project, so neither catches it —
+  both passed the whole time the app was unbuildable. Lesson for the rest
+  of Phase C: any new plugin with a native Android side needs one actual
+  `flutter build apk --debug` before the feature is called done; a green
+  test suite says nothing about whether the app builds. (The
+  Kotlin-Gradle-Plugin deprecation warning printed by that build comes
+  from the Firebase and `flutter_timezone` plugins, is pre-existing, and
+  is unrelated to this fix.)
+
+  Added dev dependencies `fake_cloud_firestore` and `mock_exceptions` so
+  `CalendarService` is tested against an in-memory Firestore rather than
+  only through fakes. **190 tests, 0 failures; `flutter analyze` clean.**
+  The new name-limit and passed-reminder tests were checked by breaking
+  each fix and confirming the tests fail. Still not verified on a physical
+  device: whether the permission dialog and scheduled reminders actually
+  appear.
+
+  Still to do on this branch: Points/Ranks and Profile — **done, see the
+  Profile section entry below.**
+
+  **Post-merge follow-up (this merge).** `main`'s Courses & Material upload
+  feature cascade-deletes a course's calendar events with a direct inline
+  `users/{uid}/events` query, because `CalendarService.deleteEventsForCourse`
+  wasn't merged at the time — its own note says to "swap the call site once
+  it is." It is merged now, so that swap is outstanding. Until it happens
+  there are two independent implementations of the same cascade, and only
+  one of them (`CalendarService`'s) cancels the deleted events' scheduled
+  reminders — so deleting a course through the Courses UI today still
+  leaves its events' reminders scheduled.
+
+  **Unified UI pass (Calendar).** Rebuilt every Calendar screen against
+  `docs/mockups/design-handoff_Calendar/android-study-app-redesign/project/
+  Tadarab Phase 3 - Calendar.dc.html`, which is the source of truth for this
+  feature. Two traps in that bundle, worth knowing before anyone opens it:
+  its nested `project/design_handoff/` folder is a **stale earlier export**
+  (111 differing lines — 15px day numbers, hardcoded swatches) whose own
+  README still names Phase 2 - Quiz as primary, and its `_ds/modernist-…/`
+  folder is an **unrelated design system** (Archivo, `#ec3013`, 0px radius)
+  that the Calendar file never imports — only the abandoned "Home Redesign
+  v2/v3" explorations do. `uploads/` and `ref/` are reference images, not
+  design: `uploads/` holds the old SRS screens the designer fed *in* (the
+  same frames as `docs/mockups/calendar-points/`), and `ref/` has no
+  Calendar frames at all. The only real imports are `support.js` (the
+  prototype runtime) and `android-frame.jsx` (a generic Material 3 device
+  bezel marked `@ds-adherence-ignore`, i.e. the phone mockup around the
+  screen, not Tadarab design). The identical copy of the Calendar file in
+  `docs/mockups/design-handoff_quiz/` is byte-for-byte the same export.
+
+  **What changed.** Calendar tab: navy header now has rounded bottom
+  corners, a 24px title, a month/year-view toggle, and a 40px red Add Event
+  pill with the hard `0 3px 0` shadow; a "Back to today" pill appears
+  whenever the viewed month isn't the current one; the white month card
+  grew a `0 0 0 2px #EEF0FF` ring; **today is now an outline** (pale red
+  fill + 2px red border + red text) rather than a solid red tile — the
+  handoff and the original SRS figure agree on this and the old code
+  didn't; dots cap at **2 plus a "+N" label**; empty days are no longer
+  tappable; and the grid **flexes to fill the screen** instead of
+  scrolling. Day sheet: an event-count line, the linked course's name in
+  the event's own colour, a `· reminder N units before` clause, a 6px
+  full-height colour bar, a 34×34 tinted delete button, time-sorted rows,
+  and a 62%-height cap with tap-to-dismiss. Delete confirm: a 52px tinted
+  trash badge, centred text, a **dynamic body** (reminder-cancelled vs.
+  removed-from-this-day, plus "This can't be undone."), and
+  "Delete event" / "Keep it". Add Event: all-caps 12px field labels, 54px
+  fields with focus/filled border states, an **inline** course dropdown
+  (replacing the modal sheet), **course-aware colour presets**, a single
+  reminder card with a hand-built 52×30 switch, a **1–60 stepper**, inline
+  unit chips, a three-state note box, and a **pinned red Save button,
+  disabled with a reason line** until the form is valid.
+
+  **New: the year view** (`widgets/year_grid.dart`), built to the handoff's
+  two prototype defaults — `yearMarkers = fill` (an event day is filled
+  with its earliest event's colour) and `todayStyle = ring` (today gets a
+  pale red pill, a red ring and a 1.15× nudge). A day that is both today
+  and has an event takes the event's fill but keeps the ring. This needed
+  `CalendarService.watchEventsForYear`, since the existing stream only
+  covers one month; it is the same single-field range + order-by shape as
+  `watchEventsForMonth`, so it needs **no composite index** either.
+
+  **Team decision — the date and time pickers are now the platform's.**
+  The design uses the native date/time inputs, so `EventDatePickerSheet`
+  and `EventTimePickerSheet` were **deleted** along with
+  `timeOfDayFrom12Hour` and `kWeekdayHeadersShort` (confirmed by a repo-wide
+  search that nothing else used either). `widgets/calendar_pickers.dart`
+  now wraps `showDatePicker`/`showTimePicker` with a **local** `Theme`
+  override for the navy/red palette — not a change to the shared
+  `AppTheme`. **This deliberately departs from SRS Figures 98–99**, which
+  the earlier audit had matched by hand. Past dates stay selectable
+  (`firstDate` reaches five years back), which the handoff explicitly
+  endorses: "pick a date that has already been and the event saves and
+  lists normally. Only the *reminder* is time-checked."
+
+  **Reminder validation flipped from block-on-save to refuse-on-entry**,
+  per the handoff's own rule — "an invalid value is rejected, not
+  accepted-then-warned". A unit whose lead time has already passed is
+  greyed and inert; the stepper refuses a value that would put the reminder
+  in the past and explains why. The note box carries the state in three
+  colours. Everything the design doesn't draw was kept and restyled: the
+  100-character `eventName` cap, the exact "Event Reminder" / "Don't forget
+  your upcoming event." notification text, `reminderEnabled` still stored
+  as **false** when permission is declined or scheduling fails (with the
+  three snackbar messages), the screen loading and error + "Try again"
+  states, the "Couldn't save your event" banner, "Saving…", the "You
+  haven't added any courses yet" line, the empty-month line (the handoff's
+  own empty-state branch renders *nothing* — a real hole in it), and
+  `deleteEventsForCourse`.
+
+  **Decisions recorded.** Text styles live in a Calendar-local
+  `calendar_styles.dart`, **not** in `app_typography.dart` — this diverges
+  from the Quiz feature, which put its `quiz*` styles in the shared file;
+  the trade was made to avoid touching a frozen shared file, and every
+  colour still comes from `AppColors` with Nunito set explicitly. The
+  16-colour `kEventSwatchPool` lives there too, as feature data rather than
+  a theme role. Spelling follows Manar's Courses screens — **"color"**, not
+  the handoff's "colour". The custom-colour "+" reuses the Courses
+  feature's zero-dependency hue-slider approach rather than adding
+  `flutter_colorpicker`, so **`pubspec.yaml` was not touched**. Course
+  names for the day sheet come from `CoursesService.fetchCourses` (not
+  `HomeDataService`, whose version wraps no failures), fetched once by
+  `CalendarScreen` and passed down to Add Event, so the feature has one
+  source for "the student's courses". **No shared or frozen file was
+  edited.** `CalendarScreen` keeps its now-unused `homeDataService`
+  parameter precisely because dropping it would mean editing
+  `home_screen.dart`.
+
+  **Graceful degradation, flagged as a deliberate bend of the "every
+  network call shows an actionable message" rule:** if the course fetch
+  fails, event rows simply omit the course name rather than blocking events
+  that loaded fine. An event whose course was since *deleted* takes the
+  same path. Both are tested.
+
+  **Three real bugs the tests caught before they shipped**, all in code
+  written during this pass: the Calendar header's top row overflowed by
+  49px at phone width because the title couldn't yield to the two
+  fixed-width actions (now `Expanded` with ellipsis, as the handoff's CSS
+  would shrink it); the day cell's content overflowed by a fraction of a
+  pixel once the grid compressed, since a flexing grid's contents must
+  tolerate compression (the number is now `Flexible` + `BoxFit.scaleDown`,
+  keeping its design size whenever there is room); and a reminder landing
+  *exactly* on "now" counts as passed, which an early test asserted
+  backwards.
+
+  **Test-harness notes for whoever is next.** The Calendar widget tests pump
+  at the handoff's own 412×892 canvas — the default 800×600 surface is both
+  unrealistic for this layout and too short for the year view's four rows,
+  so `GridView`'s lazy building left December unbuilt. The Add Event suite
+  is back to a **600px-wide** surface because Material's time picker
+  overflows a phone-width one; that is the same reason the suite was 600
+  wide before the custom pickers existed. A never-resolving write is faked
+  with a `Completer`, not `Future.delayed`, since a pending timer fails the
+  test at teardown.
+
+  **181 Calendar tests** across `test/screens/calendar/` (screen 28, Add
+  Event 44, reminder card 13, year grid 8, day sheet 14, delete dialog 7),
+  `test/utils/event_time_test.dart` (51, after dropping the 3 that covered
+  the deleted `timeOfDayFrom12Hour`) and
+  `test/services/calendar_service_test.dart` (16, including 4 new for the
+  year query).
+  **Whole suite: 798 passing, 1 failing** — `text_extraction_service_test`'s
+  PPTX case, which is **pre-existing on `main` and not this feature's**: it
+  reads `docs/Lecture1.pptx`, a fixture that was never committed (verified
+  by running that test against a clean `MERGE_HEAD` worktree). `flutter
+  analyze` reports only the two pre-existing infos from `main`
+  (`auth_service.dart`, `flashcard_service_test.dart`), and `flutter build
+  apk --debug` succeeds. Still not verified on a physical device: the
+  notification permission dialog and whether scheduled reminders actually
+  appear.
+
+  **Emulator-testing fixes (three), after the unified UI pass.**
+
+  1. **The reminder amount is now typable as well as steppable.**
+     `ReminderCard` became a `StatefulWidget` so it can own the field's
+     controller and focus node; the box takes digits only, capped at two
+     (60 is the ceiling). `onAmountChanged` widened to
+     `ValueChanged<int?>`, where **null means "the box holds no usable
+     number"** — Add Event tracks that as `_reminderAmountIncomplete` and
+     holds Save on the existing "Fix the reminder to continue." reason, so
+     an empty or out-of-range amount can never be written. On losing focus
+     the box snaps back to something usable: empty reverts to the last
+     committed value, out-of-range clamps to the nearer bound (`0 → 1`,
+     `99 → 60`). The note box gained a fourth state,
+     `amountOutOfRange`, which **reuses the existing red treatment** with
+     its own message (`kReminderAmountRangeMessage`) — three visual states,
+     as specified, with only the red wording varying.
+
+     **A deliberate, scoped divergence from the handoff**, confirmed with
+     the team: its rule is "an invalid value is rejected, not
+     accepted-then-warned", and the stepper and unit chips still refuse.
+     **Typed input cannot work that way** — refusing keystrokes would fight
+     the typist, since typing "30" passes through "3" — so a typed lead time
+     already in the past is accepted, shown red, and blocks Save instead.
+
+     While building this the card turned out to be reading `widget.amount`
+     for its own validation, i.e. waiting for the parent to echo the value
+     back before the note box could update. It now validates
+     `_effectiveAmount` — the box's contents while usable, else the last
+     committed value — so the note and the stepper bounds are correct in the
+     same frame the student types. That also removed a frame of lag in the
+     running app, not just in the tests.
+
+  2. **The day cell's "+N" label was clipped and misaligned — fixed.** The
+     dot row was a `SizedBox(height: 6)`, which handed the `Row` a 6px
+     cross-axis constraint and painted the 9px label clipped. **Cross-axis
+     overflow throws no Flutter error**, which is exactly why the test suite
+     stayed green while the device showed it. The row is now sized by its
+     tallest child, with the handoff's 4px gap applied *between* the dots
+     and before the label (the label previously butted against the last dot
+     — the misalignment). Verified with 3, 4 and 10 events on one day, in a
+     six-row month: May 2026 is itself a six-row month (the 1st is a Friday,
+     so five blanks plus 31 days fills 36 cells), so the existing suite was
+     already exercising the tight case.
+
+     That surfaced a second, real bug: on a **320dp phone** two dots plus a
+     two-digit "+N" need about 38px and the cell gives about 31, so the row
+     overflowed horizontally by 2.8px. The row is now wrapped in a
+     `FittedBox(scaleDown)`, the same treatment the day number already had —
+     everything stays on one line and fully visible, and the scale does
+     nothing at all when there is room (gaps measure exactly 4px at 412dp).
+
+  3. **The custom colour picker is now `flutter_colorpicker` ^1.1.0**
+     (resolved to 1.1.0), matching the handoff's native colour input: a
+     saturation/value area, a hue slider and a hex field.
+     **`pubspec.yaml` is a shared file and this is a real dependency
+     change — accepted by Leen, who is telling the team.** `pubspec.lock`
+     regenerated. Calendar only: **Manar's `_CustomColorDialog` in
+     `add_course_screen.dart` is untouched**, so the two custom-colour
+     dialogs are deliberately no longer identical. The dialog lives in
+     `widgets/color_picker_dialog.dart`, restyled into the Calendar's shell
+     (white, 26px radius, `CalendarText.dialogTitle`, `AppButton` accent
+     "Use this color" over outlined "Cancel"), with `enableAlpha: false`
+     because events store a 6-digit hex.
+
+     **Two traps in that package, both found by probing it before wiring it
+     up.** It picks its layout from `MediaQuery.orientation`, and its
+     *landscape* branch lays the picker beside a hard-coded 260px slider,
+     which overflows any dialog — `portraitOnly: true` pins the stacked
+     layout, which is what a phone dialog wants regardless. And its hex
+     input row overflows its own `Row` below roughly 240px of content width
+     (measured: it breaks between 230 and 240), so the bar is gated behind a
+     `LayoutBuilder` at `kHexInputMinWidth`; this dialog also uses a tighter
+     16px inset than the delete dialog's 26px so a 320dp phone still clears
+     that threshold and keeps the hex field.
+
+     Hex conversion moved out of the screen into a pure
+     `hexFromColor(Color)` in `calendar_styles.dart`, unit-tested directly
+     (padding short values, dropping alpha, and round-tripping every pool
+     colour through `parseHexColor`) rather than trying to drive a
+     saturation area by gesture. The old inline
+     `toARGB32().toRadixString(16).substring(2)` silently lost digits for
+     near-black colours; the replacement pads.
+
+  **225 Calendar tests** now (screen 28, Add Event 59, reminder card 23,
+  month grid 14, day sheet 14, year grid 8, delete dialog 7, styles 5,
+  `event_time` 51, service 16). **Whole suite: 842 passing, 1 failing** —
+  still only `text_extraction_service_test`'s PPTX case, pre-existing on
+  `main` and not this feature's. `flutter analyze` reports only the same two
+  pre-existing infos, and `flutter build apk --debug` succeeds with the new
+  dependency. Harness note: `tester.enterText` fires no `onChanged` when the
+  text is unchanged, so a test typing the value the field already holds must
+  seed a different starting amount.
+
+  **Date/time pickers restyled.** On the emulator the platform pickers were
+  still showing Android's defaults — lavender surfaces, the system font and
+  default shapes — because the local override only set `colorScheme` and
+  `textButtonTheme`, which Material 3 largely ignores for these dialogs. The
+  lavender comes from M3 reaching past the scheme's `surface` into
+  `surfaceContainerHigh` (the dialog), `primaryContainer` (the selected day)
+  and `secondaryContainer` (the time picker's hour/minute fields and AM/PM
+  toggle). `calendar_pickers.dart` now sets full `DatePickerThemeData` and
+  `TimePickerThemeData` blocks — white surfaces with `surfaceTintColor`
+  cleared (M3 tints by elevation otherwise), Nunito on every text slot both
+  dialogs own, navy selection with white ink, today outlined in red exactly
+  as the month grid draws it, `kPickerCornerRadius` (26px, matching the
+  Calendar's other dialogs), and Cancel/OK styled like the delete dialog's
+  "Keep it"/"Delete event" — muted grey and red. The input-mode text fields
+  and the entry-mode icon buttons are covered too. **Still a local `Theme`
+  wrapper; `AppTheme` is untouched.** The standard layouts are deliberately
+  kept — `CalendarDatePicker`'s month grid and the clock dial are the whole
+  reason for using the platform pickers — and past dates stay selectable.
+
+  Two SDK details worth recording: `TimePickerThemeData`'s colour slots take
+  a plain `Color?` and resolve through **`WidgetStateColor`**, not
+  `WidgetStateProperty` like `DatePickerThemeData`'s, and a `library`
+  directive has to precede every import, so the file's overview comment sits
+  on the theme function instead.
+
+  16 new tests in `test/screens/calendar/widgets/calendar_pickers_test.dart`
+  open each picker for real and read the theme the subtree actually
+  resolves, rather than inspecting a `ThemeData` object — including two that
+  assert the **rendered** `Material`'s colour is white, since a resolved
+  theme value alone wouldn't catch a surface the dialog takes from
+  elsewhere, and two that confirm the standard grid/dial still work and a
+  past date is still pickable. **241 Calendar tests; whole suite 858
+  passing, 1 failing** (still only the pre-existing
+  `text_extraction_service_test` PPTX fixture). `flutter analyze` clean
+  apart from the same two pre-existing infos; `flutter build apk --debug`
+  succeeds. The pickers' new look is **not yet confirmed on a device** —
+  the tests check the theme that reaches them, not pixels.
+
+  **Profile section (Profile, Edit Profile, Ranks, Study Reminder, About) —
+  done.** Built from
+  `docs/mockups/design-handoff_profile/android-study-app-redesign/project/
+  Tadarab Phase 3b - Profile.dc.html` (identical to the copy in
+  `design-handoff_Calendar`; same bundle traps as the Calendar one — ignore
+  `project/design_handoff/` and `_ds/`, and `uploads/` is the old SRS
+  screens, not design). Nothing existed before this: the Profile tab was a
+  `PlaceholderScreen`, and no teammate had started Edit Account on any
+  branch.
+
+  **`rankForPoints` is the shared entry point** (`lib/utils/rank.dart`):
+  the ten tiers with the design's names, ranges and colours — which match
+  SRS Figures 109/110 exactly — plus `nextRankAfter`, `pointsToNextRank`,
+  `progressWithinRank` and `formatPoints`. Deliberately in `lib/utils/`
+  rather than inside the feature so Home, Quiz and Flashcards can all call
+  it; **rank colours live there as rank data, not in `AppColors`**. Edge
+  cases are covered: 0, every tier floor and ceiling, one point past each
+  ceiling, 7000+, negative, and null (both fall back to Beginner rather
+  than throwing). A test also asserts the table is contiguous, so no total
+  can fall between two ranks.
+
+  **INTEGRATION POINT — `currentRank` is still not written anywhere.** Every
+  screen derives the rank from `totalPoints`, so what students see is always
+  correct, but the stored field keeps its signup value
+  (`'Beginner Learner'`) and will disagree. **Nothing in the app displays
+  the stored field** — searched repo-wide: it appears only inside
+  `student.dart`'s own plumbing (default, declaration, `fromFirestore`,
+  `toFirestore`, `copyWith`) and one prose line here. Home's badge shows
+  `totalPoints` only. Closing the gap means setting
+  `currentRank: rankForPoints(newTotal).name` wherever `totalPoints` is
+  incremented — two places, both in Ghaida's services (`QuizSessionService`
+  on the complete and retake-complete paths, `FlashcardService` in its
+  completion batch) — and each needs the new total read back, since
+  `FieldValue.increment` never reveals it. **Not done here on purpose:
+  those are another member's files. Leen is coordinating it with Ghaida.**
+  The note also lives as a doc comment on `rankForPoints`.
+
+  **Three team decisions that depart from the SRS**, all following the
+  unified design:
+  1. **Log Out now asks first.** The SRS's `Profile Page Log Out Option.png`
+     logs out immediately; the design adds a confirm ("Log out of Tadarab?"
+     / "Log out" / "Stay signed in") and its own notes call for it.
+  2. **Edit Profile edits the name only.** The SRS's `Edit Account Page.png`
+     offers Change Name, Change Email *and* Change Password with a
+     current-password field; the design replaces all that with name-only
+     editing and an explicitly locked email ("Your email can't be changed
+     here."). Consequences, accepted: no reauthentication flow, no verified
+     email change, and no duplicate-email validation — unreachable when the
+     email can't be edited. It also avoids the problem that changing an
+     email would strand the old address on the student doc and on every
+     `CalendarEvent`, which stamps `email` as a non-null FK.
+  3. **The Study Reminder uses the themed Material time picker** from
+     `calendar_pickers.dart`, not the design's custom hour/minute sheet, for
+     consistency with the Calendar — which is itself the reverse of the
+     Calendar's own history, where a custom sheet was replaced by the
+     platform picker. The two features' designs disagree on this; the app
+     now has one answer.
+
+  **Firebase Auth is untouched, and `AuthService` gained no method.**
+  `displayName` is written once at signup (`auth_service.dart:123`) and
+  **never read** — every name the UI shows comes from Firestore via
+  `watchStudent`. So the new `ProfileService.updateName` writes only the
+  `name` field. **Known consequence:** after an edit, Auth's `displayName`
+  and Firestore's `name` drift apart. Harmless today; worth knowing if
+  anyone later reads `user.displayName` and gets a stale value.
+
+  **`ProfileService`** (`lib/services/profile_service.dart`) does narrow
+  field writes like `CalendarService`, precisely so `Student.copyWith` —
+  which only accepts the streak fields — needn't be widened. Turning the
+  reminder off clears `reminderTime` along with the flag, so it matches the
+  Attributes Dictionary's never-set shape rather than leaving a half-state.
+
+  **Study reminder notifications** reuse the Calendar's plumbing (timezone
+  init, permission request, manifest receivers, desugaring) and add
+  `scheduleDailyStudyReminder` / `cancelDailyStudyReminder` to
+  `ReminderScheduler`, with its own `study_reminder` channel so a student
+  can mute study nudges without losing event reminders. Text is exactly
+  "Time to Study!" / "Open Tadarab and continue your learning journey.".
+  Repeats daily via `DateTimeComponents.time`, first firing today if the
+  time is still ahead and tomorrow otherwise. Permission-denied and
+  schedule-refused both store **`reminderEnabled: false`** and tell the
+  student, exactly as Add Event does.
+
+  **`kStudyReminderNotificationId = -1`, and the sign is the point.**
+  `notificationIdFor` masks event IDs with `& 0x7FFFFFFF`, so its range is
+  `[0, 2^31-1]` — a negative reserved ID therefore cannot collide with any
+  event's, for any event ID whatsoever, and no existing event ID had to be
+  renumbered (which would have orphaned reminders already scheduled on a
+  device). The plugin declares a bare `required int id` with no validation.
+  Note the pre-existing test comment "as the plugin requires" overstates
+  that mask's effect; it still passes, since event IDs remain non-negative.
+  **Not yet confirmed on a device** — Leen is checking it fires on the
+  emulator.
+
+  **The ten rank icons are real CustomPainters**, not Material
+  approximations: each of the design's bespoke SVG paths (circle, triangle,
+  diamond, hexagon, shield, bolt, star, flame, gem, crown) is hand-
+  translated into a `Path` in `rank_icon.dart` and scaled from the 24×24
+  viewBox, so they match the handoff exactly with no new package. Filled for
+  a rank reached, outlined for one not. A test asserts every glyph is
+  non-empty, stays inside the viewBox, and is distinct from the others.
+  The design's **"unique"** icon set is used (its `rankIcons` prop default
+  says `star` while its code fallback says `unique` — contradictory, and
+  Leen chose unique), and the **"CURRENT" badge stays hidden**, per the
+  design's own `currentBadge` default. The Learning Guide is the design's
+  **"lively"** variant, where prop default and code fallback agree.
+
+  **Shared-file change — needs the all-four PR review.** Exactly one:
+  `lib/screens/home/home_screen.dart`, swapping the Profile
+  `PlaceholderScreen` for `_lazyTab(3, () => ProfileScreen(...))` — one
+  import added, one removed (`placeholder_screen.dart` became unused once
+  all four tabs were real; the file itself is left in place). Lazy for the
+  same reason the Calendar tab is: `IndexedStack` would otherwise open a
+  second `watchStudent` subscription the moment Home mounts, for a tab the
+  student may never open. **No other shared file was touched** —
+  `student.dart`, `app_colors.dart`, `app_typography.dart`, `app_theme.dart`,
+  `auth_service.dart`, `main.dart` and `pubspec.yaml` are all unchanged, and
+  Profile styles live in a feature-local `profile_styles.dart` (same bend as
+  the Calendar's, diverging from Quiz, which put its styles in the shared
+  file).
+
+  **Three real bugs the tests caught**, all written during this pass:
+  `CrossAxisAlignment.stretch` on the summary pair and on the Learning
+  Guide's points tiles demanded an infinite height inside a scroll view
+  (both now `IntrinsicHeight`, which is what actually makes the cards match
+  height like the design's flex row); and the rank card's and Ranks row's
+  label pairs overflowed horizontally by ~9px (both now `Flexible` with
+  ellipsis, so a six-figure total or a long rank name can't break the row).
+
+  **Test-harness notes.** Profile pumps at 412×1600 and Ranks at 412×3000:
+  `tap()` does not scroll, `ensureVisible` is unreliable for this
+  `Column > Expanded > SingleChildScrollView` shape, and both lists build
+  lazily, so a short surface leaves later rows unbuilt. The Study Reminder
+  suite is 600 wide for Material's time picker, same as Add Event. And a
+  loop that re-pumps inside one `testWidgets` leaves the previously pushed
+  route on the navigator — the About-row checks are generated as separate
+  tests instead.
+
+  **130 Profile tests** (rank logic 27, rank icons 25, Profile screen 21,
+  Edit Profile 12, Ranks 11, Study Reminder 11, About/Guide 10, service 9,
+  logout dialog 4). **Whole suite: 992 passing, 1 failing** — still only
+  `text_extraction_service_test`'s PPTX case, pre-existing on `main` and
+  not this feature's. `flutter analyze` reports only the same two
+  pre-existing infos; `flutter build apk --debug` succeeds. Still not
+  verified on a device: whether the daily reminder actually fires, and how
+  the hand-painted rank icons look at real size.
+
+  Still to do on this branch: nothing — Calendar and Profile/Ranks/Study
+  Reminder are both complete, pending the `currentRank` coordination above.
+
 ## Design handoffs
 
 - `docs/mockups/android-study-app-redesign/` — Phase 0 (Auth: Welcome, Log
@@ -1371,6 +1974,22 @@ mark it done, note decisions made, note what starts next.)*
   Courses) is in the same bundle: the Home frames are implemented. The
   Courses-tab frames are Manar's Courses & Material upload feature
   (`feature/courses`, see Feature split) — not yet built, and hers to scope.
+- `docs/mockups/design-handoff_Calendar/` — the unified Calendar design
+  (`project/Tadarab Phase 3 - Calendar.dc.html`), implemented. **Read only
+  that file**: the nested `project/design_handoff/` folder is a stale
+  earlier export, `_ds/modernist-…/` is an unrelated design system the
+  Calendar never imports, and `uploads/`/`ref/` are reference images (the
+  old SRS screens fed into the tool), not design. `Tadarab Phase 3b -
+  Profile.dc.html` sits in the same bundle and is Leen's Profile/Ranks
+  work, not yet started.
+- `docs/mockups/design-handoff_profile/` — the Profile section
+  (`project/Tadarab Phase 3b - Profile.dc.html`), implemented: Profile,
+  Ranks, Edit Profile, Study Reminder and the four About documents. Same
+  bundle shape and same traps as the Calendar one — read only that file,
+  ignore the nested `project/design_handoff/` and `_ds/` folders, and treat
+  `uploads/`/`ref/` as reference images (the old SRS screens), not design.
+  The Profile file is byte-identical to the copy inside
+  `design-handoff_Calendar`.
 - `docs/mockups/design_handoff_flashcard/` — the same design-system bundle,
   with the Phase 2b (Flashcards) frames and reference PNGs added. Used to
   build the Flashcards feature's screens (see Phase C above); not a

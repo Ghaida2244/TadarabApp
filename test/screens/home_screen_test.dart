@@ -12,6 +12,7 @@ import 'package:tadarab_app/screens/courses/course_detail_screen.dart';
 import 'package:tadarab_app/screens/home/home_screen.dart';
 import 'package:tadarab_app/services/home_data_service.dart';
 
+import '../helpers/fake_calendar_service.dart';
 import '../helpers/fake_courses_service.dart';
 import '../helpers/fake_flashcard_service.dart';
 import '../helpers/fake_home_data_service.dart';
@@ -26,6 +27,7 @@ void main() {
   Future<void> pumpHome(
     WidgetTester tester, {
     FakeHomeDataService? dataService,
+    FakeCalendarService? calendarService,
     FakeCoursesService? coursesService,
     FakeFlashcardService? flashcardService,
     VoidCallback? onSignOut,
@@ -34,6 +36,9 @@ void main() {
     final home = HomeScreen(
       uid: 'uid-1',
       homeDataService: dataService ?? FakeHomeDataService(),
+      // The Calendar tab is a real screen now, so it needs a fake
+      // service for the moment a test actually opens that tab.
+      calendarService: calendarService ?? FakeCalendarService(),
       coursesService: coursesService ?? FakeCoursesService(),
       // A single fake covers every courseId a test uses — scoping by
       // the real uid/courseId the screen asks for isn't needed here,
@@ -1018,7 +1023,7 @@ void main() {
 
   group('bottom navigation', () {
     testWidgets(
-      'switches between Home, Courses, Calendar and Profile placeholders',
+      'switches between Home, Courses, the real Calendar, and Profile',
       (tester) async {
         // courses: [aCourse] so returning to Home shows Today's Progress
         // (this test is about tab-switching, not which Home state renders).
@@ -1036,15 +1041,61 @@ void main() {
 
         await tester.tap(find.text('Calendar'));
         await tester.pumpAndSettle();
-        expect(find.text('Calendar screen'), findsOneWidget);
+        // The real Calendar tab, not a placeholder: its month title and
+        // Add Event action are what prove the right screen is mounted.
+        expect(find.text('Add Event'), findsOneWidget);
+        expect(find.text('March 2026'), findsOneWidget);
 
         await tester.tap(find.text('Profile'));
         await tester.pumpAndSettle();
-        expect(find.text('Profile screen'), findsOneWidget);
+        // The real Profile tab, not a placeholder: its section headings are
+        // what prove the right screen is mounted.
+        expect(find.text('Student Summary'), findsOneWidget);
+        expect(find.text('Log Out'), findsOneWidget);
 
         await tester.tap(find.text('Home'));
         await tester.pumpAndSettle();
         expect(find.text("Today's progress"), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'deleting an event on the Calendar tab refreshes Home\'s Upcoming list',
+      (tester) async {
+        // Home's Upcoming section reads real events, so it must re-read
+        // after the Calendar changes them rather than showing a stale list.
+        final dataService = FakeHomeDataService(courses: [aCourse]);
+        final calendarService = FakeCalendarService(
+          events: [
+            CalendarEvent(
+              eventId: 'e9',
+              eventName: 'Midterm',
+              eventDate: DateTime(2026, 3, 14),
+              eventTime: '12:00',
+              email: 'e@x.com',
+            ),
+          ],
+        );
+        await pumpHome(
+          tester,
+          dataService: dataService,
+          calendarService: calendarService,
+        );
+        final before = dataService.fetchUpcomingEventsCalls;
+
+        await tester.tap(find.text('Calendar'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('14'));
+        await tester.pumpAndSettle();
+        // The row's delete control is now a labelled tinted button, and the
+        // confirm's action reads "Delete event" (the unified Calendar design).
+        await tester.tap(find.bySemanticsLabel('Delete event'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Delete event'));
+        await tester.pumpAndSettle();
+
+        expect(calendarService.deletedEventIds, ['e9']);
+        expect(dataService.fetchUpcomingEventsCalls, greaterThan(before));
       },
     );
 
@@ -1075,31 +1126,53 @@ void main() {
     );
 
     testWidgets(
-      'Profile placeholder shows a working Log out button when onSignOut is provided',
+      'Profile Log Out signs out once the confirmation is accepted',
       (tester) async {
+        // Taller than the 800x600 default so Profile's Log Out button is
+        // on screen — tap() does not scroll. Width is left alone so Home's
+        // own layout is unchanged.
+        tester.view.physicalSize = const Size(800, 1600);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
         var signedOut = false;
         await pumpHome(tester, onSignOut: () => signedOut = true);
 
         await tester.tap(find.text('Profile'));
         await tester.pumpAndSettle();
-        expect(find.text('Log out'), findsOneWidget);
+        await tester.tap(find.text('Log Out'));
+        await tester.pumpAndSettle();
+
+        // The confirm is a team decision departing from the SRS, so assert
+        // that signing out really does wait for it.
+        expect(signedOut, isFalse);
 
         await tester.tap(find.text('Log out'));
-        await tester.pump();
+        await tester.pumpAndSettle();
 
         expect(signedOut, isTrue);
       },
     );
 
     testWidgets(
-      'Profile placeholder has no Log out button when onSignOut is not provided',
+      'declining the Profile Log Out confirmation stays signed in',
       (tester) async {
-        await pumpHome(tester);
+        // Taller than the 800x600 default so Profile's Log Out button is
+        // on screen — tap() does not scroll. Width is left alone so Home's
+        // own layout is unchanged.
+        tester.view.physicalSize = const Size(800, 1600);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+        var signedOut = false;
+        await pumpHome(tester, onSignOut: () => signedOut = true);
 
         await tester.tap(find.text('Profile'));
         await tester.pumpAndSettle();
+        await tester.tap(find.text('Log Out'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Stay signed in'));
+        await tester.pumpAndSettle();
 
-        expect(find.text('Log out'), findsNothing);
+        expect(signedOut, isFalse);
       },
     );
   });

@@ -38,12 +38,20 @@ dependencies:
   firebase_auth: ^6.6.1
   cloud_firestore: ^6.9.0
   firebase_storage: ^13.5.0
+  # Local notifications for Calendar event reminders (Calendar feature).
+  flutter_local_notifications: ^22.3.1
+  timezone: ^0.11.1
+  flutter_timezone: ^5.1.0
   # Calls the deployed Cloudflare Worker's POST /generate endpoint (Quiz
   # generation & Sessions feature) — see lib/services/quiz_generation_client.dart.
   http: ^1.2.2
   archive: ^4.3.0
   xml: ^7.0.1
   file_picker: ^13.1.0
+  # Full HSV + hex colour picker for the Calendar's custom event colour,
+  # matching the design handoff's native colour input. Calendar only — the
+  # Courses feature keeps its own hue-slider dialog.
+  flutter_colorpicker: ^1.1.0
 
 dev_dependencies:
   flutter_test:
@@ -55,6 +63,8 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  fake_cloud_firestore: ^4.3.0
+  mock_exceptions: ^0.8.2
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
