@@ -33,6 +33,7 @@ void main() {
     FakeFlashcardService? flashcardService,
     VoidCallback? onSignOut,
     bool reducedMotion = false,
+    double textScaleFactor = 1.0,
   }) async {
     final home = HomeScreen(
       uid: 'uid-1',
@@ -50,11 +51,15 @@ void main() {
       now: now,
       onSignOut: onSignOut,
     );
+    final needsMediaQuery = reducedMotion || textScaleFactor != 1.0;
     await tester.pumpWidget(
       MaterialApp(
-        home: reducedMotion
+        home: needsMediaQuery
             ? MediaQuery(
-                data: const MediaQueryData(disableAnimations: true),
+                data: MediaQueryData(
+                  disableAnimations: reducedMotion,
+                  textScaler: TextScaler.linear(textScaleFactor),
+                ),
                 child: home,
               )
             : home,
@@ -224,8 +229,26 @@ void main() {
         ),
       );
 
-      expect(find.text('108'), findsNothing);
+      expect(find.textContaining('108'), findsNothing);
     });
+
+    testWidgets(
+      'no decorative initial-letter circle in the greeting — it had no '
+      'tap behavior and is gone now',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(
+            student: Student(uid: 'u', email: 'e@x.com', name: 'Ghaida'),
+          ),
+        );
+
+        // The removed circle's only content was the bare first-letter
+        // initial ('G') on its own — nothing else in the greeting header
+        // renders a standalone single capital letter.
+        expect(find.text('G'), findsNothing);
+      },
+    );
   });
 
   group('has courses, nothing in progress', () {
@@ -248,27 +271,33 @@ void main() {
       );
     });
 
-    testWidgets('the points badge shows once the student has a course', (
-      tester,
-    ) async {
-      await pumpHome(
-        tester,
-        dataService: FakeHomeDataService(
-          courses: [aCourse],
-          student: Student(
-            uid: 'u',
-            email: 'e@x.com',
-            name: 'Ghaida',
-            totalPoints: 108,
+    testWidgets(
+      'the points badge shows once the student has a course, with the '
+      'short rank name and points on one line',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(
+            courses: [aCourse],
+            student: Student(
+              uid: 'u',
+              email: 'e@x.com',
+              name: 'Ghaida',
+              totalPoints: 108,
+            ),
           ),
-        ),
-      );
+        );
 
-      expect(find.text('108'), findsOneWidget);
-    });
+        // 108 is Active Learner (100-299) — shortName drops " Learner".
+        expect(find.text('Active · 108'), findsOneWidget);
+      },
+    );
 
-    Finder badgePill(String points) => find.ancestor(
-      of: find.text(points),
+    // Other pill-shaped buttons elsewhere on Home (e.g. "Start a new
+    // session") share this same circular(999) radius, so this still needs
+    // to anchor on the badge's own label text to find the right one.
+    Finder badgePill(String label) => find.ancestor(
+      of: find.text(label),
       matching: find.byWidgetPredicate(
         (w) =>
             w is Container &&
@@ -295,8 +324,9 @@ void main() {
           ),
         );
 
+        expect(find.text('Beginner · 99'), findsOneWidget);
         final color =
-            (tester.widget<Container>(badgePill('99')).decoration!
+            (tester.widget<Container>(badgePill('Beginner · 99')).decoration!
                     as BoxDecoration)
                 .color;
         expect(color, rankForPoints(99).color.withValues(alpha: 0.12));
@@ -320,13 +350,81 @@ void main() {
           ),
         );
 
+        expect(find.text('Active · 100'), findsOneWidget);
         final color =
-            (tester.widget<Container>(badgePill('100')).decoration!
+            (tester.widget<Container>(badgePill('Active · 100')).decoration!
                     as BoxDecoration)
                 .color;
         expect(color, rankForPoints(100).color.withValues(alpha: 0.12));
         expect(color, isNot(rankForPoints(99).color.withValues(alpha: 0.12)));
       },
+    );
+
+    // Verifies the greeting Row's own layout directly via geometry, rather
+    // than asserting zero exceptions screen-wide: at 1.5x/2x text scale,
+    // the Today's Progress week row (today_progress_card.dart, untouched
+    // by this change) separately overflows its own day cells — a real,
+    // pre-existing bug this task didn't ask to fix (confirmed by manually
+    // inspecting the overflow output at both scales: every reported
+    // RenderFlex belongs to that file's _DayCell, none to home_screen.dart).
+    // That overflow must still be consumed below or the test would
+    // auto-fail on teardown; the greeting itself is then checked
+    // independently, on its own terms, via geometry.
+    Future<void> expectGreetingFitsAt(
+      WidgetTester tester,
+      double textScaleFactor,
+    ) async {
+      const longName = 'Alexandra Christodoulopoulou';
+      await pumpHome(
+        tester,
+        textScaleFactor: textScaleFactor,
+        dataService: FakeHomeDataService(
+          courses: [aCourse],
+          student: Student(
+            uid: 'u',
+            email: 'e@x.com',
+            name: longName,
+            totalPoints: 616, // Focused Learner (300-699).
+          ),
+        ),
+      );
+      // Consumes the known, unrelated today_progress_card.dart overflow(s)
+      // above so this test doesn't auto-fail on them.
+      tester.takeException();
+
+      expect(find.text('Focused · 616'), findsOneWidget);
+      final nameRect = tester.getRect(find.text(longName));
+      final pillRect = tester.getRect(
+        find.ancestor(
+          of: find.text('Focused · 616'),
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is Container &&
+                w.decoration is BoxDecoration &&
+                (w.decoration! as BoxDecoration).borderRadius ==
+                    BorderRadius.circular(999),
+          ),
+        ),
+      );
+      final screenWidth =
+          tester.view.physicalSize.width / tester.view.devicePixelRatio;
+
+      // The ellipsized name never reaches into the pill's own space, and
+      // the pill (natural width, not stretched) never runs off-screen.
+      expect(nameRect.right, lessThanOrEqualTo(pillRect.left));
+      expect(pillRect.right, lessThanOrEqualTo(screenWidth));
+    }
+
+    testWidgets(
+      'a long student name at 1.5x text scale never overlaps or pushes '
+      'the points pill off-screen',
+      (tester) => expectGreetingFitsAt(tester, 1.5),
+    );
+
+    testWidgets(
+      'a long student name at 2x text scale never overlaps or pushes '
+      'the points pill off-screen',
+      (tester) => expectGreetingFitsAt(tester, 2.0),
     );
   });
 

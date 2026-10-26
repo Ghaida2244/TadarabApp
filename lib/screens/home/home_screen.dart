@@ -13,6 +13,7 @@ import '../../services/home_data_service.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/rank.dart';
+import '../profile/widgets/rank_icon.dart';
 import '../calendar/calendar_screen.dart';
 import '../courses/add_course_screen.dart';
 import '../courses/course_detail_screen.dart';
@@ -573,100 +574,76 @@ class _Greeting extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = student?.name ?? '';
-    final initial = name.trim().isEmpty
-        ? ''
-        : name.trim().substring(0, 1).toUpperCase();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _greetingFor(now),
-                style: AppTypography.subtitle.copyWith(fontSize: 13),
-              ),
-              Text(
-                name,
-                style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.02 * 26,
-                  height: 1.1,
-                  color: AppColors.navy,
+          // Expanded so a long name ellipsizes instead of pushing the
+          // points pill off-screen or overflowing the Row.
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _greetingFor(now),
+                  style: AppTypography.subtitle.copyWith(fontSize: 13),
                 ),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              if (showPointsBadge && student != null) ...[
-                Builder(
-                  builder: (context) {
-                    final totalPoints = student!.totalPoints;
-                    // Derived from totalPoints, not the stored currentRank —
-                    // matches every other rank display in the app.
-                    final rank = rankForPoints(totalPoints);
-                    final textColor = _readableOnLight(rank.color);
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        // Same tint style the Ranks screen uses for the
-                        // current rank (rank.color at 12% alpha).
-                        color: rank.color.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: rank.color,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '$totalPoints',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
-                              color: textColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(width: 8),
-              ],
-              Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(
-                  color: AppColors.cardTint,
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  initial,
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 17,
+                    fontSize: 26,
                     fontWeight: FontWeight.w900,
+                    letterSpacing: -0.02 * 26,
+                    height: 1.1,
                     color: AppColors.navy,
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
+          if (showPointsBadge && student != null) ...[
+            const SizedBox(width: 8),
+            Builder(
+              builder: (context) {
+                final totalPoints = student!.totalPoints;
+                // Derived from totalPoints, not the stored currentRank —
+                // matches every other rank display in the app.
+                final rank = rankForPoints(totalPoints);
+                final textColor = _readableOnLight(rank.color);
+                return Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    // Same tint style the Ranks screen uses for the
+                    // current rank (rank.color at 12% alpha).
+                    color: rank.color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      RankIcon(tier: rank.tier, color: rank.color, size: 12),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${rank.shortName} · $totalPoints',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          color: textColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
         ],
       ),
     );
