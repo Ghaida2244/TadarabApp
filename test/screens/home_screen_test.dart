@@ -11,6 +11,7 @@ import 'package:tadarab_app/models/study_material.dart';
 import 'package:tadarab_app/screens/courses/course_detail_screen.dart';
 import 'package:tadarab_app/screens/home/home_screen.dart';
 import 'package:tadarab_app/services/home_data_service.dart';
+import 'package:tadarab_app/utils/rank.dart';
 
 import '../helpers/fake_calendar_service.dart';
 import '../helpers/fake_courses_service.dart';
@@ -265,6 +266,68 @@ void main() {
 
       expect(find.text('108'), findsOneWidget);
     });
+
+    Finder badgePill(String points) => find.ancestor(
+      of: find.text(points),
+      matching: find.byWidgetPredicate(
+        (w) =>
+            w is Container &&
+            w.decoration is BoxDecoration &&
+            (w.decoration! as BoxDecoration).borderRadius ==
+                BorderRadius.circular(999),
+      ),
+    );
+
+    testWidgets(
+      'just below a rank threshold, the points badge is tinted with that '
+      'rank\'s own color (99 pts — Beginner Learner)',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(
+            courses: [aCourse],
+            student: Student(
+              uid: 'u',
+              email: 'e@x.com',
+              name: 'Ghaida',
+              totalPoints: 99,
+            ),
+          ),
+        );
+
+        final color =
+            (tester.widget<Container>(badgePill('99')).decoration!
+                    as BoxDecoration)
+                .color;
+        expect(color, rankForPoints(99).color.withValues(alpha: 0.12));
+      },
+    );
+
+    testWidgets(
+      'crossing a rank threshold changes the points badge color (100 pts '
+      '— Active Learner, not Beginner Learner\'s color)',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(
+            courses: [aCourse],
+            student: Student(
+              uid: 'u',
+              email: 'e@x.com',
+              name: 'Ghaida',
+              totalPoints: 100,
+            ),
+          ),
+        );
+
+        final color =
+            (tester.widget<Container>(badgePill('100')).decoration!
+                    as BoxDecoration)
+                .color;
+        expect(color, rankForPoints(100).color.withValues(alpha: 0.12));
+        expect(color, isNot(rankForPoints(99).color.withValues(alpha: 0.12)));
+      },
+    );
   });
 
   group('weekly progress row', () {

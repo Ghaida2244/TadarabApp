@@ -12,6 +12,7 @@ import '../../services/flashcard_service.dart';
 import '../../services/home_data_service.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/rank.dart';
 import '../calendar/calendar_screen.dart';
 import '../courses/add_course_screen.dart';
 import '../courses/course_detail_screen.dart';
@@ -544,6 +545,20 @@ String _greetingFor(DateTime now) {
   return 'Good evening';
 }
 
+/// [color] as-is, unless it's too light to read as small bold text over a
+/// near-white background (WCAG contrast under ~4.5:1 against white) — in
+/// which case a darkened version is returned instead.
+/// [Color.computeLuminance] already implements the WCAG relative-luminance
+/// formula, so this needs no hand-rolled colour math. Catches the lighter
+/// rank colours (e.g. tier 1's grey `0xFF9AA0C4` and tier 7's amber
+/// `0xFFF5A524`) without touching the darker ones, which already read fine
+/// as-is.
+Color _readableOnLight(Color color) {
+  final contrastAgainstWhite = 1.05 / (color.computeLuminance() + 0.05);
+  if (contrastAgainstWhite >= 4.5) return color;
+  return Color.lerp(color, Colors.black, 0.4) ?? color;
+}
+
 class _Greeting extends StatelessWidget {
   const _Greeting({
     required this.student,
@@ -589,36 +604,47 @@ class _Greeting extends StatelessWidget {
           Row(
             children: [
               if (showPointsBadge && student != null) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.warningBackground,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: AppColors.pointsBadgeDot,
-                          shape: BoxShape.circle,
-                        ),
+                Builder(
+                  builder: (context) {
+                    final totalPoints = student!.totalPoints;
+                    // Derived from totalPoints, not the stored currentRank —
+                    // matches every other rank display in the app.
+                    final rank = rankForPoints(totalPoints);
+                    final textColor = _readableOnLight(rank.color);
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '${student!.totalPoints}',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w900,
-                          color: AppColors.warningText,
-                        ),
+                      decoration: BoxDecoration(
+                        // Same tint style the Ranks screen uses for the
+                        // current rank (rank.color at 12% alpha).
+                        color: rank.color.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(999),
                       ),
-                    ],
-                  ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: rank.color,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '$totalPoints',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                              color: textColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(width: 8),
               ],
