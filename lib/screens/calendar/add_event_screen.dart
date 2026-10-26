@@ -48,7 +48,6 @@ class AddEventScreen extends StatefulWidget {
     required this.calendarService,
     required this.courses,
     this.reminderScheduler,
-    this.initialDate,
     this.now,
   });
 
@@ -61,10 +60,6 @@ class AddEventScreen extends StatefulWidget {
 
   /// Overridable for tests; defaults to the real notification-backed one.
   final ReminderScheduler? reminderScheduler;
-
-  /// The month the Calendar was showing, used to seed the date picker so
-  /// adding an event to a browsed month doesn't jump back to today.
-  final DateTime? initialDate;
 
   /// Overridable for tests, so reminder validation is deterministic.
   final DateTime? now;
@@ -151,7 +146,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
   Future<void> _pickDate() async {
     final picked = await pickEventDate(
       context: context,
-      initialDate: _selectedDate ?? widget.initialDate ?? _now,
+      initialDate: _selectedDate ?? _now,
       now: _now,
     );
     if (picked == null) return;
@@ -162,6 +157,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
     final picked = await pickEventTime(
       context: context,
       initialTime: _selectedTime,
+      now: _now,
     );
     if (picked == null) return;
     setState(() => _selectedTime = picked);

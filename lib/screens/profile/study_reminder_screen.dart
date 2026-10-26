@@ -45,6 +45,7 @@ class StudyReminderScreen extends StatefulWidget {
     required this.time,
     required this.profileService,
     this.reminderScheduler,
+    this.now,
   });
 
   final String uid;
@@ -58,6 +59,11 @@ class StudyReminderScreen extends StatefulWidget {
   /// Overridable for tests; defaults to the real notification-backed one.
   final ReminderScheduler? reminderScheduler;
 
+  /// Overridable "now" for the time picker's fallback when no time is
+  /// saved yet; defaults to [DateTime.now] so tests can inject a fixed
+  /// clock. Same pattern as the Calendar screen's own `widget.now`.
+  final DateTime? now;
+
   @override
   State<StudyReminderScreen> createState() => _StudyReminderScreenState();
 }
@@ -65,6 +71,8 @@ class StudyReminderScreen extends StatefulWidget {
 class _StudyReminderScreenState extends State<StudyReminderScreen> {
   late final ReminderScheduler _scheduler =
       widget.reminderScheduler ?? ReminderScheduler();
+
+  DateTime get _now => widget.now ?? DateTime.now();
 
   late bool _draftEnabled = widget.enabled;
   late TimeOfDay? _draftTime = widget.time;
@@ -89,6 +97,7 @@ class _StudyReminderScreenState extends State<StudyReminderScreen> {
     final picked = await pickEventTime(
       context: context,
       initialTime: _draftTime,
+      now: _now,
     );
     if (picked == null) return;
     setState(() => _draftTime = picked);

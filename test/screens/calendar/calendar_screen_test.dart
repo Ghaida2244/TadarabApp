@@ -202,6 +202,51 @@ void main() {
     });
   });
 
+  group('Add Event date picker', () {
+    /// Taps the Add Event pill, opens its date field, then accepts the
+    /// picker's own pre-highlighted day without choosing one — revealing
+    /// what it opened on.
+    Future<void> openAddEventAndAcceptDate(WidgetTester tester) async {
+      await tester.tap(find.text('Add Event'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('event-date')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'opens on today even while the current month is shown (not the '
+      '1st) — regression test for passing the displayed month\'s 1st '
+      'as the initial date',
+      (tester) async {
+        await pumpCalendar(tester);
+
+        await openAddEventAndAcceptDate(tester);
+
+        // `now` is May 3, 2026.
+        expect(find.text('May 3, 2026'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'opens on today, not the 1st, even while browsing a different '
+      'month (e.g. next month)',
+      (tester) async {
+        await pumpCalendar(tester);
+
+        await tester.tap(find.bySemanticsLabel('Next month'));
+        await tester.pumpAndSettle();
+        expect(find.text('June 2026'), findsOneWidget);
+
+        await openAddEventAndAcceptDate(tester);
+
+        // Still today (May 3), not June 1st.
+        expect(find.text('May 3, 2026'), findsOneWidget);
+      },
+    );
+  });
+
   group('back to today', () {
     testWidgets('is hidden on the current month', (tester) async {
       await pumpCalendar(tester);

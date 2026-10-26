@@ -19,7 +19,7 @@ import '../../helpers/fake_reminder_scheduler.dart';
 void main() {
   // "Now" is 9:00 AM on Sunday 3 May 2026, so every reminder assertion is
   // deterministic. The date picker opens on May 2026.
-  final now = DateTime(2026, 5, 3, 9, 0);
+  final mainNow = DateTime(2026, 5, 3, 9, 0);
 
   final aCourse = Course(
     courseId: 'c1',
@@ -37,6 +37,7 @@ void main() {
     List<Course> courses = const [],
     FakeCalendarService? service,
     FakeReminderScheduler? reminderScheduler,
+    DateTime? now,
   }) async {
     calendarService = service ?? FakeCalendarService();
     scheduler = reminderScheduler ?? FakeReminderScheduler();
@@ -61,8 +62,7 @@ void main() {
                       calendarService: calendarService,
                       courses: courses,
                       reminderScheduler: scheduler,
-                      initialDate: DateTime(2026, 5, 1),
-                      now: now,
+                      now: now ?? mainNow,
                     ),
                   ),
                 );
@@ -108,9 +108,11 @@ void main() {
     await tapVisible(tester, find.text('OK'));
   }
 
-  /// Accepts the time picker's default (9:00 AM, from `pickEventTime`).
-  /// The dial itself isn't driven — every assertion here only needs *a*
-  /// time, and the wrapper's default keeps that deterministic.
+  /// Accepts the time picker's own default — `now`'s hour and minute
+  /// (9:00 AM here, since that's `now`'s own time above) when the field
+  /// is still empty, per `pickEventTime`. The dial itself isn't driven —
+  /// every assertion here only needs *a* time, and the wrapper's default
+  /// keeps that deterministic.
   Future<void> pickDefaultTime(WidgetTester tester) async {
     await tapVisible(tester, find.byKey(const ValueKey('event-time')));
     await tapVisible(tester, find.text('OK'));
@@ -388,6 +390,22 @@ void main() {
       expect(find.text('May 1, 2026'), findsOneWidget);
     });
 
+    testWidgets(
+      'with no date picked yet, the date picker opens on today (from '
+      '`now`), not the 1st of whatever month is passed in',
+      (tester) async {
+        await pumpAddEvent(tester);
+
+        // Accept the picker's own pre-highlighted day without tapping any
+        // date — reveals what it opened on.
+        await tapVisible(tester, find.byKey(const ValueKey('event-date')));
+        await tapVisible(tester, find.text('OK'));
+
+        // `mainNow` is May 3, 2026 — not the 1st.
+        expect(find.text('May 3, 2026'), findsOneWidget);
+      },
+    );
+
     testWidgets('the time picker fills the field in 12-hour form', (
       tester,
     ) async {
@@ -397,6 +415,19 @@ void main() {
       expect(find.text('9:00 AM'), findsOneWidget);
       expect(find.text('Select a time'), findsNothing);
     });
+
+    testWidgets(
+      'with no time picked yet, the time picker opens on the current '
+      'time, not a fixed fallback',
+      (tester) async {
+        // Distinct from the file-wide `mainNow` (9:00 AM), so accepting
+        // the picker's own default genuinely proves it opened on `now`.
+        await pumpAddEvent(tester, now: DateTime(2026, 5, 3, 14, 37));
+        await pickDefaultTime(tester);
+
+        expect(find.text('2:37 PM'), findsOneWidget);
+      },
+    );
 
     testWidgets('cancelling a picker leaves the field untouched', (
       tester,
