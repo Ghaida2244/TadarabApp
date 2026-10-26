@@ -102,7 +102,7 @@ const kGuideItems = [
     // handoff's original wording said the opposite.
     body:
         'Redoes the session with the same settings but new questions or '
-        'cards. Your original session is kept — retakes are added to it as '
+        'cards. Your original session is kept. Retakes are added to it as '
         'a stack, and each one earns its own points.',
     color: Color(0xFF2563EB),
     tint: Color(0xFFE8F0FE),
