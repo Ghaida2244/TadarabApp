@@ -2,15 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../../utils/rank.dart';
 
-/// Draws the design's ten rank glyphs.
+/// Draws the rank glyph: the same five-pointed star for every tier.
 ///
-/// The handoff ships each tier's icon as a bespoke SVG path in a 24×24
-/// viewBox, and Material has no equivalent for most of them, so each path is
-/// hand-translated into a [Path] below and painted at the requested size.
-/// That keeps them exact rather than approximated — and needs no package.
-///
-/// The design's "unique" icon set is the one in use (the alternative, a
-/// single star for every tier, is not).
+/// The handoff's "unique" set (a bespoke SVG path per tier) was used
+/// originally, hand-translated into a [Path] and painted at the requested
+/// size; the design's other icon set — a single star for every tier — is
+/// now the one in use instead, drawn from the former tier 7 glyph.
 class RankIcon extends StatelessWidget {
   const RankIcon({
     super.key,
@@ -91,122 +88,24 @@ class _RankIconPainter extends CustomPainter {
       oldDelegate.filled != filled;
 }
 
-/// The glyph for [tier] as a [Path] in the design's 24×24 coordinate space.
+/// The glyph for [tier] as a [Path] in the design's 24×24 coordinate space —
+/// the same five-pointed star for every tier (the former tier 7 glyph).
 ///
-/// Public so the icons can be unit-tested without a canvas. An unknown tier
-/// falls back to the first glyph rather than throwing — a rank number out of
-/// range should degrade to a circle, not crash the Ranks screen.
+/// Public so the icon can be unit-tested without a canvas. [tier] is
+/// accepted but otherwise unused — kept so callers never need to special-
+/// case a tier number, and so an out-of-range tier still degrades to the
+/// star rather than throwing.
 Path rankIconPath(int tier) {
-  switch (tier) {
-    // 1 — Beginner: a plain circle.
-    case 1:
-      return Path()
-        ..addOval(Rect.fromCircle(center: const Offset(12, 12), radius: 7));
-
-    // 2 — Active: triangle.
-    case 2:
-      return Path()
-        ..moveTo(12, 4)
-        ..lineTo(20, 19)
-        ..lineTo(4, 19)
-        ..close();
-
-    // 3 — Focused: diamond.
-    case 3:
-      return Path()
-        ..moveTo(12, 3)
-        ..lineTo(20, 12)
-        ..lineTo(12, 21)
-        ..lineTo(4, 12)
-        ..close();
-
-    // 4 — Rising: hexagon.
-    case 4:
-      return Path()
-        ..moveTo(12, 3)
-        ..lineTo(20, 7.5)
-        ..lineTo(20, 16.5)
-        ..lineTo(12, 21)
-        ..lineTo(4, 16.5)
-        ..lineTo(4, 7.5)
-        ..close();
-
-    // 5 — Skilled: shield, with the design's two cubics for the point.
-    case 5:
-      return Path()
-        ..moveTo(12, 3)
-        ..lineTo(20, 6)
-        ..lineTo(20, 12)
-        ..cubicTo(20, 17, 16.5, 20, 12, 21)
-        ..cubicTo(7.5, 20, 4, 17, 4, 12)
-        ..lineTo(4, 6)
-        ..close();
-
-    // 6 — Advanced: lightning bolt.
-    case 6:
-      return Path()
-        ..moveTo(13, 2)
-        ..lineTo(4, 14)
-        ..lineTo(11, 14)
-        ..lineTo(10, 22)
-        ..lineTo(19, 10)
-        ..lineTo(12, 10)
-        ..close();
-
-    // 7 — Proficient: five-pointed star.
-    case 7:
-      return Path()
-        ..moveTo(12, 4)
-        ..lineTo(14.3, 8.8)
-        ..lineTo(19.5, 9.5)
-        ..lineTo(15.7, 13.1)
-        ..lineTo(16.6, 18.3)
-        ..lineTo(12, 15.8)
-        ..lineTo(7.4, 18.3)
-        ..lineTo(8.3, 13.1)
-        ..lineTo(4.5, 9.5)
-        ..lineTo(9.7, 8.8)
-        ..close();
-
-    // 8 — Expert: flame. The design's arc is a clockwise semicircle across
-    // the base, then three cubics back up the inner curl.
-    case 8:
-      return Path()
-        ..moveTo(12, 3)
-        ..cubicTo(13, 7, 17, 8, 17, 13)
-        ..arcToPoint(
-          const Offset(7, 13),
-          radius: const Radius.circular(5),
-          clockwise: true,
-        )
-        ..cubicTo(7, 10, 9, 9, 9, 7)
-        ..cubicTo(10, 8, 11, 9, 11, 10)
-        ..cubicTo(12, 8, 12, 5, 12, 3)
-        ..close();
-
-    // 9 — Elite: gem.
-    case 9:
-      return Path()
-        ..moveTo(6, 4)
-        ..lineTo(18, 4)
-        ..lineTo(21, 9)
-        ..lineTo(12, 21)
-        ..lineTo(3, 9)
-        ..close();
-
-    // 10 — Master: crown.
-    case 10:
-      return Path()
-        ..moveTo(3, 8)
-        ..lineTo(7.5, 12)
-        ..lineTo(12, 5)
-        ..lineTo(16.5, 12)
-        ..lineTo(21, 8)
-        ..lineTo(19, 19)
-        ..lineTo(5, 19)
-        ..close();
-
-    default:
-      return rankIconPath(1);
-  }
+  return Path()
+    ..moveTo(12, 4)
+    ..lineTo(14.3, 8.8)
+    ..lineTo(19.5, 9.5)
+    ..lineTo(15.7, 13.1)
+    ..lineTo(16.6, 18.3)
+    ..lineTo(12, 15.8)
+    ..lineTo(7.4, 18.3)
+    ..lineTo(8.3, 13.1)
+    ..lineTo(4.5, 9.5)
+    ..lineTo(9.7, 8.8)
+    ..close();
 }

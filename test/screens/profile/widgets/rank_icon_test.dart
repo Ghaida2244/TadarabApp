@@ -26,29 +26,32 @@ void main() {
       }
     });
 
-    test('an out-of-range tier falls back to the first glyph', () {
-      final fallback = rankIconPath(1).getBounds();
-      expect(rankIconPath(0).getBounds(), fallback);
-      expect(rankIconPath(99).getBounds(), fallback);
-      expect(rankIconPath(-3).getBounds(), fallback);
+    test('an out-of-range tier never throws, and matches the normal glyph', () {
+      final star = rankIconPath(1).getBounds();
+      expect(rankIconPath(0).getBounds(), star);
+      expect(rankIconPath(99).getBounds(), star);
+      expect(rankIconPath(-3).getBounds(), star);
     });
 
-    test('the glyphs are distinct from one another', () {
-      // A cheap shape fingerprint: no two tiers should share both bounds
-      // and metric length, which would mean a copy-paste slip.
-      final seen = <String>{};
-      for (final rank in kRanks) {
-        final path = rankIconPath(rank.tier);
+    test('every tier produces the exact same star path', () {
+      // One glyph for the whole ladder now — a cheap shape fingerprint
+      // (bounds + total path metric length) should be identical across
+      // every tier.
+      String fingerprint(Path path) {
         final metrics = path.computeMetrics().fold<double>(
           0,
           (sum, m) => sum + m.length,
         );
-        final fingerprint =
-            '${path.getBounds()}|${metrics.toStringAsFixed(2)}';
+        return '${path.getBounds()}|${metrics.toStringAsFixed(2)}';
+      }
+
+      final expected = fingerprint(rankIconPath(kRanks.first.tier));
+      for (final rank in kRanks) {
         expect(
-          seen.add(fingerprint),
-          isTrue,
-          reason: 'tier ${rank.tier} duplicates another glyph',
+          fingerprint(rankIconPath(rank.tier)),
+          expected,
+          reason: 'tier ${rank.tier} (${rank.name}) should match the star '
+              'every other tier uses',
         );
       }
     });
