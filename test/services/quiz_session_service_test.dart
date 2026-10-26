@@ -1,8 +1,27 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mock_exceptions/mock_exceptions.dart';
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/question.dart';
 import 'package:tadarab_app/models/quiz_session.dart';
 import 'package:tadarab_app/services/quiz_session_service.dart';
+import 'package:tadarab_app/services/streak_service.dart';
+
+/// Supplies a fixed signed-in identity without needing a real/fake
+/// FirebaseAuth — [QuizSessionService.currentUid]/[currentEmail] are
+/// public exactly so a test subclass can override them this way, the same
+/// approach test/services/calendar_service_test.dart uses for
+/// [CalendarService.currentEmail].
+class _SignedInQuizSessionService extends QuizSessionService {
+  _SignedInQuizSessionService({super.firestore, super.streakService});
+
+  @override
+  String? get currentUid => 'uid-1';
+
+  @override
+  String? get currentEmail => 'student@example.com';
+}
 
 QuizSession _session({
   required String id,
@@ -256,5 +275,175 @@ void main() {
     test('failure-adjacent: a custom maxPerBatch is respected', () {
       expect(batchWriteSizes(totalOperations: 25, maxPerBatch: 10), [10, 10, 5]);
     });
+  });
+
+  group('completeSession / submitExamSession — points and rank', () {
+    late FakeFirebaseFirestore firestore;
+    late QuizSessionService service;
+
+    DocumentReference<Map<String, dynamic>> studentDoc() =>
+        firestore.collection('users').doc('uid-1');
+
+    CollectionReference<Map<String, dynamic>> sessionsRef() =>
+        studentDoc().collection('quizSessions');
+
+    Future<void> seedStudent({int? totalPoints}) async {
+      final data = <String, dynamic>{
+        'email': 'student@example.com',
+        'name': 'Student',
+      };
+      if (totalPoints != null) data['totalPoints'] = totalPoints;
+      await studentDoc().set(data);
+    }
+
+    Future<void> seedSessionWithQuestions(
+      QuizSession session,
+      List<Question> questions,
+    ) async {
+      final sessionRef = sessionsRef().doc(session.sessionId);
+      await sessionRef.set(session.toFirestore());
+      for (final q in questions) {
+        await sessionRef.collection('questions').doc(q.questionId).set(q.toFirestore());
+      }
+    }
+
+    setUp(() {
+      firestore = FakeFirebaseFirestore();
+      service = _SignedInQuizSessionService(
+        firestore: firestore,
+        streakService: StreakService(firestore: firestore),
+      );
+    });
+
+    test(
+      'normal case: completeSession, just above a rank threshold — '
+      'currentRank is updated to match the new total',
+      () async {
+        // Active Learner starts at 100; one correct answer is 4 points.
+        await seedStudent(totalPoints: 96);
+        await seedSessionWithQuestions(
+          _session(id: 's1', completed: false),
+          [_question(studentAnswer: 'B', correctAnswer: 'B')],
+        );
+
+        await service.completeSession('s1');
+
+        final data = (await studentDoc().get()).data()!;
+        expect(data['totalPoints'], 100);
+        expect(data['currentRank'], 'Active Learner');
+      },
+    );
+
+    test(
+      'edge case: completeSession, just below a rank threshold — '
+      'currentRank stays at the current rank',
+      () async {
+        await seedStudent(totalPoints: 90);
+        await seedSessionWithQuestions(
+          // No correct answers: 0 points earned, stays well below 100.
+          _session(id: 's2', completed: false),
+          [_question(studentAnswer: 'wrong', correctAnswer: 'B')],
+        );
+
+        await service.completeSession('s2');
+
+        final data = (await studentDoc().get()).data()!;
+        expect(data['totalPoints'], 90);
+        expect(data['currentRank'], 'Beginner Learner');
+      },
+    );
+
+    test(
+      'edge case: a student doc with no totalPoints field at all is '
+      'treated as 0, not a crash',
+      () async {
+        await seedStudent(); // no totalPoints field
+        await seedSessionWithQuestions(
+          _session(id: 's3', completed: false),
+          [_question(studentAnswer: 'B', correctAnswer: 'B')],
+        );
+
+        await service.completeSession('s3');
+
+        final data = (await studentDoc().get()).data()!;
+        expect(data['totalPoints'], 4);
+        expect(data['currentRank'], 'Beginner Learner');
+      },
+    );
+
+    test(
+      'failure case: a failed read of the student doc still saves the '
+      'session and totalPoints, and skips currentRank entirely',
+      () async {
+        await seedStudent(totalPoints: 10);
+        await seedSessionWithQuestions(
+          _session(id: 's4', completed: false),
+          [_question(studentAnswer: 'B', correctAnswer: 'B')],
+        );
+        whenCalling(
+          Invocation.method(#get, null),
+        ).on(studentDoc()).thenThrow(FirebaseException(plugin: 'cloud_firestore'));
+        // StreakService reads the very same student doc path right after
+        // completeSession's own rank read — give it an entirely separate
+        // Firestore so the registered failure above (which isn't scoped to
+        // a single call) doesn't also break the unrelated streak write
+        // this test isn't exercising.
+        final serviceWithIsolatedStreak = _SignedInQuizSessionService(
+          firestore: firestore,
+          streakService: StreakService(firestore: FakeFirebaseFirestore()),
+        );
+
+        final result = await serviceWithIsolatedStreak.completeSession('s4');
+
+        expect(result.isSessionCompleted, isTrue);
+        // A plain studentDoc().get() (and even a collection-level query —
+        // fake_cloud_firestore's own .get() fetches each matching document
+        // via its own .get() internally) would hit the same registered
+        // failure above, since it throws on every matching call, not just
+        // the first. .snapshots() reads the current in-memory state
+        // directly and isn't instrumented by mock_exceptions at all.
+        final data = (await studentDoc().snapshots().first).data()!;
+        expect(data['totalPoints'], 14);
+        expect(data.containsKey('currentRank'), isFalse);
+      },
+    );
+
+    test(
+      'normal case: submitExamSession also updates currentRank, just '
+      'above a threshold',
+      () async {
+        await seedStudent(totalPoints: 696); // Focused Learner: 300-699
+        final draft = QuizSession(
+          sessionId: 'exam-1',
+          createdAt: DateTime(2026, 1, 1),
+          difficultyLevels: const [DifficultyLevel.medium],
+          email: 'a@b.com',
+          courseId: 'c1',
+          materialIds: const ['m1'],
+          mode: Mode.exam,
+        );
+        final answered = [
+          Question(
+            questionId: 'q1',
+            questionText: 'Q',
+            correctAnswer: 'B',
+            explanation: 'E',
+            sourceLocation: 'Slide 1',
+            studentAnswer: 'B',
+            options: const ['A', 'B', 'C', 'D'],
+            sessionId: 'exam-1',
+          ),
+        ];
+
+        await service.submitExamSession(
+          draftSession: draft,
+          answeredQuestions: answered,
+        );
+
+        final data = (await studentDoc().get()).data()!;
+        expect(data['totalPoints'], 700);
+        expect(data['currentRank'], 'Rising Learner');
+      },
+    );
   });
 }

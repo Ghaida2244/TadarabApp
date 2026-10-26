@@ -7,6 +7,7 @@ import '../models/question.dart';
 import '../models/quiz_session.dart';
 import '../models/session.dart';
 import '../models/study_material.dart';
+import '../utils/rank.dart';
 import 'generation_topics.dart';
 import 'material_catalog.dart';
 import 'quiz_generation_client.dart';
@@ -188,18 +189,55 @@ class QuizSessionService {
       _firestoreOverride ?? FirebaseFirestore.instance;
   FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
 
-  String? get _uid => _auth.currentUser?.uid;
-  String? get _email => _auth.currentUser?.email;
+  /// Public (unlike [_firestore]/[_auth]) so a test subclass can override
+  /// just the signed-in identity — same pattern as [CalendarService],
+  /// [CoursesService] and [HomeDataService]'s own `currentUid`.
+  String? get currentUid => _auth.currentUser?.uid;
+
+  /// See [currentUid].
+  String? get currentEmail => _auth.currentUser?.email;
 
   CollectionReference<Map<String, dynamic>> _sessionsRef(String uid) =>
       _firestore.collection('users').doc(uid).collection('quizSessions');
+
+  /// Builds the student-doc field updates for awarding [earnedPoints]:
+  /// `totalPoints` always (via [FieldValue.increment], unchanged from
+  /// before — so concurrent completions can't lose points), plus
+  /// `currentRank` best-effort, per rank.dart's INTEGRATION POINT. Reads
+  /// the student's *current* `totalPoints` first (a missing field on an
+  /// existing doc reads as 0) to compute what the new total will become,
+  /// then sets `currentRank` to [rankForPoints] of that. If the read
+  /// throws, or the student doc doesn't exist, `currentRank` is omitted
+  /// entirely — the displayed rank is always derived from `totalPoints`
+  /// directly, so a missed write here never breaks anything and never
+  /// blocks completing the session.
+  Future<Map<String, Object?>> _pointsAndRankUpdate({
+    required String uid,
+    required int earnedPoints,
+  }) async {
+    final updates = <String, Object?>{
+      'totalPoints': FieldValue.increment(earnedPoints),
+    };
+    try {
+      final snapshot = await _firestore.collection('users').doc(uid).get();
+      if (snapshot.exists) {
+        final currentTotal =
+            (snapshot.data()?['totalPoints'] as num?)?.toInt() ?? 0;
+        final newTotal = currentTotal + earnedPoints;
+        updates['currentRank'] = rankForPoints(newTotal).name;
+      }
+    } catch (_) {
+      // Best-effort only — see the doc comment above.
+    }
+    return updates;
+  }
 
   Future<List<StudyMaterial>> fetchMaterials(String courseId) {
     return _materialCatalog.fetchMaterials(courseId);
   }
 
   Future<List<QuizSession>> fetchSessions(String courseId) async {
-    final uid = _uid;
+    final uid = currentUid;
     if (uid == null) return const [];
     final snap = await _sessionsRef(
       uid,
@@ -208,7 +246,7 @@ class QuizSessionService {
   }
 
   Future<QuizSession> fetchSession(String sessionId) async {
-    final uid = _uid!;
+    final uid = currentUid!;
     final doc = await _sessionsRef(uid).doc(sessionId).get();
     return QuizSession.fromFirestore(doc);
   }
@@ -228,7 +266,7 @@ class QuizSessionService {
   }
 
   Future<List<Question>> fetchQuestions(String sessionId) async {
-    final uid = _uid!;
+    final uid = currentUid!;
     final snap = await _sessionsRef(
       uid,
     ).doc(sessionId).collection('questions').orderBy(FieldPath.documentId).get();
@@ -267,8 +305,8 @@ class QuizSessionService {
     required Mode mode,
     String? customPrompt,
   }) async {
-    final uid = _uid!;
-    final email = _email ?? '';
+    final uid = currentUid!;
+    final email = currentEmail ?? '';
 
     final generationMaterials = await Future.wait(
       materials.map(
@@ -330,7 +368,7 @@ class QuizSessionService {
     required QuizSession session,
     required List<Question> questions,
   }) async {
-    final uid = _uid!;
+    final uid = currentUid!;
     final sessionRef = _sessionsRef(uid).doc(session.sessionId);
     final batch = _firestore.batch();
     batch.set(sessionRef, session.toFirestore());
@@ -373,7 +411,7 @@ class QuizSessionService {
     required String questionId,
     required String answer,
   }) async {
-    final uid = _uid!;
+    final uid = currentUid!;
     await _sessionsRef(
       uid,
     ).doc(sessionId).collection('questions').doc(questionId).update({
@@ -387,7 +425,7 @@ class QuizSessionService {
     required String sessionId,
     required int index,
   }) async {
-    final uid = _uid!;
+    final uid = currentUid!;
     await _sessionsRef(uid).doc(sessionId).update({
       'currentQuestionIndex': index,
     });
@@ -399,7 +437,7 @@ class QuizSessionService {
     required String sessionId,
     required String questionId,
   }) async {
-    final uid = _uid!;
+    final uid = currentUid!;
     await _sessionsRef(
       uid,
     ).doc(sessionId).collection('questions').doc(questionId).update({
@@ -410,10 +448,11 @@ class QuizSessionService {
   /// Marks a real (non-practice) session completed: scores it from its
   /// questions' stored answers (an unanswered question counts as
   /// incorrect), writes the result, credits points to the student's
-  /// totalPoints, and records today's study activity for the streak — the
-  /// streak's first real caller.
+  /// totalPoints and currentRank (see [_pointsAndRankUpdate]), and records
+  /// today's study activity for the streak — the streak's first real
+  /// caller.
   Future<QuizSession> completeSession(String sessionId) async {
-    final uid = _uid!;
+    final uid = currentUid!;
     final questions = await fetchQuestions(sessionId);
     final correct = questions.where((q) => q.isCorrect == true).length;
     final incorrect = questions.length - correct;
@@ -427,9 +466,11 @@ class QuizSessionService {
       'incorrectAnswers': incorrect,
       'earnedPoints': earnedPoints,
     });
-    await _firestore.collection('users').doc(uid).update({
-      'totalPoints': FieldValue.increment(earnedPoints),
-    });
+    final studentUpdates = await _pointsAndRankUpdate(
+      uid: uid,
+      earnedPoints: earnedPoints,
+    );
+    await _firestore.collection('users').doc(uid).update(studentUpdates);
     await _streakService.recordStudyActivity(uid: uid, activityDate: now);
 
     return fetchSession(sessionId);
@@ -456,7 +497,7 @@ class QuizSessionService {
     required QuizSession draftSession,
     required List<Question> answeredQuestions,
   }) async {
-    final uid = _uid!;
+    final uid = currentUid!;
     final sessionRef = _sessionsRef(uid).doc(draftSession.sessionId);
 
     final correct = answeredQuestions.where((q) => q.isCorrect == true).length;
@@ -496,9 +537,11 @@ class QuizSessionService {
     }
     await batch.commit();
 
-    await _firestore.collection('users').doc(uid).update({
-      'totalPoints': FieldValue.increment(earnedPoints),
-    });
+    final studentUpdates = await _pointsAndRankUpdate(
+      uid: uid,
+      earnedPoints: earnedPoints,
+    );
+    await _firestore.collection('users').doc(uid).update(studentUpdates);
     await _streakService.recordStudyActivity(uid: uid, activityDate: now);
 
     return completed;
@@ -516,7 +559,7 @@ class QuizSessionService {
   /// the source session's own stored `coveredTopics` only, never a union
   /// across the rest of the retake group (see [buildPreviousTopics]).
   Future<GeneratedSessionResult> retakeSession(String sessionId) async {
-    final uid = _uid!;
+    final uid = currentUid!;
     final existing = await fetchSession(sessionId);
 
     final allMaterials = await _materialCatalog.fetchMaterials(
@@ -618,7 +661,7 @@ class QuizSessionService {
   }
 
   Future<void> deleteSession(String sessionId) async {
-    final uid = _uid!;
+    final uid = currentUid!;
     final sessionRef = _sessionsRef(uid).doc(sessionId);
     final questions = await sessionRef.collection('questions').get();
     final batch = _firestore.batch();

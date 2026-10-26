@@ -1,13 +1,17 @@
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:mock_exceptions/mock_exceptions.dart';
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/flashcard.dart';
 import 'package:tadarab_app/models/flashcard_session.dart';
 import 'package:tadarab_app/models/study_material.dart';
 import 'package:tadarab_app/services/flashcard_service.dart';
+import 'package:tadarab_app/services/streak_service.dart';
 
 /// A [FlashcardService] with its Firestore-*read* methods swapped for
 /// canned data, so [generateFlashcards]/[retake]'s real Worker-calling and
@@ -18,13 +22,16 @@ import 'package:tadarab_app/services/flashcard_service.dart';
 /// here for exactly that read. Its Firestore *write* path
 /// (`_firestore.batch()...commit()`, and the private `_fetchSessionsInGroup`
 /// read just before it, both reached only once the Worker returns a
-/// non-empty result) is never exercised here — there's no fake Firestore
-/// available in this project (confirmed: no such package is even a
-/// dependency), and `_fetchSessionsInGroup` is library-private so a test
-/// file can't override it the way it can [fetchSession] — so every test
-/// below deliberately stays on the side of that line where the real
-/// behavior is still being exercised for real: an empty or failing Worker
-/// response, which `retake()` must reject before ever writing to Firestore.
+/// non-empty result) is never exercised here, since `_fetchSessionsInGroup`
+/// is library-private so a test file can't override it the way it can
+/// [fetchSession] — so every test below deliberately stays on the side of
+/// that line where the real behavior is still being exercised for real: an
+/// empty or failing Worker response, which `retake()` must reject before
+/// ever writing to Firestore. (`fake_cloud_firestore` *is* now a dev
+/// dependency — added for the Calendar feature — and is used directly
+/// against the real `FlashcardService`, no subclass needed, in the
+/// `completeSession` group below, since that method needs no Worker call
+/// at all.)
 class _TestFlashcardService extends FlashcardService {
   _TestFlashcardService({
     required http.Client httpClient,
@@ -466,6 +473,283 @@ void main() {
           throwsA(isA<WorkerResponseException>()),
         );
         expect(service.fetchFlashcardsCalled, isFalse);
+      },
+    );
+  });
+
+  group('completeSession — points, rank and streak', () {
+    late FakeFirebaseFirestore firestore;
+    late FlashcardService service;
+
+    DocumentReference<Map<String, dynamic>> studentDoc() =>
+        firestore.collection('users').doc('uid-1');
+
+    CollectionReference<Map<String, dynamic>> sessionsRef() =>
+        studentDoc().collection('flashcardSessions');
+
+    FlashcardSession flashcardSession(String id) => FlashcardSession(
+      sessionId: id,
+      createdAt: DateTime(2026, 1, 1),
+      difficultyLevels: const [DifficultyLevel.medium],
+      email: 'student@example.com',
+      courseId: 'course-1',
+      materialIds: const ['m1'],
+      materialTitles: const ['Lecture 1'],
+    );
+
+    Future<void> seedStudent({int? totalPoints}) async {
+      final data = <String, dynamic>{
+        'email': 'student@example.com',
+        'name': 'Student',
+      };
+      if (totalPoints != null) data['totalPoints'] = totalPoints;
+      await studentDoc().set(data);
+    }
+
+    Future<void> seedSessionWithCard(
+      FlashcardSession session,
+      Flashcard card,
+    ) async {
+      final sessionRef = sessionsRef().doc(session.sessionId);
+      await sessionRef.set(session.toFirestore());
+      await sessionRef
+          .collection('flashcards')
+          .doc(card.flashcardId)
+          .set(card.toFirestore());
+    }
+
+    setUp(() {
+      firestore = FakeFirebaseFirestore();
+      service = FlashcardService(
+        uid: 'uid-1',
+        courseId: 'course-1',
+        firestore: firestore,
+        streakService: StreakService(firestore: firestore),
+      );
+    });
+
+    test(
+      'normal case: completing a session calls the streak service exactly '
+      'once (FIX 1 — Flashcards previously never advanced the streak)',
+      () async {
+        await seedStudent(totalPoints: 0);
+        await seedSessionWithCard(
+          flashcardSession('s1'),
+          Flashcard(
+            flashcardId: 'c1',
+            frontText: 'Q',
+            backText: 'A',
+            reviewStatus: null,
+            sourceLocation: 'Slide 1',
+            sessionId: 's1',
+            cardIndex: 0,
+          ),
+        );
+
+        await service.completeSession(
+          sessionId: 's1',
+          flashcardId: 'c1',
+          status: ReviewStatus.knowIt,
+          finalIndex: 0,
+          knownCount: 1,
+          needsReviewCount: 0,
+          completedAt: DateTime(2026, 3, 10),
+        );
+
+        final data = (await studentDoc().get()).data()!;
+        expect(data['currentStreak'], 1);
+        expect(data['lastStudyDate'], isNotNull);
+      },
+    );
+
+    test(
+      'edge case: markFlashcard (a non-final card) never touches the '
+      'streak or totalPoints — only completeSession does',
+      () async {
+        await seedStudent(totalPoints: 0);
+        await seedSessionWithCard(
+          flashcardSession('s2'),
+          Flashcard(
+            flashcardId: 'c1',
+            frontText: 'Q',
+            backText: 'A',
+            reviewStatus: null,
+            sourceLocation: 'Slide 1',
+            sessionId: 's2',
+            cardIndex: 0,
+          ),
+        );
+
+        await service.markFlashcard(
+          sessionId: 's2',
+          flashcardId: 'c1',
+          status: ReviewStatus.needsReview,
+          currentFlashcardIndex: 1,
+          knownCount: 0,
+          needsReviewCount: 1,
+        );
+
+        final data = (await studentDoc().get()).data()!;
+        expect(data.containsKey('currentStreak'), isFalse);
+        expect(data['totalPoints'], 0);
+      },
+    );
+
+    test(
+      'normal case: completeSession, just above a rank threshold — '
+      'currentRank is updated to match the new total',
+      () async {
+        // Active Learner starts at 100; one known card is 2 points.
+        await seedStudent(totalPoints: 98);
+        await seedSessionWithCard(
+          flashcardSession('s3'),
+          Flashcard(
+            flashcardId: 'c1',
+            frontText: 'Q',
+            backText: 'A',
+            reviewStatus: null,
+            sourceLocation: 'Slide 1',
+            sessionId: 's3',
+            cardIndex: 0,
+          ),
+        );
+
+        await service.completeSession(
+          sessionId: 's3',
+          flashcardId: 'c1',
+          status: ReviewStatus.knowIt,
+          finalIndex: 0,
+          knownCount: 1,
+          needsReviewCount: 0,
+          completedAt: DateTime(2026, 3, 10),
+        );
+
+        final data = (await studentDoc().get()).data()!;
+        expect(data['totalPoints'], 100);
+        expect(data['currentRank'], 'Active Learner');
+      },
+    );
+
+    test(
+      'edge case: completeSession, just below a rank threshold — '
+      'currentRank stays at the current rank',
+      () async {
+        await seedStudent(totalPoints: 98);
+        await seedSessionWithCard(
+          flashcardSession('s4'),
+          Flashcard(
+            flashcardId: 'c1',
+            frontText: 'Q',
+            backText: 'A',
+            reviewStatus: null,
+            sourceLocation: 'Slide 1',
+            sessionId: 's4',
+            cardIndex: 0,
+          ),
+        );
+
+        await service.completeSession(
+          // No known cards: zero points, stays below 100.
+          sessionId: 's4',
+          flashcardId: 'c1',
+          status: ReviewStatus.needsReview,
+          finalIndex: 0,
+          knownCount: 0,
+          needsReviewCount: 1,
+          completedAt: DateTime(2026, 3, 10),
+        );
+
+        final data = (await studentDoc().get()).data()!;
+        expect(data['totalPoints'], 98);
+        expect(data['currentRank'], 'Beginner Learner');
+      },
+    );
+
+    test(
+      'edge case: a student doc with no totalPoints field at all is '
+      'treated as 0, not a crash',
+      () async {
+        await seedStudent(); // no totalPoints field
+        await seedSessionWithCard(
+          flashcardSession('s5'),
+          Flashcard(
+            flashcardId: 'c1',
+            frontText: 'Q',
+            backText: 'A',
+            reviewStatus: null,
+            sourceLocation: 'Slide 1',
+            sessionId: 's5',
+            cardIndex: 0,
+          ),
+        );
+
+        await service.completeSession(
+          sessionId: 's5',
+          flashcardId: 'c1',
+          status: ReviewStatus.knowIt,
+          finalIndex: 0,
+          knownCount: 1,
+          needsReviewCount: 0,
+          completedAt: DateTime(2026, 3, 10),
+        );
+
+        final data = (await studentDoc().get()).data()!;
+        expect(data['totalPoints'], 2);
+        expect(data['currentRank'], 'Beginner Learner');
+      },
+    );
+
+    test(
+      'failure case: a failed read of the student doc still saves the '
+      'session and totalPoints, and skips currentRank entirely',
+      () async {
+        await seedStudent(totalPoints: 10);
+        await seedSessionWithCard(
+          flashcardSession('s6'),
+          Flashcard(
+            flashcardId: 'c1',
+            frontText: 'Q',
+            backText: 'A',
+            reviewStatus: null,
+            sourceLocation: 'Slide 1',
+            sessionId: 's6',
+            cardIndex: 0,
+          ),
+        );
+        whenCalling(
+          Invocation.method(#get, null),
+        ).on(studentDoc()).thenThrow(FirebaseException(plugin: 'cloud_firestore'));
+        // StreakService reads the very same student doc path right after
+        // the completion batch commits — give it an entirely separate
+        // Firestore so the registered failure above (which isn't scoped to
+        // a single call) doesn't also break the unrelated streak write
+        // this test isn't exercising.
+        final serviceWithIsolatedStreak = FlashcardService(
+          uid: 'uid-1',
+          courseId: 'course-1',
+          firestore: firestore,
+          streakService: StreakService(firestore: FakeFirebaseFirestore()),
+        );
+
+        await serviceWithIsolatedStreak.completeSession(
+          sessionId: 's6',
+          flashcardId: 'c1',
+          status: ReviewStatus.knowIt,
+          finalIndex: 0,
+          knownCount: 1,
+          needsReviewCount: 0,
+          completedAt: DateTime(2026, 3, 10),
+        );
+
+        // A plain studentDoc().get() (and even a collection-level query —
+        // fake_cloud_firestore's own .get() fetches each matching document
+        // via its own .get() internally) would hit the same registered
+        // failure above, since it throws on every matching call, not just
+        // the first. .snapshots() reads the current in-memory state
+        // directly and isn't instrumented by mock_exceptions at all.
+        final data = (await studentDoc().snapshots().first).data()!;
+        expect(data['totalPoints'], 12);
+        expect(data.containsKey('currentRank'), isFalse);
       },
     );
   });

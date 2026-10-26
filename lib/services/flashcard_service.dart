@@ -9,8 +9,10 @@ import '../models/flashcard.dart';
 import '../models/flashcard_session.dart';
 import '../models/session.dart';
 import '../models/study_material.dart';
+import '../utils/rank.dart';
 import 'auth_service.dart';
 import 'generation_topics.dart';
+import 'streak_service.dart';
 
 // TODO: replace these two with the shared public constants from
 // auth_service.dart (kNetworkFailureMessage / kGenericFailureMessage) once
@@ -113,17 +115,20 @@ class FlashcardService {
     http.Client? httpClient,
     Future<String?> Function()? idTokenProvider,
     Uri? endpoint,
+    StreakService? streakService,
   }) : _firestoreOverride = firestore,
        _httpClient = httpClient ?? http.Client(),
        _idTokenProvider = idTokenProvider ?? AuthService().getIdToken,
        _endpoint =
            endpoint ??
-           Uri.parse('https://tadarab-ai-worker.tadarab.workers.dev/generate');
+           Uri.parse('https://tadarab-ai-worker.tadarab.workers.dev/generate'),
+       _streakService = streakService ?? StreakService();
 
   final String uid;
   final String courseId;
   final FirebaseFirestore? _firestoreOverride;
   final http.Client _httpClient;
+  final StreakService _streakService;
 
   /// Resolves the caller's Firebase ID token for the Worker's
   /// Authorization: Bearer header. Defaults to [AuthService.getIdToken] —
@@ -149,6 +154,38 @@ class FlashcardService {
 
   CollectionReference<Map<String, dynamic>> _cardsRef(String sessionId) =>
       _sessionsRef.doc(sessionId).collection('flashcards');
+
+  /// Builds the student-doc field updates for awarding [earnedPoints]:
+  /// `totalPoints` always (via [FieldValue.increment], unchanged from
+  /// before — so concurrent completions can't lose points), plus
+  /// `currentRank` best-effort, per rank.dart's INTEGRATION POINT. Reads
+  /// the student's *current* `totalPoints` first (a missing field on an
+  /// existing doc reads as 0) to compute what the new total will become,
+  /// then sets `currentRank` to [rankForPoints] of that. If the read
+  /// throws, or the student doc doesn't exist, `currentRank` is omitted
+  /// entirely — the displayed rank is always derived from `totalPoints`
+  /// directly, so a missed write here never breaks anything and never
+  /// blocks completing the session. Mirrors
+  /// `QuizSessionService._pointsAndRankUpdate` exactly — kept as its own
+  /// copy rather than shared, since the two classes have different write
+  /// shapes (a plain `.update()` there, a batch here).
+  Future<Map<String, Object?>> _pointsAndRankUpdate(int earnedPoints) async {
+    final updates = <String, Object?>{
+      'totalPoints': FieldValue.increment(earnedPoints),
+    };
+    try {
+      final snapshot = await _studentDoc.get();
+      if (snapshot.exists) {
+        final currentTotal =
+            (snapshot.data()?['totalPoints'] as num?)?.toInt() ?? 0;
+        final newTotal = currentTotal + earnedPoints;
+        updates['currentRank'] = rankForPoints(newTotal).name;
+      }
+    } catch (_) {
+      // Best-effort only — see the doc comment above.
+    }
+    return updates;
+  }
 
   String _messageFor(FirebaseException e) {
     if (e.code == 'unavailable' || e.code == 'network-request-failed') {
@@ -398,9 +435,13 @@ class FlashcardService {
   }
 
   /// Persists a rating tap on the final card: the card's [status], marks the
-  /// session completed, computes and stores `earnedPoints`, and adds the
-  /// same amount to the student's `totalPoints` — once, here, never again
-  /// outside of a fresh Retake completion.
+  /// session completed, computes and stores `earnedPoints`, adds the same
+  /// amount to the student's `totalPoints` and updates `currentRank` to
+  /// match (see [_pointsAndRankUpdate]) — once, here, never again outside
+  /// of a fresh Retake completion — and records today's study activity for
+  /// the streak (mirrors `QuizSessionService.completeSession`'s own call;
+  /// Practice/Review rounds never call this method, so they never touch
+  /// the streak).
   Future<void> completeSession({
     required String sessionId,
     required String flashcardId,
@@ -412,6 +453,7 @@ class FlashcardService {
   }) async {
     final earnedPoints = calculateEarnedPoints(knownCount: knownCount);
     try {
+      final studentUpdates = await _pointsAndRankUpdate(earnedPoints);
       final batch = _firestore.batch();
       batch.update(_cardsRef(sessionId).doc(flashcardId), {
         'reviewStatus': status.toJson(),
@@ -424,12 +466,12 @@ class FlashcardService {
         'completedAt': Timestamp.fromDate(completedAt),
         'earnedPoints': earnedPoints,
       });
-      // Rank recalculation isn't wired up — no rank-threshold logic exists
-      // in the codebase yet (see CLAUDE.md's 10-rank system, not yet built).
-      batch.update(_studentDoc, {
-        'totalPoints': FieldValue.increment(earnedPoints),
-      });
+      batch.update(_studentDoc, studentUpdates);
       await batch.commit();
+      await _streakService.recordStudyActivity(
+        uid: uid,
+        activityDate: completedAt,
+      );
     } on FirebaseException catch (e) {
       throw FlashcardFailure(_messageFor(e));
     }
