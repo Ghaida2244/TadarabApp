@@ -103,7 +103,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _openDocument(AboutDocumentKind kind) {
+  /// [student] is already in hand from the Profile screen's own
+  /// `StreamBuilder` — never an extra read just to open the guide. Null
+  /// only while the student hasn't loaded yet, in which case the Learning
+  /// Guide falls back to its own "no progress" default rather than
+  /// crashing on a missing value.
+  void _openDocument(AboutDocumentKind kind, Student? student) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => switch (kind) {
@@ -116,7 +121,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           AboutDocumentKind.termsOfUse => const AboutDocumentScreen(
             document: kTermsOfUseDocument,
           ),
-          AboutDocumentKind.learningGuide => const LearningGuideScreen(),
+          AboutDocumentKind.learningGuide => LearningGuideScreen(
+            points: student?.totalPoints,
+          ),
         },
       ),
     );
@@ -178,7 +185,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const SizedBox(height: 22),
                       Text('About', style: ProfileText.sectionTitle),
                       const SizedBox(height: 11),
-                      _AboutRows(onOpen: _openDocument),
+                      _AboutRows(
+                        onOpen: (kind) => _openDocument(kind, student),
+                      ),
                       const SizedBox(height: 22),
                       _LogOutButton(onTap: _confirmLogOut),
                       const SizedBox(height: 8),

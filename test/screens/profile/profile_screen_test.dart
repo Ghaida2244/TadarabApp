@@ -6,6 +6,8 @@ import 'package:tadarab_app/models/student.dart';
 import 'package:tadarab_app/screens/profile/profile_screen.dart';
 import 'package:tadarab_app/screens/profile/widgets/logout_dialog.dart';
 import 'package:tadarab_app/services/home_data_service.dart';
+import 'package:tadarab_app/theme/app_theme.dart';
+import 'package:tadarab_app/utils/rank.dart';
 
 import '../../helpers/fake_home_data_service.dart';
 import '../../helpers/fake_profile_service.dart';
@@ -206,6 +208,35 @@ void main() {
       expect(find.text('HOW TO EARN POINTS'), findsOneWidget);
       expect(find.text('Rank Progress'), findsOneWidget);
     });
+
+    testWidgets(
+      'Learning Guide highlights rungs up through the student\'s real '
+      'rank, not just the first one — regression test for the guide '
+      'being opened with no points at all',
+      (tester) async {
+        // 1450 is Skilled Learner (tier 5) — same value used elsewhere in
+        // this file for the header/summary assertions.
+        await pumpProfile(
+          tester,
+          data: student(name: 'Leen', totalPoints: 1450),
+        );
+
+        await tester.tap(find.byKey(const ValueKey('about-row-Learning Guide')));
+        await tester.pumpAndSettle();
+
+        for (final rank in kRanks) {
+          final rung = tester.widget<Container>(
+            find.byKey(ValueKey('guide-rung-${rank.tier}')),
+          );
+          final color = (rung.decoration! as BoxDecoration).color;
+          if (rank.tier <= 5) {
+            expect(color, rank.color, reason: 'tier ${rank.tier}');
+          } else {
+            expect(color, AppColors.cardTint, reason: 'tier ${rank.tier}');
+          }
+        }
+      },
+    );
   });
 
   group('log out', () {
