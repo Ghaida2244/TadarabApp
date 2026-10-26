@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../features/flashcards/flashcard_navigation.dart';
@@ -12,6 +14,7 @@ import '../../services/flashcard_service.dart';
 import '../../services/home_data_service.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/event_time.dart' show eventDateTime;
 import '../../utils/rank.dart';
 import '../profile/widgets/rank_icon.dart';
 import '../calendar/calendar_screen.dart';
@@ -220,6 +223,30 @@ class _HomeTabState extends State<_HomeTab> {
   late Future<InProgressSession?> _inProgress;
   late Future<List<UpcomingEventView>> _upcoming;
 
+  /// Once [_upcoming] resolves, holds a locally re-pruned version of its
+  /// list — set only when [_onUpcomingTimerFired] removes an event whose
+  /// start has just passed, without a second Firestore round trip. Reset
+  /// to null on every [_loadAll] (a fresh fetch supersedes it). Null means
+  /// "show whatever [_upcoming] resolved to, unmodified".
+  List<UpcomingEventView>? _liveUpcoming;
+
+  /// Fires the moment the soonest not-yet-started event in the current
+  /// Upcoming list is no longer upcoming, so it can disappear on its own
+  /// without the student needing to leave and return to the tab. Re-armed
+  /// after every fetch and after every time it fires; cancelled in
+  /// [dispose] and while this tab isn't [_HomeTab.active] (no point
+  /// ticking toward a UI update nothing is showing).
+  Timer? _upcomingTimer;
+
+  /// The "now" [_scheduleUpcomingTimer] measures the next [Timer]'s
+  /// [Duration] from. Reset to [_HomeTab.now] on every [_loadAll], then
+  /// advanced to each firing's own moment in [_onUpcomingTimerFired] —
+  /// never left at the original, increasingly-stale [_HomeTab.now], or
+  /// every re-arm after the first would compute a [Duration] too long by
+  /// however much (fake or real) time had already passed since that
+  /// original snapshot, drifting later with every event removed.
+  late DateTime _upcomingClock;
+
   @override
   void initState() {
     super.initState();
@@ -234,8 +261,19 @@ class _HomeTabState extends State<_HomeTab> {
     // [refreshToken] (an event was added or deleted on the Calendar tab,
     // which can happen while Home is inactive).
     final becameActive = widget.active && !oldWidget.active;
+    final becameInactive = !widget.active && oldWidget.active;
     final dataChangedElsewhere = widget.refreshToken != oldWidget.refreshToken;
     if (becameActive || dataChangedElsewhere) _reload();
+    // _reload() already re-arms the timer via _loadAll()/_scheduleUpcomingTimer
+    // for the becameActive case; this only needs to additionally cancel it
+    // when the tab stops being the one on screen.
+    if (becameInactive) _upcomingTimer?.cancel();
+  }
+
+  @override
+  void dispose() {
+    _upcomingTimer?.cancel();
+    super.dispose();
   }
 
   void _loadAll() {
@@ -245,13 +283,50 @@ class _HomeTabState extends State<_HomeTab> {
       now: widget.now,
     );
     _inProgress = widget.dataService.fetchInProgressSession(widget.uid);
-    _upcoming = widget.dataService.fetchUpcomingEvents(
+    _liveUpcoming = null;
+    _upcomingClock = widget.now;
+    final upcoming = widget.dataService.fetchUpcomingEvents(
       widget.uid,
       now: widget.now,
     );
+    _upcoming = upcoming;
+    upcoming.then(_scheduleUpcomingTimer);
   }
 
   void _reload() => setState(_loadAll);
+
+  /// Arms [_upcomingTimer] for [events]' own soonest start, so the card
+  /// disappears on its own the moment that passes. A no-op with nothing
+  /// armed when [events] is empty, this tab isn't active, or the widget
+  /// has already been disposed — the two latter checks matter because this
+  /// runs from a Future callback, which can land after either.
+  void _scheduleUpcomingTimer(List<UpcomingEventView> events) {
+    _upcomingTimer?.cancel();
+    if (!mounted || !widget.active || events.isEmpty) return;
+    // events is already sorted soonest-first — see notYetStartedUpcoming.
+    final soonestStart = eventDateTime(events.first.event);
+    final duration = soonestStart.difference(_upcomingClock);
+    _upcomingTimer = Timer(
+      duration.isNegative ? Duration.zero : duration,
+      () => _onUpcomingTimerFired(events, soonestStart),
+    );
+  }
+
+  /// Re-prunes [previousEvents] as of [firedAt] (the exact moment the
+  /// timer was armed for) rather than re-fetching — the student's course
+  /// names are already attached to every surviving event, so there is
+  /// nothing a network call would add here. Advances [_upcomingClock] to
+  /// match before re-arming for whatever's next.
+  void _onUpcomingTimerFired(
+    List<UpcomingEventView> previousEvents,
+    DateTime firedAt,
+  ) {
+    if (!mounted) return;
+    _upcomingClock = firedAt;
+    final pruned = notYetStartedUpcomingViews(previousEvents, now: firedAt);
+    setState(() => _liveUpcoming = pruned);
+    _scheduleUpcomingTimer(pruned);
+  }
 
   /// Fetches one earlier week's data for [TodayProgressCard]'s streak row
   /// pager — the exact same query `_loadAll` already uses for the current
@@ -472,7 +547,11 @@ class _HomeTabState extends State<_HomeTab> {
           final courses = results[0] as List<Course>;
           final weeklyProgress = results[1] as WeeklyProgress;
           final inProgress = results[2] as InProgressSession?;
-          final upcoming = results[3] as List<UpcomingEventView>;
+          // Prefer the locally re-pruned list (set once the clock has
+          // passed an event's start since this Future resolved) over the
+          // Future's own resolved value, which never changes on its own.
+          final upcoming =
+              _liveUpcoming ?? (results[3] as List<UpcomingEventView>);
 
           return StreamBuilder<Student?>(
             stream: widget.dataService.watchStudent(widget.uid),

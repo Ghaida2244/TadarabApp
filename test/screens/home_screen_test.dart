@@ -958,7 +958,9 @@ void main() {
               eventId: 'e1',
               eventName: 'Midterm',
               eventDate: DateTime(2026, 3, 11),
-              eventTime: '12:00 PM',
+              // Stored as "HH:mm"; later than `now` (14:30) so it's still
+              // upcoming, not already started.
+              eventTime: '18:00',
               email: 'e@x.com',
             ),
           ),
@@ -967,7 +969,7 @@ void main() {
               eventId: 'e2',
               eventName: 'GP1 report',
               eventDate: DateTime(2026, 3, 20),
-              eventTime: '11:59 PM',
+              eventTime: '23:59',
               email: 'e@x.com',
             ),
           ),
@@ -987,6 +989,87 @@ void main() {
         expect(find.text('Today'), findsOneWidget);
         expect(find.text('GP1 report'), findsOneWidget);
         expect(find.text('9d'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'shows the stored time in display form (e.g. "6:00 PM"), not the '
+      'raw "HH:mm" string',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(
+            courses: [aCourse],
+            upcomingEvents: [
+              UpcomingEventView(
+                event: CalendarEvent(
+                  eventId: 'e1',
+                  eventName: 'Study group',
+                  eventDate: DateTime(2026, 3, 11),
+                  eventTime: '18:00',
+                  email: 'e@x.com',
+                ),
+              ),
+            ],
+          ),
+        );
+
+        expect(find.textContaining('6:00 PM'), findsOneWidget);
+        expect(find.textContaining('18:00'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'an event disappears on its own once the clock passes its start '
+      'time, without a network re-fetch, and leaves no pending timer',
+      (tester) async {
+        // `now` (declared at the top of this file) is 2026-03-11 14:30.
+        final soon = UpcomingEventView(
+          event: CalendarEvent(
+            eventId: 'soon',
+            eventName: 'Standup',
+            eventDate: DateTime(2026, 3, 11),
+            eventTime: '14:31', // one minute after `now`
+            email: 'e@x.com',
+          ),
+        );
+        final later = UpcomingEventView(
+          event: CalendarEvent(
+            eventId: 'later',
+            eventName: 'Workshop',
+            eventDate: DateTime(2026, 3, 12),
+            eventTime: '08:00',
+            email: 'e@x.com',
+          ),
+        );
+        final dataService = FakeHomeDataService(
+          courses: [aCourse],
+          upcomingEvents: [soon, later],
+        );
+
+        await pumpHome(tester, dataService: dataService);
+
+        expect(find.text('Standup'), findsOneWidget);
+        expect(find.text('Workshop'), findsOneWidget);
+        expect(dataService.fetchUpcomingEventsCalls, 1);
+
+        // Advance the fake clock past "soon"'s 14:31 start. The timer's
+        // setState rebuilds with a brand-new Future.wait([...]) instance
+        // (recreated on every build, same as every other reload) — an
+        // extra pump() lets FutureBuilder resolve that and repaint before
+        // asserting on it.
+        await tester.pump(const Duration(minutes: 2));
+        await tester.pump();
+
+        expect(find.text('Standup'), findsNothing);
+        expect(find.text('Workshop'), findsOneWidget);
+        // Pruned locally from the already-fetched list — no second fetch.
+        expect(dataService.fetchUpcomingEventsCalls, 1);
+
+        // Unmount before the test ends: dispose() cancels the timer that
+        // was just re-armed for "Workshop", so no pending Timer leaks out
+        // of this test.
+        await tester.pumpWidget(const SizedBox());
       },
     );
   });

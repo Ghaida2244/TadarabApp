@@ -7,6 +7,7 @@ import '../models/flashcard_session.dart';
 import '../models/question.dart';
 import '../models/quiz_session.dart';
 import '../models/student.dart';
+import '../utils/event_time.dart' show eventDateTime;
 import 'streak_service.dart' show dateOnly;
 
 /// Quiz or flashcard — used wherever code needs to know which kind of
@@ -113,6 +114,66 @@ class UpcomingEventView {
   final CalendarEvent event;
   final String? courseName;
 }
+
+/// Overfetch factor for [HomeDataService.fetchUpcomingEvents]'s Firestore
+/// query, relative to its own `limit`. Firestore can only filter/order by
+/// `eventDate` (day granularity) — it has no combined date+time field to
+/// query against, since `eventTime` is a separate "HH:mm" string — so a
+/// query for "events from today onward" can return events that are today
+/// but whose time has already passed. Fetching 4x the display limit (20
+/// documents for the default limit of 5) gives [notYetStartedUpcoming]
+/// enough already-fetched candidates to still fill the list even on a day
+/// with several already-started events; a single day with more than ~15
+/// already-started events is an accepted, extreme edge case where the
+/// list may come back short until the next reload.
+const _kUpcomingOverfetchFactor = 4;
+
+/// Keeps only the items whose [eventOf] event hasn't started yet —
+/// strictly after [now], per [eventDateTime] (which already treats an
+/// unparsable stored time as midnight) — sorted soonest-first by that same
+/// instant, then truncated to [limit]. Pure and Firestore-free so the
+/// filtering, sorting and 5-slot-limit rules can be unit-tested directly;
+/// the day-granularity Firestore query in [HomeDataService.fetchUpcomingEvents]
+/// only narrows candidates, it never decides what's actually "upcoming" —
+/// this does. Generic over [CalendarEvent] itself ([notYetStartedUpcoming])
+/// and the already-resolved [UpcomingEventView]
+/// ([notYetStartedUpcomingViews]) — the latter lets `_HomeTabState` re-prune
+/// its already-fetched list locally (e.g. once the clock passes an event's
+/// start) without a second Firestore round trip just to re-resolve course
+/// names it already has.
+List<T> _notYetStarted<T>(
+  List<T> items,
+  CalendarEvent Function(T) eventOf, {
+  required DateTime now,
+  required int limit,
+}) {
+  final notStarted = items
+      .where((item) => eventDateTime(eventOf(item)).isAfter(now))
+      .toList()
+    ..sort(
+      (a, b) =>
+          eventDateTime(eventOf(a)).compareTo(eventDateTime(eventOf(b))),
+    );
+  return notStarted.take(limit).toList();
+}
+
+/// See [_notYetStarted] — operates directly on [CalendarEvent], so a caller
+/// (namely [HomeDataService.fetchUpcomingEvents]) can filter before
+/// resolving course names, not after: no point resolving a name for an
+/// event that's about to be discarded.
+List<CalendarEvent> notYetStartedUpcoming(
+  List<CalendarEvent> events, {
+  required DateTime now,
+  int limit = 5,
+}) => _notYetStarted(events, (e) => e, now: now, limit: limit);
+
+/// See [_notYetStarted] — operates on the already-resolved
+/// [UpcomingEventView], for re-pruning a list that's already been fetched.
+List<UpcomingEventView> notYetStartedUpcomingViews(
+  List<UpcomingEventView> views, {
+  required DateTime now,
+  int limit = 5,
+}) => _notYetStarted(views, (v) => v.event, now: now, limit: limit);
 
 /// Sunday (local date-only) of the week containing [now].
 DateTime startOfWeek(DateTime now) {
@@ -323,25 +384,35 @@ class HomeDataService {
     return snap.docs.map(Course.fromFirestore).toList();
   }
 
-  /// Upcoming events from today onward, soonest first.
+  /// Up to [limit] events that haven't started yet, soonest first — an
+  /// event whose date+time (eventDate + eventTime) is at or before [now]
+  /// is never shown, even if its [CalendarEvent.eventDate] is today. See
+  /// [notYetStartedUpcoming] (the actual filtering/sorting/limit rule) and
+  /// [_kUpcomingOverfetchFactor] (why this fetches more than [limit] docs).
   Future<List<UpcomingEventView>> fetchUpcomingEvents(
     String uid, {
     DateTime? now,
     int limit = 5,
   }) async {
-    final today = dateOnly(now ?? DateTime.now());
+    final effectiveNow = now ?? DateTime.now();
+    final today = dateOnly(effectiveNow);
     final snap = await _firestore
         .collection('users')
         .doc(uid)
         .collection('events')
         .where('eventDate', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
         .orderBy('eventDate')
-        .limit(limit)
+        .limit(limit * _kUpcomingOverfetchFactor)
         .get();
 
     final events = snap.docs.map(CalendarEvent.fromFirestore).toList();
+    final upcoming = notYetStartedUpcoming(
+      events,
+      now: effectiveNow,
+      limit: limit,
+    );
     final views = <UpcomingEventView>[];
-    for (final event in events) {
+    for (final event in upcoming) {
       final courseName = event.courseId == null
           ? null
           : await _courseName(uid, event.courseId!);

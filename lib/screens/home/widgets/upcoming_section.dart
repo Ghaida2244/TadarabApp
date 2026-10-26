@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../services/home_data_service.dart';
 import '../../../services/streak_service.dart' show dateOnly;
 import '../../../theme/app_theme.dart';
+import '../../../utils/event_time.dart' show formatStoredTimeForDisplay;
 
 const _monthAbbreviations = [
   'JAN',
@@ -94,7 +95,10 @@ class _UpcomingEventCard extends StatelessWidget {
 
     final subtitleParts = [
       if (view.courseName != null) view.courseName!,
-      event.eventTime,
+      // Same display format as the Calendar day sheet, Add Event and
+      // Study Reminder — an unparsable stored value falls back to the raw
+      // string, same as there.
+      formatStoredTimeForDisplay(event.eventTime),
     ];
 
     return Container(
