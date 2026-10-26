@@ -113,6 +113,15 @@ class CalendarText {
   static TextStyle get eventMeta =>
       _nunito(12, FontWeight.w800, color: AppColors.textSecondary);
 
+  /// "Finished" — the small grey divider label between today's not-yet-
+  /// started and already-started events.
+  static TextStyle get sheetSectionLabel => _nunito(
+    11,
+    FontWeight.w800,
+    color: AppColors.textSecondary,
+    letterSpacing: 0.3,
+  );
+
   /// "No events on this day" heading in the sheet's dashed empty state.
   static TextStyle get sheetEmptyTitle => _nunito(15, FontWeight.w900);
 

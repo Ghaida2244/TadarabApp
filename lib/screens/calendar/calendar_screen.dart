@@ -137,7 +137,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
           uid: widget.uid,
           calendarService: _calendarService,
           courses: _courses,
-          initialDate: _month,
           now: _now,
         ),
       ),
@@ -161,6 +160,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         events: events,
         coursesById: _coursesById,
         onDeleteRequested: (event) => _confirmDelete(sheetContext, event),
+        now: _now,
       ),
     );
   }
