@@ -171,8 +171,8 @@ void main() {
     );
 
     test(
-      'started events do not consume the 5-slot limit — real upcoming '
-      'events still all make it in',
+      'started events never appear, and there is no cap on how many '
+      'real upcoming events come back',
       () {
         final startedToday = List.generate(
           4,
@@ -182,8 +182,11 @@ void main() {
             time: '0$i:00', // 00:00, 01:00, 02:00, 03:00 — all before 14:30
           ),
         );
+        // More than the old 5-slot limit used to allow, proving there's
+        // no cap at this layer at all — see kUpcomingSafetyCap for the
+        // one real limit, which lives at the Firestore-query layer.
         final upcoming = List.generate(
-          5,
+          7,
           (i) => event(
             id: 'upcoming-$i',
             date: DateTime(2026, 3, 11 + i),
@@ -196,7 +199,7 @@ void main() {
           ...upcoming,
         ], now: now);
 
-        expect(result.length, 5);
+        expect(result.length, 7);
         expect(
           result.every((e) => e.eventId.startsWith('upcoming-')),
           isTrue,
@@ -266,25 +269,13 @@ void main() {
       },
     );
 
-    test('respects a custom limit', () {
-      final events = List.generate(
-        3,
-        (i) => event(
-          id: 'e$i',
-          date: DateTime(2026, 3, 11 + i),
-          time: '18:00',
-        ),
-      );
-
-      expect(notYetStartedUpcoming(events, now: now, limit: 2).length, 2);
-    });
   });
 
   group('notYetStartedUpcomingViews', () {
     final now = DateTime(2026, 3, 11, 14, 30);
 
     test(
-      'applies the same not-yet-started/sort/limit rule to the already-'
+      'applies the same not-yet-started/sort rule to the already-'
       'resolved UpcomingEventView, preserving courseName',
       () {
         final started = UpcomingEventView(
@@ -345,16 +336,17 @@ void main() {
         );
 
     test(
-      'overfetches enough to let several already-started events today '
-      'not crowd out real upcoming ones, without a composite index',
+      'started events never crowd out real upcoming ones, with no cap '
+      'within the window, through the real Firestore-backed pipeline',
       () async {
         final firestore = FakeFirebaseFirestore();
         final service = HomeDataService(firestore: firestore);
         const uid = 'uid-1';
 
-        // 4 already-started events today, then 5 real upcoming ones —
-        // mirrors the pure-function test above, but through the real
-        // Firestore-backed query + overfetch + filter pipeline.
+        // 4 already-started events today, then one real upcoming event
+        // on each of the 7 window days (today through today+6) — mirrors
+        // the pure-function test above, but through the real query +
+        // window + filter pipeline.
         for (var i = 0; i < 4; i++) {
           await seedEvent(
             firestore,
@@ -364,7 +356,7 @@ void main() {
             time: '0$i:00',
           );
         }
-        for (var i = 0; i < 5; i++) {
+        for (var i = 0; i < 7; i++) {
           await seedEvent(
             firestore,
             uid,
@@ -376,11 +368,166 @@ void main() {
 
         final result = await service.fetchUpcomingEvents(uid, now: now);
 
-        expect(result.length, 5);
+        expect(result.length, 7);
         expect(
           result.every((v) => v.event.eventId.startsWith('upcoming-')),
           isTrue,
         );
+      },
+    );
+
+    test(
+      'an event beyond the 7-day window is excluded; one on day 6 (the '
+      'last included day) is shown',
+      () async {
+        final firestore = FakeFirebaseFirestore();
+        final service = HomeDataService(firestore: firestore);
+        const uid = 'uid-1';
+
+        // `now` is March 11 — day 6 of the window is March 17 (inclusive,
+        // 11..17 is 7 days); March 18 is the first excluded day.
+        await seedEvent(
+          firestore,
+          uid,
+          id: 'day6',
+          date: DateTime(2026, 3, 17),
+          time: '10:00',
+        );
+        await seedEvent(
+          firestore,
+          uid,
+          id: 'day7',
+          date: DateTime(2026, 3, 18),
+          time: '10:00',
+        );
+
+        final result = await service.fetchUpcomingEvents(uid, now: now);
+
+        expect(result.map((v) => v.event.eventId), ['day6']);
+      },
+    );
+
+    test(
+      'the safety cap bounds the raw fetch, even when every event is '
+      'genuinely inside the window and not yet started',
+      () async {
+        final firestore = FakeFirebaseFirestore();
+        final service = HomeDataService(firestore: firestore);
+        const uid = 'uid-1';
+
+        // One more than kUpcomingSafetyCap (100), all today and all after
+        // `now` (14:30) — nothing here is excluded by the day-window or
+        // the not-yet-started filter, so any shortfall is the cap itself.
+        for (var i = 0; i < kUpcomingSafetyCap + 5; i++) {
+          await seedEvent(
+            firestore,
+            uid,
+            id: 'e$i',
+            date: DateTime(2026, 3, 11),
+            time: '15:${(i % 60).toString().padLeft(2, '0')}',
+          );
+        }
+
+        final result = await service.fetchUpcomingEvents(uid, now: now);
+
+        expect(result.length, kUpcomingSafetyCap);
+      },
+    );
+  });
+
+  group('groupUpcomingByDay', () {
+    UpcomingEventView view({
+      required String id,
+      required DateTime date,
+      required String time,
+    }) => UpcomingEventView(
+      event: CalendarEvent(
+        eventId: id,
+        eventName: id,
+        eventDate: date,
+        eventTime: time,
+        email: 'e@x.com',
+      ),
+    );
+
+    test('groups events onto their calendar day', () {
+      final a = view(id: 'a', date: DateTime(2026, 3, 11), time: '15:00');
+      final b = view(id: 'b', date: DateTime(2026, 3, 11), time: '18:00');
+      final c = view(id: 'c', date: DateTime(2026, 3, 12), time: '08:00');
+
+      final groups = groupUpcomingByDay([a, b, c]);
+
+      expect(groups, hasLength(2));
+      expect(groups[0].day, DateTime(2026, 3, 11));
+      expect(groups[0].events.map((v) => v.event.eventId), ['a', 'b']);
+      expect(groups[1].day, DateTime(2026, 3, 12));
+      expect(groups[1].events.map((v) => v.event.eventId), ['c']);
+    });
+
+    test(
+      'days come out in the order their first event appears — ascending, '
+      'given already-sorted input',
+      () {
+        final day1 = view(id: 'day1', date: DateTime(2026, 3, 11), time: '15:00');
+        final day2 = view(id: 'day2', date: DateTime(2026, 3, 12), time: '08:00');
+        final day3 = view(id: 'day3', date: DateTime(2026, 3, 13), time: '08:00');
+
+        final groups = groupUpcomingByDay([day1, day2, day3]);
+
+        expect(groups.map((g) => g.day), [
+          DateTime(2026, 3, 11),
+          DateTime(2026, 3, 12),
+          DateTime(2026, 3, 13),
+        ]);
+      },
+    );
+
+    test('a single event produces a single group of length 1', () {
+      final only = view(id: 'only', date: DateTime(2026, 3, 11), time: '15:00');
+
+      final groups = groupUpcomingByDay([only]);
+
+      expect(groups, hasLength(1));
+      expect(groups.single.events, hasLength(1));
+    });
+
+    test('an empty list produces an empty result, not a crash', () {
+      expect(groupUpcomingByDay(const []), isEmpty);
+    });
+
+    test(
+      'preserves each day\'s own ascending time order and courseName',
+      () {
+        final later = UpcomingEventView(
+          event: CalendarEvent(
+            eventId: 'later',
+            eventName: 'later',
+            eventDate: DateTime(2026, 3, 11),
+            eventTime: '18:00',
+            email: 'e@x.com',
+          ),
+          courseName: 'IS230',
+        );
+        final earlier = UpcomingEventView(
+          event: CalendarEvent(
+            eventId: 'earlier',
+            eventName: 'earlier',
+            eventDate: DateTime(2026, 3, 11),
+            eventTime: '09:00',
+            email: 'e@x.com',
+          ),
+          courseName: 'CS101',
+        );
+
+        // Fed in already sorted (as notYetStartedUpcoming would produce).
+        final groups = groupUpcomingByDay([earlier, later]);
+
+        expect(groups.single.events.map((v) => v.event.eventId), [
+          'earlier',
+          'later',
+        ]);
+        expect(groups.single.events[0].courseName, 'CS101');
+        expect(groups.single.events[1].courseName, 'IS230');
       },
     );
   });

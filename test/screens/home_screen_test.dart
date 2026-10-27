@@ -10,8 +10,10 @@ import 'package:tadarab_app/models/student.dart';
 import 'package:tadarab_app/models/study_material.dart';
 import 'package:tadarab_app/screens/courses/course_detail_screen.dart';
 import 'package:tadarab_app/screens/home/home_screen.dart';
+import 'package:tadarab_app/screens/home/widgets/upcoming_section.dart';
 import 'package:tadarab_app/services/home_data_service.dart';
 import 'package:tadarab_app/utils/rank.dart';
+import 'package:tadarab_app/widgets/session_stack_card.dart';
 
 import '../helpers/fake_calendar_service.dart';
 import '../helpers/fake_courses_service.dart';
@@ -263,12 +265,7 @@ void main() {
       expect(find.text('Nothing in progress'), findsOneWidget);
       expect(find.text('Start a new session'), findsOneWidget);
       expect(find.text('Turn your lectures into quizzes.'), findsNothing);
-      expect(
-        find.text(
-          'No upcoming events yet. Once you add events, they\'ll show up here.',
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('No events in the next 7 days'), findsOneWidget);
     });
 
     testWidgets(
@@ -1069,6 +1066,325 @@ void main() {
         // Unmount before the test ends: dispose() cancels the timer that
         // was just re-armed for "Workshop", so no pending Timer leaks out
         // of this test.
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+
+    UpcomingEventView upcomingEvent({
+      required String id,
+      required String name,
+      required DateTime date,
+      required String time,
+      String? courseName,
+    }) => UpcomingEventView(
+      event: CalendarEvent(
+        eventId: id,
+        eventName: name,
+        eventDate: date,
+        eventTime: time,
+        email: 'e@x.com',
+      ),
+      courseName: courseName,
+    );
+
+    // UpcomingSection renders directly off the list it's given, in the
+    // order given — exactly what the real `notYetStartedUpcoming` pipeline
+    // guarantees (already filtered to not-yet-started and sorted by start
+    // time). So fixtures below are built pre-sorted, same as production
+    // data would be.
+    Future<void> pumpUpcomingSection(
+      WidgetTester tester, {
+      required List<UpcomingEventView> events,
+    }) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: UpcomingSection(events: events, now: now, onSeeAll: () {}),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'shows "No events in the next 7 days" when there are none',
+      (tester) async {
+        await pumpUpcomingSection(tester, events: const []);
+
+        expect(find.text('No events in the next 7 days'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a day with a single event is a plain, non-stacked card',
+      (tester) async {
+        await pumpUpcomingSection(
+          tester,
+          events: [
+            upcomingEvent(
+              id: 'e1',
+              name: 'Lecture',
+              date: DateTime(2026, 3, 11),
+              time: '18:00',
+            ),
+          ],
+        );
+
+        expect(find.text('Lecture'), findsOneWidget);
+        expect(find.byType(SessionStackCard), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a day with 2 events collapses into a stack with 1 peek, fronted by '
+      'the nearest not-yet-started event',
+      (tester) async {
+        await pumpUpcomingSection(
+          tester,
+          events: [
+            upcomingEvent(
+              id: 'e1',
+              name: 'Nearest',
+              date: DateTime(2026, 3, 11),
+              time: '15:00',
+            ),
+            upcomingEvent(
+              id: 'e2',
+              name: 'Later',
+              date: DateTime(2026, 3, 11),
+              time: '20:00',
+            ),
+          ],
+        );
+
+        final stack = tester.widget<SessionStackCard>(
+          find.byType(SessionStackCard),
+        );
+        expect(stack.stackSize, 2);
+        expect(find.text('Nearest'), findsOneWidget);
+        expect(find.text('Later'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a day with 3 or more events still collapses into one stack '
+      '(SessionStackCard caps its own peek count at 2)',
+      (tester) async {
+        await pumpUpcomingSection(
+          tester,
+          events: [
+            upcomingEvent(
+              id: 'e1',
+              name: 'First',
+              date: DateTime(2026, 3, 11),
+              time: '15:00',
+            ),
+            upcomingEvent(
+              id: 'e2',
+              name: 'Second',
+              date: DateTime(2026, 3, 11),
+              time: '17:00',
+            ),
+            upcomingEvent(
+              id: 'e3',
+              name: 'Third',
+              date: DateTime(2026, 3, 11),
+              time: '20:00',
+            ),
+          ],
+        );
+
+        final stack = tester.widget<SessionStackCard>(
+          find.byType(SessionStackCard),
+        );
+        expect(stack.stackSize, 3);
+      },
+    );
+
+    testWidgets(
+      'tapping the stack expands to show all of the day\'s events, same '
+      'size and style, in time order; tapping again collapses it',
+      (tester) async {
+        await pumpUpcomingSection(
+          tester,
+          events: [
+            upcomingEvent(
+              id: 'e1',
+              name: 'Nearest',
+              date: DateTime(2026, 3, 11),
+              time: '15:00',
+            ),
+            upcomingEvent(
+              id: 'e2',
+              name: 'Later',
+              date: DateTime(2026, 3, 11),
+              time: '20:00',
+            ),
+          ],
+        );
+
+        expect(find.text('Later'), findsNothing);
+
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+
+        // Peeks gone while expanded — both events now render as full cards.
+        expect(find.byType(SessionStackCard), findsNothing);
+        expect(find.text('Nearest'), findsOneWidget);
+        expect(find.text('Later'), findsOneWidget);
+
+        final nearestSize = tester.getSize(
+          find
+              .ancestor(of: find.text('Nearest'), matching: find.byType(Container))
+              .first,
+        );
+        final laterSize = tester.getSize(
+          find
+              .ancestor(of: find.text('Later'), matching: find.byType(Container))
+              .first,
+        );
+        expect(nearestSize.height, laterSize.height);
+
+        // The nearest event's card is the time-ordered first one.
+        expect(
+          tester.getTopLeft(find.text('Nearest')).dy,
+          lessThan(tester.getTopLeft(find.text('Later')).dy),
+        );
+
+        // Tap the front card again to collapse.
+        await tester.tap(find.text('Nearest'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(SessionStackCard), findsOneWidget);
+        expect(find.text('Later'), findsNothing);
+      },
+    );
+
+    testWidgets('multiple days render in ascending date order', (
+      tester,
+    ) async {
+      await pumpUpcomingSection(
+        tester,
+        events: [
+          upcomingEvent(
+            id: 'e1',
+            name: 'TodayEvent',
+            date: DateTime(2026, 3, 11),
+            time: '15:00',
+          ),
+          upcomingEvent(
+            id: 'e2',
+            name: 'TomorrowEvent',
+            date: DateTime(2026, 3, 12),
+            time: '08:00',
+          ),
+        ],
+      );
+
+      final todayY = tester.getTopLeft(find.text('TodayEvent')).dy;
+      final tomorrowY = tester.getTopLeft(find.text('TomorrowEvent')).dy;
+      expect(todayY, lessThan(tomorrowY));
+    });
+
+    testWidgets(
+      'the stack front card exposes an accessible expand/collapse label, '
+      'including the expanded state',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+
+        await pumpUpcomingSection(
+          tester,
+          events: [
+            upcomingEvent(
+              id: 'e1',
+              name: 'Nearest',
+              date: DateTime(2026, 3, 11), // today, per the fixed `now`
+              time: '15:00',
+            ),
+            upcomingEvent(
+              id: 'e2',
+              name: 'Later',
+              date: DateTime(2026, 3, 11),
+              time: '20:00',
+            ),
+          ],
+        );
+
+        expect(
+          find.bySemanticsLabel('Today, 2 events, tap to expand'),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.bySemanticsLabel('Today, 2 events, tap to collapse'),
+          findsOneWidget,
+        );
+
+        handle.dispose();
+      },
+    );
+
+    testWidgets(
+      'within a stacked day, the front event disappearing promotes the '
+      'next one to front; dropping to 1 event renders a plain card; '
+      'dropping to 0 removes the day entirely — all via the live timer, '
+      'with no re-fetch and no pending timer left',
+      (tester) async {
+        // `now` is 2026-03-11 14:30.
+        final first = UpcomingEventView(
+          event: CalendarEvent(
+            eventId: 'first',
+            eventName: 'Standup',
+            eventDate: DateTime(2026, 3, 11),
+            eventTime: '14:31', // 1 minute after `now`
+            email: 'e@x.com',
+          ),
+        );
+        final second = UpcomingEventView(
+          event: CalendarEvent(
+            eventId: 'second',
+            eventName: 'Sync',
+            eventDate: DateTime(2026, 3, 11),
+            eventTime: '14:33', // 3 minutes after `now`
+            email: 'e@x.com',
+          ),
+        );
+        final dataService = FakeHomeDataService(
+          courses: [aCourse],
+          upcomingEvents: [first, second],
+        );
+
+        await pumpHome(tester, dataService: dataService);
+
+        // Collapsed stack of 2, fronted by "Standup".
+        expect(find.byType(SessionStackCard), findsOneWidget);
+        expect(find.text('Standup'), findsOneWidget);
+        expect(find.text('Sync'), findsNothing);
+
+        // Advance past "Standup"'s 14:31 start — "Sync" is now the day's
+        // only event, so it renders as a plain card, not a stack.
+        await tester.pump(const Duration(minutes: 2));
+        await tester.pump();
+
+        expect(find.byType(SessionStackCard), findsNothing);
+        expect(find.text('Standup'), findsNothing);
+        expect(find.text('Sync'), findsOneWidget);
+        expect(dataService.fetchUpcomingEventsCalls, 1);
+
+        // Advance past "Sync"'s 14:33 start — the day's last event is gone,
+        // so the whole day's entry disappears and the section falls back
+        // to its empty state.
+        await tester.pump(const Duration(minutes: 2));
+        await tester.pump();
+
+        expect(find.text('Sync'), findsNothing);
+        expect(find.text('No events in the next 7 days'), findsOneWidget);
+        expect(dataService.fetchUpcomingEventsCalls, 1);
+
+        // Unmount so dispose() cancels any timer still armed.
         await tester.pumpWidget(const SizedBox());
       },
     );

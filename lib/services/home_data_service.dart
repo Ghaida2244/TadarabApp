@@ -115,37 +115,36 @@ class UpcomingEventView {
   final String? courseName;
 }
 
-/// Overfetch factor for [HomeDataService.fetchUpcomingEvents]'s Firestore
-/// query, relative to its own `limit`. Firestore can only filter/order by
-/// `eventDate` (day granularity) — it has no combined date+time field to
-/// query against, since `eventTime` is a separate "HH:mm" string — so a
-/// query for "events from today onward" can return events that are today
-/// but whose time has already passed. Fetching 4x the display limit (20
-/// documents for the default limit of 5) gives [notYetStartedUpcoming]
-/// enough already-fetched candidates to still fill the list even on a day
-/// with several already-started events; a single day with more than ~15
-/// already-started events is an accepted, extreme edge case where the
-/// list may come back short until the next reload.
-const _kUpcomingOverfetchFactor = 4;
+/// The rolling window [HomeDataService.fetchUpcomingEvents] shows: today
+/// plus this many following calendar days (7 total).
+const kUpcomingWindowDays = 7;
+
+/// Hard cap on how many raw documents [HomeDataService.fetchUpcomingEvents]'s
+/// Firestore query ever fetches for the window, regardless of how many
+/// events actually fall inside it. A sane safety valve against an
+/// unbounded read, not a display limit — [notYetStartedUpcoming] still
+/// shows every not-yet-started event among whatever this fetches. A
+/// student with more than 100 events (started or not) inside one 7-day
+/// window is an accepted, extreme edge case where the list may come back
+/// incomplete until the window itself moves on.
+const kUpcomingSafetyCap = 100;
 
 /// Keeps only the items whose [eventOf] event hasn't started yet —
 /// strictly after [now], per [eventDateTime] (which already treats an
 /// unparsable stored time as midnight) — sorted soonest-first by that same
-/// instant, then truncated to [limit]. Pure and Firestore-free so the
-/// filtering, sorting and 5-slot-limit rules can be unit-tested directly;
-/// the day-granularity Firestore query in [HomeDataService.fetchUpcomingEvents]
-/// only narrows candidates, it never decides what's actually "upcoming" —
-/// this does. Generic over [CalendarEvent] itself ([notYetStartedUpcoming])
-/// and the already-resolved [UpcomingEventView]
-/// ([notYetStartedUpcomingViews]) — the latter lets `_HomeTabState` re-prune
-/// its already-fetched list locally (e.g. once the clock passes an event's
-/// start) without a second Firestore round trip just to re-resolve course
-/// names it already has.
+/// instant. Pure and Firestore-free so the filtering/sorting rule can be
+/// unit-tested directly; the day-granularity, window-bounded Firestore
+/// query in [HomeDataService.fetchUpcomingEvents] only narrows candidates,
+/// it never decides what's actually "upcoming" — this does. Generic over
+/// [CalendarEvent] itself ([notYetStartedUpcoming]) and the already-resolved
+/// [UpcomingEventView] ([notYetStartedUpcomingViews]) — the latter lets
+/// `_HomeTabState` re-prune its already-fetched list locally (e.g. once the
+/// clock passes an event's start) without a second Firestore round trip
+/// just to re-resolve course names it already has.
 List<T> _notYetStarted<T>(
   List<T> items,
   CalendarEvent Function(T) eventOf, {
   required DateTime now,
-  required int limit,
 }) {
   final notStarted = items
       .where((item) => eventDateTime(eventOf(item)).isAfter(now))
@@ -154,7 +153,7 @@ List<T> _notYetStarted<T>(
       (a, b) =>
           eventDateTime(eventOf(a)).compareTo(eventDateTime(eventOf(b))),
     );
-  return notStarted.take(limit).toList();
+  return notStarted;
 }
 
 /// See [_notYetStarted] — operates directly on [CalendarEvent], so a caller
@@ -164,16 +163,55 @@ List<T> _notYetStarted<T>(
 List<CalendarEvent> notYetStartedUpcoming(
   List<CalendarEvent> events, {
   required DateTime now,
-  int limit = 5,
-}) => _notYetStarted(events, (e) => e, now: now, limit: limit);
+}) => _notYetStarted(events, (e) => e, now: now);
 
 /// See [_notYetStarted] — operates on the already-resolved
 /// [UpcomingEventView], for re-pruning a list that's already been fetched.
 List<UpcomingEventView> notYetStartedUpcomingViews(
   List<UpcomingEventView> views, {
   required DateTime now,
-  int limit = 5,
-}) => _notYetStarted(views, (v) => v.event, now: now, limit: limit);
+}) => _notYetStarted(views, (v) => v.event, now: now);
+
+/// One calendar day's worth of not-yet-started events, soonest first —
+/// the grouping [UpcomingSection] renders as either a plain card (one
+/// event) or an inline-expandable stack (two or more), reusing
+/// [SessionStackCard].
+class UpcomingDayGroup {
+  UpcomingDayGroup({required this.day, required this.events});
+
+  /// Date-only (time-of-day stripped).
+  final DateTime day;
+
+  /// This day's events, ascending by parsed start time.
+  final List<UpcomingEventView> events;
+}
+
+/// Groups [views] by calendar day ([CalendarEvent.eventDate], date-only).
+///
+/// Assumes [views] already arrives not-yet-started and sorted soonest-first
+/// (i.e. straight from [notYetStartedUpcoming]/[notYetStartedUpcomingViews])
+/// — days then come out in that same ascending order (by each day's own
+/// first/soonest event), and each day's own events stay in their original
+/// ascending-by-time order. Pure and Firestore-free, so the grouping rule
+/// is unit-testable on its own.
+List<UpcomingDayGroup> groupUpcomingByDay(List<UpcomingEventView> views) {
+  final eventsByDay = <DateTime, List<UpcomingEventView>>{};
+  final dayOrder = <DateTime>[];
+  for (final view in views) {
+    final day = dateOnly(view.event.eventDate);
+    final existing = eventsByDay[day];
+    if (existing == null) {
+      eventsByDay[day] = [view];
+      dayOrder.add(day);
+    } else {
+      existing.add(view);
+    }
+  }
+  return [
+    for (final day in dayOrder)
+      UpcomingDayGroup(day: day, events: eventsByDay[day]!),
+  ];
+}
 
 /// Sunday (local date-only) of the week containing [now].
 DateTime startOfWeek(DateTime now) {
@@ -384,33 +422,37 @@ class HomeDataService {
     return snap.docs.map(Course.fromFirestore).toList();
   }
 
-  /// Up to [limit] events that haven't started yet, soonest first — an
+  /// Every not-yet-started event within the rolling [kUpcomingWindowDays]
+  /// window (today plus the next 6 calendar days), soonest first — an
   /// event whose date+time (eventDate + eventTime) is at or before [now]
-  /// is never shown, even if its [CalendarEvent.eventDate] is today. See
-  /// [notYetStartedUpcoming] (the actual filtering/sorting/limit rule) and
-  /// [_kUpcomingOverfetchFactor] (why this fetches more than [limit] docs).
+  /// is never shown, even if its [CalendarEvent.eventDate] is today.
+  ///
+  /// The Firestore query is a single-field range + order-by on `eventDate`
+  /// (the same shape `CalendarService.watchEventsForMonth`/`...ForYear`
+  /// already use), so it needs no composite index — but since `eventDate`
+  /// is day-granularity and `eventTime` is a separate "HH:mm" string,
+  /// Firestore itself can't know which of today's events have already
+  /// started; [notYetStartedUpcoming] decides that afterwards, in Dart.
+  /// [kUpcomingSafetyCap] bounds the raw fetch regardless.
   Future<List<UpcomingEventView>> fetchUpcomingEvents(
     String uid, {
     DateTime? now,
-    int limit = 5,
   }) async {
     final effectiveNow = now ?? DateTime.now();
     final today = dateOnly(effectiveNow);
+    final windowEnd = today.add(const Duration(days: kUpcomingWindowDays));
     final snap = await _firestore
         .collection('users')
         .doc(uid)
         .collection('events')
         .where('eventDate', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
+        .where('eventDate', isLessThan: Timestamp.fromDate(windowEnd))
         .orderBy('eventDate')
-        .limit(limit * _kUpcomingOverfetchFactor)
+        .limit(kUpcomingSafetyCap)
         .get();
 
     final events = snap.docs.map(CalendarEvent.fromFirestore).toList();
-    final upcoming = notYetStartedUpcoming(
-      events,
-      now: effectiveNow,
-      limit: limit,
-    );
+    final upcoming = notYetStartedUpcoming(events, now: effectiveNow);
     final views = <UpcomingEventView>[];
     for (final event in upcoming) {
       final courseName = event.courseId == null
