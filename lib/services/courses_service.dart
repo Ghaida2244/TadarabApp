@@ -7,6 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 
 import '../models/course.dart';
 import '../models/study_material.dart';
+import 'calendar_service.dart';
 import 'text_extraction_service.dart';
 
 /// A user-facing Courses/Materials failure. [message] is always safe to
@@ -116,18 +117,30 @@ class CoursesService {
     FirebaseFirestore? firestore,
     FirebaseStorage? storage,
     FirebaseAuth? auth,
+    CalendarService? calendarService,
   }) : _firestoreOverride = firestore,
        _storageOverride = storage,
-       _authOverride = auth;
+       _authOverride = auth,
+       _calendarServiceOverride = calendarService;
 
   final FirebaseFirestore? _firestoreOverride;
   final FirebaseStorage? _storageOverride;
   final FirebaseAuth? _authOverride;
+  final CalendarService? _calendarServiceOverride;
 
   FirebaseFirestore get _firestore =>
       _firestoreOverride ?? FirebaseFirestore.instance;
   FirebaseStorage get _storage => _storageOverride ?? FirebaseStorage.instance;
   FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
+
+  /// Used by [deleteCourse] to delete a course's calendar events and cancel
+  /// their reminders through the one mechanism that already does that
+  /// correctly ([CalendarService.deleteEventsForCourse]), rather than this
+  /// service re-implementing event deletion (and never cancelling
+  /// reminders, which it used to). No circular dependency: [CalendarService]
+  /// doesn't import anything from this file.
+  late final CalendarService _calendarService =
+      _calendarServiceOverride ?? CalendarService();
 
   String? get currentUid => _auth.currentUser?.uid;
 
@@ -219,30 +232,36 @@ class CoursesService {
     }
   }
 
-  /// Cascade-deletes a course: its materials (Firestore docs + Storage
-  /// files), its calendar events, then the course document itself. Quiz/
-  /// flashcard session documents aren't touched yet — those collections
-  /// have no way to be created until Phase C's Quiz/Flashcard generation
-  /// exists (courses_material_upload_spec.md §3).
+  /// Cascade-deletes a course: its calendar events (cancelling their
+  /// reminders) and its materials (Firestore docs + Storage files), then
+  /// the course document itself. Quiz/flashcard session documents aren't
+  /// touched yet — those collections have no way to be created until
+  /// Phase C's Quiz/Flashcard generation exists
+  /// (courses_material_upload_spec.md §3).
+  ///
+  /// Events are deleted *before* the course, through
+  /// [CalendarService.deleteEventsForCourse] — the same method, and the
+  /// same per-event reminder-cancel path, a standalone event delete
+  /// already uses, rather than this service re-deleting events itself. If
+  /// that fails, the course (and its materials) are left exactly as they
+  /// were: nothing here deletes the course without first confirming its
+  /// events are gone, so a course is never left with events dangling from
+  /// a half-finished delete.
   Future<void> deleteCourse(String uid, String courseId) async {
     try {
       final materialsSnap = await _materialsRef(
         uid,
         courseId,
       ).get().timeout(_networkTimeout);
-      final eventsSnap = await _firestore
-          .collection('users')
-          .doc(uid)
-          .collection('events')
-          .where('courseId', isEqualTo: courseId)
-          .get()
-          .timeout(_networkTimeout);
+
+      try {
+        await _calendarService.deleteEventsForCourse(uid, courseId);
+      } on CalendarFailure {
+        throw CoursesFailure(_networkFailureMessage);
+      }
 
       final batch = _firestore.batch();
       for (final doc in materialsSnap.docs) {
-        batch.delete(doc.reference);
-      }
-      for (final doc in eventsSnap.docs) {
         batch.delete(doc.reference);
       }
       batch.delete(_coursesRef(uid).doc(courseId));

@@ -708,7 +708,8 @@ void main() {
       expect(
         find.text(
           'Deleting this course will also delete all its materials, '
-          "quizzes, and flashcard sessions. This can't be undone.",
+          'quizzes, flashcard sessions, and calendar events with their '
+          "reminders. This can't be undone.",
         ),
         findsOneWidget,
       );
