@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -34,6 +35,7 @@ const kReminderNotScheduledMessage =
 
 /// The reasons Save stays disabled, in the order the design checks them.
 const kSaveReasonName = 'Add an event name to continue.';
+const kSaveReasonColor = 'Pick a color to continue.';
 const kSaveReasonDate = 'Pick a date to continue.';
 const kSaveReasonTime = 'Pick a time to continue.';
 const kSaveReasonReminder = 'Fix the reminder to continue.';
@@ -51,6 +53,7 @@ class AddEventScreen extends StatefulWidget {
     required this.courses,
     this.reminderScheduler,
     this.now,
+    this.random,
   });
 
   final String uid;
@@ -66,6 +69,10 @@ class AddEventScreen extends StatefulWidget {
   /// Overridable for tests, so reminder validation is deterministic.
   final DateTime? now;
 
+  /// Overridable for tests, so the one-time random default colour
+  /// ([randomEventColor]) is deterministic given a seeded [Random].
+  final Random? random;
+
   @override
   State<AddEventScreen> createState() => _AddEventScreenState();
 }
@@ -78,25 +85,40 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   Course? _selectedCourse;
   bool _coursesOpen = false;
-  late String _selectedColor = defaultEventColor(
-    widget.courses.map((c) => c.color),
-  );
+
+  /// The screen's current colour selection — null only for the brief
+  /// window before [_assignDefaultColor] has run (it needs the saved
+  /// colours, which are fetched asynchronously). Never written to directly
+  /// outside [_assignDefaultColor]/[_pickColor]/[_pickCustomColor]/
+  /// [_removeSavedColor].
+  String? _selectedColor;
+
+  /// The one-time random default ([randomEventColor]), computed once by
+  /// [_assignDefaultColor] and never recomputed afterwards. Kept
+  /// separately from [_selectedColor] so that removing whichever saved
+  /// tile the student has selected has something fixed to fall back to,
+  /// without ever drawing a fresh random colour.
+  String? _defaultColor;
+
+  /// True once [_assignDefaultColor] has run — guards it from ever running
+  /// a second time, since the random pick must happen exactly once per
+  /// screen open and then stay fixed.
+  bool _defaultColorAssigned = false;
+
+  /// True once the student has explicitly picked a tile or a dialog
+  /// colour — after that, [_assignDefaultColor] must never override her
+  /// choice, even if it's still resolving when she picks.
+  bool _colorPickedByUser = false;
+
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
 
   /// The student's saved quick-colours, fetched once when this screen
-  /// opens. Starts empty so the colour row shows its default tile
-  /// immediately rather than waiting on this with a loading spinner; a
-  /// failed read leaves it empty for good, which [eventColorTiles] already
-  /// treats as "nothing saved yet".
+  /// opens — also exactly the "standalone event colours" [randomEventColor]
+  /// excludes, since a saved colour is by definition one a standalone event
+  /// already uses. Starts empty, which [_assignDefaultColor] treats as "no
+  /// standalone colours to exclude"; a failed read falls back to the same.
   List<String> _savedColors = [];
-
-  /// True until the student explicitly picks a tile or a dialog colour —
-  /// while true, [_loadSavedColors] is still allowed to recompute
-  /// [_selectedColor] once the saved list resolves (rule 5's "default
-  /// selection" depends on that list, which isn't known at construction
-  /// time).
-  bool _colorAutoSelected = true;
 
   bool _reminderEnabled = false;
 
@@ -118,8 +140,9 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   /// A course's colour wins over the presets — the chip says the event
   /// "will use this course color", so the picker is replaced, not merely
-  /// overridden.
-  String get _effectiveColor => _selectedCourse?.color ?? _selectedColor;
+  /// overridden. Null only while no course is selected and the one-time
+  /// default hasn't resolved yet — [_saveReason] gates Save on that.
+  String? get _effectiveColor => _selectedCourse?.color ?? _selectedColor;
 
   bool get _nameFilled => _nameController.text.trim().isNotEmpty;
 
@@ -143,6 +166,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
   /// Why Save is disabled, or null when the form is ready to submit.
   String? get _saveReason {
     if (!_nameFilled) return kSaveReasonName;
+    if (_effectiveColor == null) return kSaveReasonColor;
     if (_selectedDate == null) return kSaveReasonDate;
     if (_selectedTime == null) return kSaveReasonTime;
     if (_reminderInvalid) return kSaveReasonReminder;
@@ -162,28 +186,40 @@ class _AddEventScreenState extends State<AddEventScreen> {
   }
 
   Future<void> _loadSavedColors() async {
+    var saved = const <String>[];
     try {
-      final saved = await widget.calendarService.loadSavedEventColors(
-        widget.uid,
-      );
-      if (!mounted) return;
-      setState(() {
-        _savedColors = saved;
-        if (_colorAutoSelected) {
-          _selectedColor = initialEventColor(
-            savedColors: saved,
-            courseColors: widget.courses.map((c) => c.color),
-          );
-        }
-      });
+      saved = await widget.calendarService.loadSavedEventColors(widget.uid);
     } catch (_) {
-      // Never blocks the form: the row just falls back to showing only its
-      // default tile and the "+".
+      // Never blocks the form: the default below still gets assigned, just
+      // with no standalone colours to exclude, and the row falls back to
+      // showing only the default tile and the "+".
     }
+    if (!mounted) return;
+    setState(() {
+      _savedColors = saved;
+      _assignDefaultColor();
+    });
+  }
+
+  /// Picks the one-time random default and, unless the student has already
+  /// picked something herself in the meantime, selects it. Guarded by
+  /// [_defaultColorAssigned] so this can only ever run once per screen
+  /// open — the pick itself must never change afterwards, including on a
+  /// later reload.
+  void _assignDefaultColor() {
+    if (_defaultColorAssigned) return;
+    _defaultColorAssigned = true;
+    _defaultColor = randomEventColor(
+      courseColors: widget.courses.map((c) => c.color),
+      standaloneColors: _savedColors,
+      random: widget.random,
+    );
+    if (!_colorPickedByUser) _selectedColor = _defaultColor;
   }
 
   /// Drops [hex] from the saved list immediately (no confirmation) and, if
-  /// it was the selected colour, falls back to the new default per rule 5.
+  /// it was the selected colour, falls back to the fixed one-time default
+  /// — never a freshly-drawn random colour.
   /// The Firestore write is fire-and-forget — best effort, and never
   /// touches any event.
   void _removeSavedColor(String hex) {
@@ -191,12 +227,10 @@ class _AddEventScreenState extends State<AddEventScreen> {
       _savedColors = _savedColors
           .where((c) => c.toUpperCase() != hex.toUpperCase())
           .toList();
-      if (_selectedColor.toUpperCase() == hex.toUpperCase()) {
-        _selectedColor = initialEventColor(
-          savedColors: _savedColors,
-          courseColors: widget.courses.map((c) => c.color),
-        );
-        _colorAutoSelected = true;
+      if (_selectedColor != null &&
+          _selectedColor!.toUpperCase() == hex.toUpperCase()) {
+        _selectedColor = _defaultColor;
+        _colorPickedByUser = false;
       }
     });
     unawaited(widget.calendarService.removeSavedEventColor(widget.uid, hex));
@@ -286,7 +320,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
       reminderEnabled: _reminderEnabled,
       reminderBefore: _reminderEnabled ? _reminderAmount : null,
       reminderUnit: _reminderEnabled ? _reminderUnit : null,
-      color: _effectiveColor,
+      color: _effectiveColor!,
       // Filled in from the signed-in student by CalendarService.addEvent;
       // this screen has no access to the student's email.
       email: '',
@@ -434,9 +468,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
                     const SizedBox(height: 10),
                     _ColorSwatchGrid(
                       tiles: eventColorTiles(
-                        defaultColor: defaultEventColor(
-                          widget.courses.map((c) => c.color),
-                        ),
                         savedColors: _savedColors,
                         courseColors: widget.courses.map((c) => c.color),
                         selectedColor: _selectedColor,
@@ -444,7 +475,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
                       selected: _selectedColor,
                       onSelected: (hex) => setState(() {
                         _selectedColor = hex;
-                        _colorAutoSelected = false;
+                        _colorPickedByUser = true;
                       }),
                       onCustom: _pickCustomColor,
                       onRemove: _removeSavedColor,
@@ -554,14 +585,14 @@ class _AddEventScreenState extends State<AddEventScreen> {
   }
 
   Future<void> _pickCustomColor() async {
-    final picked = await showColorPicker(
-      context: context,
-      initial: parseHexColor(_selectedColor),
+    final initial = parseHexColor(
+      _selectedColor ?? _defaultColor ?? kEventSwatchPool.first,
     );
+    final picked = await showColorPicker(context: context, initial: initial);
     if (picked == null) return;
     setState(() {
       _selectedColor = hexFromColor(picked);
-      _colorAutoSelected = false;
+      _colorPickedByUser = true;
     });
   }
 }
@@ -923,7 +954,7 @@ class _ColorSwatchGrid extends StatelessWidget {
   });
 
   final List<EventColorTile> tiles;
-  final String selected;
+  final String? selected;
   final ValueChanged<String> onSelected;
   final VoidCallback onCustom;
   final ValueChanged<String> onRemove;
@@ -953,7 +984,7 @@ class _ColorSwatchGrid extends StatelessWidget {
             key: ValueKey(tile.hex),
             color: parseHexColor(tile.hex),
             hex: tile.hex,
-            selected: tile.hex.toUpperCase() == selected.toUpperCase(),
+            selected: tile.hex.toUpperCase() == selected?.toUpperCase(),
             onTap: () => onSelected(tile.hex),
             onRemove: tile.removable ? () => onRemove(tile.hex) : null,
           ),

@@ -1,6 +1,9 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/screens/calendar/calendar_styles.dart';
+import 'package:tadarab_app/services/courses_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
 
 void main() {
@@ -64,63 +67,133 @@ void main() {
     });
   });
 
-  group('initialEventColor', () {
-    test('is the first saved colour that is not a course colour', () {
-      expect(
-        initialEventColor(
-          savedColors: const ['#2563EB', '#7C3AED'],
+  group('randomEventColor', () {
+    // Every kEventSwatchPool entry that isn't one of the 5 presets — 12 of
+    // them, with the pool at its current 17-colour length.
+    const nonPresetPool = [
+      '#0D9488',
+      '#DB2777',
+      '#EA580C',
+      '#0EA5E9',
+      '#65A30D',
+      '#C026D3',
+      '#B45309',
+      '#4F46E5',
+      '#BE123C',
+      '#0F766E',
+      '#0B0F5B',
+      '#0891B2',
+    ];
+
+    test(
+      'the pick is outside the five presets, not a course colour and not '
+      'a standalone colour',
+      () {
+        final pick = randomEventColor(
+          courseColors: const ['#16A34A', '#0D9488'],
+          standaloneColors: const ['#DB2777', '#EA580C'],
+          random: Random(1),
+        );
+
+        expect(kCoursePresetColors, isNot(contains(pick)));
+        expect(pick, isNot('#16A34A'));
+        expect(pick, isNot('#0D9488'));
+        expect(pick, isNot('#DB2777'));
+        expect(pick, isNot('#EA580C'));
+        expect(kEventSwatchPool, contains(pick));
+      },
+    );
+
+    test('a seeded Random gives a stable, repeatable result', () {
+      final first = randomEventColor(
+        courseColors: const [],
+        standaloneColors: const [],
+        random: Random(42),
+      );
+      final second = randomEventColor(
+        courseColors: const [],
+        standaloneColors: const [],
+        random: Random(42),
+      );
+
+      expect(first, second);
+    });
+
+    test('with no exclusions, the pick is always one of the non-preset pool entries', () {
+      for (var seed = 0; seed < 20; seed++) {
+        final pick = randomEventColor(
           courseColors: const [],
-        ),
-        '#2563EB',
-      );
-    });
-
-    test('skips a saved colour a course now uses', () {
-      expect(
-        initialEventColor(
-          savedColors: const ['#2563EB', '#7C3AED'],
-          courseColors: const ['#2563EB'],
-        ),
-        '#7C3AED',
-      );
-    });
-
-    test('matches course colours case-insensitively', () {
-      expect(
-        initialEventColor(
-          savedColors: const ['#2563EB'],
-          courseColors: const ['#2563eb'],
-        ),
-        '#16A34A', // falls through to defaultEventColor
-      );
-    });
-
-    test('falls back to defaultEventColor when the saved list is empty', () {
-      expect(
-        initialEventColor(savedColors: const [], courseColors: const []),
-        '#16A34A',
-      );
+          standaloneColors: const [],
+          random: Random(seed),
+        );
+        expect(nonPresetPool, contains(pick));
+      }
     });
 
     test(
-      'falls back to defaultEventColor when every saved colour is now a '
-      'course\'s',
+      'fallback 1: once standalone colours cover every non-preset, '
+      'non-course entry, a standalone colour is allowed back in',
       () {
-        expect(
-          initialEventColor(
-            savedColors: const ['#16A34A'],
-            courseColors: const ['#16A34A'],
-          ),
-          '#F5A524',
+        final pick = randomEventColor(
+          courseColors: const [],
+          standaloneColors: nonPresetPool,
+          random: Random(1),
         );
+
+        expect(nonPresetPool, contains(pick));
+        expect(kCoursePresetColors, isNot(contains(pick)));
       },
     );
+
+    test(
+      'fallback 2: once courses cover every non-preset entry too, a '
+      'preset is allowed back in',
+      () {
+        final pick = randomEventColor(
+          courseColors: nonPresetPool,
+          standaloneColors: const [],
+          random: Random(1),
+        );
+
+        expect(kCoursePresetColors, contains(pick));
+      },
+    );
+
+    test(
+      'fallback 3: once the whole pool is taken by courses, '
+      "kEventSwatchPool.first is returned regardless",
+      () {
+        final pick = randomEventColor(
+          courseColors: kEventSwatchPool,
+          standaloneColors: const [],
+          random: Random(1),
+        );
+
+        expect(pick, kEventSwatchPool.first);
+      },
+    );
+
+    test('matches course and standalone colours case-insensitively', () {
+      // Every pool entry except one, all lower-case — the single
+      // remaining upper-case entry should still be the only candidate.
+      final allButOne = kEventSwatchPool
+          .where((h) => h != kEventSwatchPool.last)
+          .map((h) => h.toLowerCase())
+          .toList();
+
+      final pick = randomEventColor(
+        courseColors: allButOne,
+        standaloneColors: const [],
+        random: Random(1),
+      );
+
+      expect(pick, kEventSwatchPool.last);
+    });
   });
 
   group('eventColorTiles', () {
     test('lists the saved colours, in order, each marked removable', () {
       final tiles = eventColorTiles(
-        defaultColor: '#16A34A',
         savedColors: const ['#2563EB', '#7C3AED'],
         courseColors: const [],
       );
@@ -131,26 +204,20 @@ void main() {
       ]);
     });
 
-    test(
-      'shows the non-removable default tile alone when the saved list is '
-      'empty',
-      () {
-        final tiles = eventColorTiles(
-          defaultColor: '#16A34A',
-          savedColors: const [],
-          courseColors: const [],
-        );
+    test('is empty when there are no saved colours and nothing selected', () {
+      final tiles = eventColorTiles(
+        savedColors: const [],
+        courseColors: const [],
+      );
 
-        expect(tiles, [const EventColorTile('#16A34A')]);
-      },
-    );
+      expect(tiles, isEmpty);
+    });
 
     test(
       'drops any saved colour a course uses, from the display — not from '
       'the list itself, which this function never sees as persisted state',
       () {
         final tiles = eventColorTiles(
-          defaultColor: '#16A34A',
           savedColors: const ['#16A34A', '#2563EB', '#7C3AED'],
           courseColors: const ['#16A34A', '#7C3AED'],
         );
@@ -161,37 +228,19 @@ void main() {
 
     test('matches course colours case-insensitively', () {
       final tiles = eventColorTiles(
-        defaultColor: '#16A34A',
         savedColors: const ['#16a34a'],
         courseColors: const ['#16A34A'],
       );
 
-      // Every saved colour was filtered out, so the empty-list default
-      // tile shows instead — and it's filtered too, since green is a
-      // course colour, leaving no tiles at all here.
       expect(tiles, isEmpty);
     });
 
     test(
-      'falls back to the non-removable default tile once every saved '
-      'colour is filtered out by a course',
+      'the current selection shows as the extra, non-removable tile '
+      'alongside the recents — the default appears this way too, since '
+      'it\'s passed in as selectedColor',
       () {
         final tiles = eventColorTiles(
-          defaultColor: '#F5A524',
-          savedColors: const ['#16A34A'],
-          courseColors: const ['#16A34A'],
-        );
-
-        expect(tiles, [const EventColorTile('#F5A524')]);
-      },
-    );
-
-    test(
-      'adds an extra, non-removable tile for the selected colour when it '
-      'is not already covered',
-      () {
-        final tiles = eventColorTiles(
-          defaultColor: '#16A34A',
           savedColors: const ['#2563EB'],
           courseColors: const [],
           selectedColor: '#FF00A8',
@@ -206,7 +255,6 @@ void main() {
 
     test('does not duplicate the selected colour when it is already a tile', () {
       final tiles = eventColorTiles(
-        defaultColor: '#16A34A',
         savedColors: const ['#2563EB'],
         courseColors: const [],
         selectedColor: '#2563EB',
@@ -216,31 +264,40 @@ void main() {
     });
 
     test(
-      'never drops the selected colour for being a course colour — only '
-      'the saved list and the empty-list default are filtered that way',
+      'the selected colour alone, with no saved colours, is still the one '
+      'tile shown — the row is never just "+" with nothing selected',
       () {
         final tiles = eventColorTiles(
-          defaultColor: '#16A34A',
+          savedColors: const [],
+          courseColors: const [],
+          selectedColor: '#16A34A',
+        );
+
+        expect(tiles, [const EventColorTile('#16A34A')]);
+      },
+    );
+
+    test(
+      'never drops the selected colour for being a course colour — only '
+      'the saved list is filtered that way',
+      () {
+        final tiles = eventColorTiles(
           savedColors: const [],
           courseColors: const ['#FF00A8'],
           selectedColor: '#FF00A8',
         );
 
-        expect(tiles, [
-          const EventColorTile('#16A34A'),
-          const EventColorTile('#FF00A8'),
-        ]);
+        expect(tiles, [const EventColorTile('#FF00A8')]);
       },
     );
 
     test('a null selected colour adds no extra tile', () {
       final tiles = eventColorTiles(
-        defaultColor: '#16A34A',
         savedColors: const [],
         courseColors: const [],
       );
 
-      expect(tiles, [const EventColorTile('#16A34A')]);
+      expect(tiles, isEmpty);
     });
   });
 }

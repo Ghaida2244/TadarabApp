@@ -1,6 +1,9 @@
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/models/course.dart';
 import 'package:tadarab_app/models/study_material.dart';
+import 'package:tadarab_app/screens/calendar/calendar_styles.dart';
 import 'package:tadarab_app/services/courses_service.dart';
 
 Course _course({
@@ -25,6 +28,28 @@ StudyMaterial _material({required String id, required String title}) =>
     );
 
 void main() {
+  group('kDefaultCourseColor', () {
+    test('is the same hex kCoursePresetColors starts with', () {
+      expect(kCoursePresetColors.first, kDefaultCourseColor);
+    });
+
+    test(
+      'the Add Event default (randomEventColor) is never one of '
+      'kCoursePresetColors — a standalone event should never look like '
+      "it's secretly a course, regardless of which colour is drawn",
+      () {
+        for (var seed = 0; seed < 50; seed++) {
+          final pick = randomEventColor(
+            courseColors: const [],
+            standaloneColors: const [],
+            random: Random(seed),
+          );
+          expect(kCoursePresetColors, isNot(contains(pick)));
+        }
+      },
+    );
+  });
+
   group('courseInitials', () {
     test('normal case: takes the first two literal characters', () {
       expect(courseInitials('IS230'), 'IS');

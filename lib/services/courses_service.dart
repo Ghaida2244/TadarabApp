@@ -37,11 +37,18 @@ const _networkTimeout = Duration(seconds: 15);
 /// [kMaxMaterialFileSizeBytes]) rather than a small document.
 const _uploadTimeout = Duration(seconds: 60);
 
+/// The default course/event colour: green. The single source of truth for
+/// that hex value — [kCoursePresetColors]'s first entry and Add Event's own
+/// `defaultEventColor` (`lib/screens/calendar/calendar_styles.dart`) both
+/// reference this constant instead of each hard-coding '#16A34A', so the two
+/// screens' idea of "the default colour" can never quietly drift apart.
+const kDefaultCourseColor = '#16A34A';
+
 /// The 5 preset course-color swatches (courses_material_upload_spec.md §2),
 /// lifted from the design handoff's `PALETTE` (its first 5 entries — the
 /// same ones the mockup's own "quick palette" surfaces).
 const kCoursePresetColors = <String>[
-  '#16A34A', // green
+  kDefaultCourseColor, // green
   '#2563EB', // blue
   '#F5A524', // amber
   '#E31B23', // red
@@ -71,12 +78,6 @@ bool isCourseNameTaken(String name, List<Course> existingCourses) {
   return existingCourses.any((c) => c.courseName == name);
 }
 
-/// Material-name uniqueness is case-sensitive and scoped to *this course
-/// only* — the same name is fine in a different course.
-bool isMaterialNameTaken(String title, List<StudyMaterial> existingInCourse) {
-  return existingInCourse.any((m) => m.title == title);
-}
-
 /// A preset swatch is locked once another of the student's courses already
 /// uses it; [excludingCourseId] lets an edit flow (not used yet — only
 /// create exists today) exclude the course being edited from the check.
@@ -90,6 +91,12 @@ bool isColorTaken(
   return existingCourses.any(
     (c) => c.courseId != excludingCourseId && c.color.toUpperCase() == normalized,
   );
+}
+
+/// Material-name uniqueness is case-sensitive and scoped to *this course
+/// only* — the same name is fine in a different course.
+bool isMaterialNameTaken(String title, List<StudyMaterial> existingInCourse) {
+  return existingInCourse.any((m) => m.title == title);
 }
 
 /// A course paired with its materials count, for the courses list row

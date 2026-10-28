@@ -229,18 +229,23 @@ class CalendarService {
   ///
   /// `courseId == null` is filtered in Dart, not in the query, to avoid
   /// needing a new composite index (see [_kStandaloneColorFetchCap]) — so
-  /// this reads at most that many documents, then keeps going through them
-  /// in order until [limit] distinct standalone colours are found.
+  /// this reads at most [fetchCap] documents (default
+  /// [_kStandaloneColorFetchCap], Add Event's own call is unchanged), then
+  /// keeps going through them in order until [limit] distinct standalone
+  /// colours are found. Add course needs every distinct colour, not just
+  /// the most recent few — since a preset only a little further back than
+  /// [limit] would otherwise look free when it isn't — so it passes
+  /// `fetchCap: null` (no cap at all) along with a generous [limit].
   Future<List<String>> standaloneEventColorsMostRecentFirst(
     String uid, {
     int limit = 5,
+    int? fetchCap = _kStandaloneColorFetchCap,
   }) async {
     final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
     try {
-      final snap = await _events(uid)
-          .orderBy('eventDate', descending: true)
-          .limit(_kStandaloneColorFetchCap)
-          .get();
+      var query = _events(uid).orderBy('eventDate', descending: true);
+      if (fetchCap != null) query = query.limit(fetchCap);
+      final snap = await query.get();
       docs = snap.docs;
     } catch (_) {
       throw CalendarFailure(_loadRecentColorsFailureMessage);

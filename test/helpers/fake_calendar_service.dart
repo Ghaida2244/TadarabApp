@@ -89,6 +89,7 @@ class FakeCalendarService extends CalendarService {
   Future<List<String>> standaloneEventColorsMostRecentFirst(
     String uid, {
     int limit = 5,
+    int? fetchCap,
   }) async {
     if (recentColorsError != null) throw recentColorsError!;
     return recentColors.take(limit).toList();
