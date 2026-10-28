@@ -101,8 +101,7 @@ class _UploadMaterialSheetState extends State<_UploadMaterialSheet> {
   String get _name => _nameController.text.trim();
 
   bool get _isDuplicateName =>
-      _name.isNotEmpty &&
-      isMaterialNameTaken(_name, widget.existingMaterials);
+      _name.isNotEmpty && isMaterialNameTaken(_name, widget.existingMaterials);
 
   bool get _isTooLarge =>
       _picked != null && _picked!.bytes.length > kMaxMaterialFileSizeBytes;
@@ -335,7 +334,10 @@ class _IdleContent extends StatelessWidget {
                   ),
                   child: Text(
                     _extensionOf(picked!.name).toUpperCase(),
-                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -358,7 +360,9 @@ class _IdleContent extends StatelessWidget {
                         child: TextField(
                           controller: nameController,
                           onChanged: onNameChanged,
-                          style: AppTypography.fieldInput.copyWith(fontSize: 14),
+                          style: AppTypography.fieldInput.copyWith(
+                            fontSize: 14,
+                          ),
                           decoration: const InputDecoration(
                             isCollapsed: true,
                             border: InputBorder.none,
@@ -438,37 +442,13 @@ class _UploadingContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Text(
-                  'AI',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Uploading the file...',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ],
+          const Text(
+            'Uploading the file...',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+            ),
           ),
           const SizedBox(height: 12),
           ClipRRect(

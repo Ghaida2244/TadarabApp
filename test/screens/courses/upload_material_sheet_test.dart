@@ -120,6 +120,9 @@ void main() {
     await tester.pump();
 
     expect(find.text('Uploading the file...'), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    // The "AI" badge tile that used to sit beside the status text is gone.
+    expect(find.text('AI'), findsNothing);
 
     gate.complete();
     await tester.pumpAndSettle(const Duration(seconds: 3));
