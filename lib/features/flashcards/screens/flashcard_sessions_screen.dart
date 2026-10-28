@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../logic/session_stacking.dart';
 import '../../../models/flashcard_session.dart';
@@ -12,6 +13,7 @@ import '../../../widgets/retake_label_pill.dart';
 import '../../../widgets/scrollable_title_pill.dart';
 import '../../../widgets/session_stack_card.dart';
 import '../../../widgets/session_stack_focus_view.dart';
+import '../../../widgets/status_bar_style.dart';
 import '../widgets/delete_session_dialog.dart';
 import '../widgets/header_circle_button.dart';
 import 'flashcard_flip_deck_screen.dart';
@@ -75,8 +77,8 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
   // toggle. Only _retry() reassigns this, the same way CoursesListScreen's
   // _reload() reassigns its cached Future instead of creating a new one
   // inline on every build.
-  late Stream<List<FlashcardSession>> _sessionsStream =
-      _service.watchSessions();
+  late Stream<List<FlashcardSession>> _sessionsStream = _service
+      .watchSessions();
 
   void _retry() => setState(() => _sessionsStream = _service.watchSessions());
 
@@ -188,15 +190,15 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
       });
 
       final shortfall = outcome.actualCount < outcome.requestedCount;
-      final message = outcome.note ??
+      final message =
+          outcome.note ??
           (shortfall
               ? 'Generated ${outcome.actualCount} of '
-                  '${outcome.requestedCount} requested.'
+                    '${outcome.requestedCount} requested.'
               : null);
       if (message != null) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(message)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
       }
 
       Navigator.of(context).push(
@@ -219,9 +221,8 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
         _retakingSessionIds.remove(session.sessionId);
         _retakingSource = null;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -246,115 +247,133 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: _openStackKey == null,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-        _closeStack();
-      },
-      child: Scaffold(
-        backgroundColor: AppColors.background,
-        body: StreamBuilder<List<FlashcardSession>>(
-          stream: _sessionsStream,
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              debugPrint('FlashcardSessionsScreen: watchSessions() error: ${snapshot.error}');
-            }
-            final sessions = snapshot.data ?? const <FlashcardSession>[];
-            final allGroups = groupSessionsIntoStacks<FlashcardSession>(
-              sessions: sessions,
-              isCompleted: (s) => s.isSessionCompleted,
-              rootSessionId: (s) => s.rootSessionId,
-              retakeNumber: (s) => s.retakeNumber,
-              createdAt: (s) => s.createdAt,
-              completedAt: (s) => s.completedAt,
-            );
-            final inProgress = allGroups.where((g) => !g.isCompleted).toList();
-            final completed = allGroups.where((g) => g.isCompleted).toList();
-            final listItems = _listItems(inProgress, completed);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.red),
+      child: PopScope(
+        canPop: _openStackKey == null,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          _closeStack();
+        },
+        child: Scaffold(
+          backgroundColor: AppColors.background,
+          body: StreamBuilder<List<FlashcardSession>>(
+            stream: _sessionsStream,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                debugPrint(
+                  'FlashcardSessionsScreen: watchSessions() error: ${snapshot.error}',
+                );
+              }
+              final sessions = snapshot.data ?? const <FlashcardSession>[];
+              final allGroups = groupSessionsIntoStacks<FlashcardSession>(
+                sessions: sessions,
+                isCompleted: (s) => s.isSessionCompleted,
+                rootSessionId: (s) => s.rootSessionId,
+                retakeNumber: (s) => s.retakeNumber,
+                createdAt: (s) => s.createdAt,
+                completedAt: (s) => s.completedAt,
+              );
+              final inProgress = allGroups
+                  .where((g) => !g.isCompleted)
+                  .toList();
+              final completed = allGroups.where((g) => g.isCompleted).toList();
+              final listItems = _listItems(inProgress, completed);
 
-            SessionStack<FlashcardSession>? openGroup;
-            if (_openStackKey != null) {
-              for (final g in allGroups) {
-                if (_keyFor(g) == _openStackKey && g.isStack) {
-                  openGroup = g;
-                  break;
+              SessionStack<FlashcardSession>? openGroup;
+              if (_openStackKey != null) {
+                for (final g in allGroups) {
+                  if (_keyFor(g) == _openStackKey && g.isStack) {
+                    openGroup = g;
+                    break;
+                  }
+                }
+                if (openGroup == null) {
+                  // The live stream already reflects a delete that shrank
+                  // this group to one attempt (or removed it) — close
+                  // reactively. Deferred: build() can't call setState
+                  // synchronously.
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted && _openStackKey != null) {
+                      setState(() => _openStackKey = null);
+                    }
+                  });
                 }
               }
-              if (openGroup == null) {
-                // The live stream already reflects a delete that shrank
-                // this group to one attempt (or removed it) — close
-                // reactively. Deferred: build() can't call setState
-                // synchronously.
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted && _openStackKey != null) {
-                    setState(() => _openStackKey = null);
-                  }
-                });
-              }
-            }
 
-            return Stack(
-              children: [
-                Column(
-                  children: [
-                    _Header(
-                      count: sessions.length,
-                      onBack: () => Navigator.of(context).maybePop(),
+              return Stack(
+                children: [
+                  Column(
+                    children: [
+                      _Header(
+                        count: sessions.length,
+                        onBack: () => Navigator.of(context).maybePop(),
+                      ),
+                      Expanded(
+                        child: snapshot.hasError
+                            ? _ErrorState(onRetry: _retry)
+                            : snapshot.connectionState ==
+                                  ConnectionState.waiting
+                            ? const Center(child: CircularProgressIndicator())
+                            : sessions.isEmpty
+                            ? const _EmptyState()
+                            : ListView.separated(
+                                padding: const EdgeInsets.fromLTRB(
+                                  22,
+                                  0,
+                                  22,
+                                  12,
+                                ),
+                                itemCount: listItems.length,
+                                separatorBuilder: (_, _) =>
+                                    const SizedBox(height: 12),
+                                itemBuilder: (context, index) =>
+                                    listItems[index],
+                              ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(22, 10, 22, 26),
+                        child: AppButton(
+                          label: 'Start new flashcards',
+                          variant: AppButtonVariant.accent,
+                          height: 56,
+                          borderRadius: 18,
+                          shadowColor: AppColors.redShadow.withValues(
+                            alpha: 0.6,
+                          ),
+                          onPressed: _openSetup,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (openGroup != null)
+                    SessionStackFocusView(
+                      title:
+                          '${openGroup.sessions.length} attempts · '
+                          '${openGroup.isCompleted ? 'Completed' : 'In progress'}',
+                      subtitle: openGroup.top.materialTitles.join(', '),
+                      itemCount: openGroup.sessions.length,
+                      itemBuilder: (context, index) => _buildRow(
+                        openGroup!,
+                        isInFocusView: true,
+                        itemIndex: index,
+                      ),
+                      onClose: _closeStack,
+                      reducedMotion: MediaQuery.of(context).disableAnimations,
                     ),
-                    Expanded(
-                      child: snapshot.hasError
-                          ? _ErrorState(onRetry: _retry)
-                          : snapshot.connectionState == ConnectionState.waiting
-                          ? const Center(child: CircularProgressIndicator())
-                          : sessions.isEmpty
-                          ? const _EmptyState()
-                          : ListView.separated(
-                              padding: const EdgeInsets.fromLTRB(22, 0, 22, 12),
-                              itemCount: listItems.length,
-                              separatorBuilder: (_, _) =>
-                                  const SizedBox(height: 12),
-                              itemBuilder: (context, index) =>
-                                  listItems[index],
-                            ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(22, 10, 22, 26),
-                      child: AppButton(
-                        label: 'Start new flashcards',
-                        variant: AppButtonVariant.accent,
-                        height: 56,
-                        borderRadius: 18,
-                        shadowColor: AppColors.redShadow.withValues(alpha: 0.6),
-                        onPressed: _openSetup,
+                  if (_retakingSource != null)
+                    GenerationLoadingOverlay(
+                      config: kFlashcardRetakeLoadingConfig,
+                      fixedLine: buildGenerationFixedLine(
+                        count: _retakingSource!.numberOfFlashcards,
+                        noun: 'flashcards',
+                        difficulties: _retakingSource!.difficultyLevels.toSet(),
                       ),
                     ),
-                  ],
-                ),
-                if (openGroup != null)
-                  SessionStackFocusView(
-                    title:
-                        '${openGroup.sessions.length} attempts · '
-                        '${openGroup.isCompleted ? 'Completed' : 'In progress'}',
-                    subtitle: openGroup.top.materialTitles.join(', '),
-                    itemCount: openGroup.sessions.length,
-                    itemBuilder: (context, index) =>
-                        _buildRow(openGroup!, isInFocusView: true, itemIndex: index),
-                    onClose: _closeStack,
-                    reducedMotion: MediaQuery.of(context).disableAnimations,
-                  ),
-                if (_retakingSource != null)
-                  GenerationLoadingOverlay(
-                    config: kFlashcardRetakeLoadingConfig,
-                    fixedLine: buildGenerationFixedLine(
-                      count: _retakingSource!.numberOfFlashcards,
-                      noun: 'flashcards',
-                      difficulties: _retakingSource!.difficultyLevels.toSet(),
-                    ),
-                  ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -393,10 +412,7 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
           _buildRow(inProgress[i], isInFocusView: false),
       for (var i = 0; i < completed.length; i++)
         if (i == 0)
-          withHeader(
-            'COMPLETED',
-            _buildRow(completed[i], isInFocusView: false),
-          )
+          withHeader('COMPLETED', _buildRow(completed[i], isInFocusView: false))
         else
           _buildRow(completed[i], isInFocusView: false),
     ];
@@ -732,8 +748,7 @@ class _SessionRow extends StatelessWidget {
                               Wrap(
                                 spacing: 7,
                                 runSpacing: 4,
-                                crossAxisAlignment:
-                                    WrapCrossAlignment.center,
+                                crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
                                   // "Original"/"Retake N" — shown only
                                   // once this session actually has a
@@ -823,16 +838,14 @@ class _SessionRow extends StatelessWidget {
                                     Expanded(
                                       child: AppButton(
                                         label: 'Retake',
-                                        variant:
-                                            AppButtonVariant.outlinedBrand,
+                                        variant: AppButtonVariant.outlinedBrand,
                                         height: _kButtonHeight,
                                         borderRadius: 12,
                                         fontSize: 13,
-                                        shadowColor: AppColors.navy
-                                            .withValues(alpha: 0.18),
-                                        onPressed: isRetaking
-                                            ? null
-                                            : onRetake,
+                                        shadowColor: AppColors.navy.withValues(
+                                          alpha: 0.18,
+                                        ),
+                                        onPressed: isRetaking ? null : onRetake,
                                       ),
                                     ),
                                   ],

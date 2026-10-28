@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/course.dart';
 import '../../services/calendar_service.dart';
@@ -7,6 +8,8 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/color_picker_dialog.dart';
 import '../../widgets/color_swatch_tile.dart';
+import '../../widgets/screen_header.dart';
+import '../../widgets/status_bar_style.dart';
 import '../calendar/calendar_styles.dart'
     show defaultEventColor, hexFromColor;
 import 'widgets/course_icon.dart';
@@ -241,11 +244,19 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.navy),
+      child: Scaffold(
       body: SafeArea(
+        top: false,
         child: Column(
           children: [
-            _Header(onClose: () => Navigator.of(context).pop(false)),
+            ScreenHeader(
+              title: 'Add course',
+              subtitle: 'Create a course to organize your studies',
+              backgroundColor: AppColors.navy,
+              onClose: () => Navigator.of(context).pop(false),
+            ),
             Expanded(
               // LayoutBuilder sits outside the SingleChildScrollView so
               // `constraints.maxHeight` is the real, bounded viewport
@@ -368,65 +379,6 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _Header extends StatelessWidget {
-  const _Header({required this.onClose});
-
-  final VoidCallback onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-      decoration: const BoxDecoration(
-        color: AppColors.navy,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Add course',
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.02 * 26,
-                    color: Colors.white,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Create a course to organize your studies',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xB3FFFFFF),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          GestureDetector(
-            onTap: onClose,
-            child: Container(
-              width: 38,
-              height: 38,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: Color(0x29FFFFFF),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.close, size: 18, color: Colors.white),
-            ),
-          ),
-        ],
       ),
     );
   }

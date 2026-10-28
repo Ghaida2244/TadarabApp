@@ -6,6 +6,7 @@ import 'package:tadarab_app/services/calendar_service.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
 import 'package:tadarab_app/widgets/color_picker_dialog.dart';
 import 'package:tadarab_app/widgets/color_swatch_tile.dart';
+import 'package:tadarab_app/widgets/screen_header.dart';
 
 import '../../helpers/fake_calendar_service.dart';
 import '../../helpers/fake_courses_service.dart';
@@ -501,6 +502,40 @@ void main() {
         expect(gap1(tester), 22);
         expect(gap2(tester), 22);
         expect(tester.takeException(), isNull);
+      },
+    );
+  });
+
+  group('status bar / safe area', () {
+    testWidgets(
+      'the header background reaches the top of the screen under a real '
+      'top inset (no white strip above it), and the title sits below the '
+      'status-bar inset',
+      (tester) async {
+        const insets = EdgeInsets.only(top: 48);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: const MediaQueryData(
+                padding: insets,
+                viewPadding: insets,
+              ),
+              child: AddCourseScreen(
+                uid: 'uid-1',
+                coursesService: FakeCoursesService(),
+                existingCourses: const [],
+                calendarService: FakeCalendarService(),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final headerRect = tester.getRect(find.byType(ScreenHeader));
+        expect(headerRect.top, 0);
+
+        final titleRect = tester.getRect(find.text('Add course'));
+        expect(titleRect.top, greaterThan(48));
       },
     );
   });

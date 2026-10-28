@@ -8,6 +8,7 @@ import 'package:tadarab_app/models/quiz_session.dart';
 import 'package:tadarab_app/screens/quiz/performance_summary_screen.dart';
 import 'package:tadarab_app/screens/quiz/quiz_navigation.dart';
 import 'package:tadarab_app/screens/quiz/quiz_play_screen.dart';
+import 'package:tadarab_app/theme/app_theme.dart';
 
 import '../../helpers/fake_quiz_session_service.dart';
 
@@ -351,6 +352,44 @@ void main() {
         expect(find.text('+16'), findsOneWidget); // original earnedPoints (4*4)
         expect(service.completeCalls, 0);
         expect(service.submitExamSessionCalls, 0);
+      },
+    );
+  });
+
+  group('status bar / safe area', () {
+    testWidgets(
+      'the header background reaches the top of the screen under a real '
+      'top inset (no white strip above it), and the title sits below the '
+      'status-bar inset',
+      (tester) async {
+        const insets = EdgeInsets.only(top: 48);
+        final service = FakeQuizSessionService(
+          sessions: [_completedSession(mode: Mode.exam, correct: 4, total: 5)],
+          questions: {'s1': _questionsWith(correct: 4, total: 5)},
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: const MediaQueryData(
+                padding: insets,
+                viewPadding: insets,
+              ),
+              child: PerformanceSummaryScreen(sessionId: 's1', service: service),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final headerFinder = find.byWidgetPredicate((w) {
+          if (w is! Container) return false;
+          final decoration = w.decoration;
+          return decoration is BoxDecoration &&
+              decoration.color == AppColors.navy;
+        });
+        expect(tester.getRect(headerFinder.first).top, 0);
+
+        final titleRect = tester.getRect(find.text('Performance Summary'));
+        expect(titleRect.top, greaterThan(48));
       },
     );
   });

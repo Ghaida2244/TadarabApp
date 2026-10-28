@@ -6,6 +6,7 @@ import 'package:tadarab_app/models/calendar_event.dart';
 import 'package:tadarab_app/models/course.dart';
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/screens/calendar/calendar_screen.dart';
+import 'package:tadarab_app/screens/calendar/widgets/calendar_header.dart';
 import 'package:tadarab_app/screens/calendar/widgets/delete_event_dialog.dart';
 import 'package:tadarab_app/services/calendar_service.dart';
 import 'package:tadarab_app/services/courses_service.dart';
@@ -824,6 +825,46 @@ void main() {
       await tester.pumpAndSettle();
       expect(coursesService.fetchCoursesCalls, 1);
     });
+  });
+
+  group('status bar / safe area', () {
+    testWidgets(
+      'the header background reaches the top of the screen under a real '
+      'top inset (no white strip above it), and its content sits below '
+      'the status-bar inset',
+      (tester) async {
+        const insets = EdgeInsets.only(top: 48);
+        tester.view.physicalSize = const Size(412, 892);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: const MediaQueryData(
+                padding: insets,
+                viewPadding: insets,
+              ),
+              child: Scaffold(
+                body: CalendarScreen(
+                  uid: 'uid-1',
+                  active: true,
+                  calendarService: FakeCalendarService(),
+                  coursesService: FakeCoursesService(),
+                  now: now,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.getRect(find.byType(CalendarHeader)).top, 0);
+
+        final titleRect = tester.getRect(find.text('Calendar'));
+        expect(titleRect.top, greaterThan(48));
+      },
+    );
   });
 }
 

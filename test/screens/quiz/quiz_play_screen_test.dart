@@ -4,6 +4,7 @@ import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/question.dart';
 import 'package:tadarab_app/models/quiz_session.dart';
 import 'package:tadarab_app/screens/quiz/quiz_play_screen.dart';
+import 'package:tadarab_app/theme/app_theme.dart';
 
 import '../../helpers/fake_quiz_session_service.dart';
 
@@ -549,6 +550,44 @@ void main() {
         expect(find.text('Question 2 of 2'), findsOneWidget);
         expect(find.text('Submit answer'), findsOneWidget);
         expect(find.text('CORRECT'), findsNothing);
+      },
+    );
+  });
+
+  group('status bar / safe area', () {
+    testWidgets(
+      'the header background reaches the top of the screen under a real '
+      'top inset (no white strip above it), and the question counter '
+      'sits below the status-bar inset',
+      (tester) async {
+        const insets = EdgeInsets.only(top: 48);
+        final service = FakeQuizSessionService(
+          sessions: [_session(mode: Mode.exam)],
+          questions: {'s1': _questions()},
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: const MediaQueryData(
+                padding: insets,
+                viewPadding: insets,
+              ),
+              child: QuizPlayScreen(sessionId: 's1', service: service),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final headerFinder = find.byWidgetPredicate((w) {
+          if (w is! Container) return false;
+          final decoration = w.decoration;
+          return decoration is BoxDecoration &&
+              decoration.color == AppColors.navy;
+        });
+        expect(tester.getRect(headerFinder.first).top, 0);
+
+        final titleRect = tester.getRect(find.text('Question 1 of 2'));
+        expect(titleRect.top, greaterThan(48));
       },
     );
   });

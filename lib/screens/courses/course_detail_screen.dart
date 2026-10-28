@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../features/flashcards/flashcard_navigation.dart';
 import '../../features/flashcards/screens/flashcard_sessions_screen.dart';
@@ -12,6 +13,7 @@ import '../../services/flashcard_service.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
+import '../../widgets/status_bar_style.dart';
 import '../quiz/quiz_navigation.dart';
 import '../quiz/quiz_sessions_screen.dart';
 import 'widgets/delete_course_dialog.dart';
@@ -202,117 +204,123 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   Widget build(BuildContext context) {
     final courseColor = parseHexColor(widget.course.color);
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-        Navigator.of(context).pop(_changed);
-      },
-      child: Scaffold(
-        body: SafeArea(
-          child: FutureBuilder<List<StudyMaterial>>(
-            future: _materials,
-            builder: (context, snapshot) {
-              final loading = snapshot.connectionState != ConnectionState.done;
-              final hasError = snapshot.hasError;
-              final materials = snapshot.data ?? const <StudyMaterial>[];
-              final hasMaterials = !loading && !hasError && materials.isNotEmpty;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(courseColor),
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          Navigator.of(context).pop(_changed);
+        },
+        child: Scaffold(
+          body: SafeArea(
+            top: false,
+            child: FutureBuilder<List<StudyMaterial>>(
+              future: _materials,
+              builder: (context, snapshot) {
+                final loading =
+                    snapshot.connectionState != ConnectionState.done;
+                final hasError = snapshot.hasError;
+                final materials = snapshot.data ?? const <StudyMaterial>[];
+                final hasMaterials =
+                    !loading && !hasError && materials.isNotEmpty;
 
-              return Column(
-                children: [
-                  _Header(
-                    course: widget.course,
-                    color: courseColor,
-                    onBack: () => Navigator.of(context).pop(_changed),
-                    onDelete: _deleting ? null : _confirmDelete,
-                  ),
-                  Expanded(
-                    child: loading
-                        ? const Center(child: CircularProgressIndicator())
-                        : hasError
-                        ? _ErrorState(onRetry: _reload)
-                        : hasMaterials
-                        ? _MaterialsScrollView(
-                            materials: materials,
-                            searchController: _searchController,
-                            searchQuery: _searchQuery,
-                            onSearchChanged: _onSearchChanged,
-                            onClearSearch: _clearSearch,
-                            sortOrder: _sortOrder,
-                            onSortChanged: _onSortChanged,
-                            onUpload: () => _openUpload(materials),
-                            onDeleteMaterial: _confirmDeleteMaterial,
-                            deletingMaterialIds: _deletingMaterialIds,
-                            onQuizTap: _openQuiz,
-                            onFlashcardsTap: _openFlashcards,
-                          )
-                        // No materials yet: Study Tools stays fixed at the
-                        // top (locked, as always); the "Add your first
-                        // material" card — including its own "Course
-                        // materials" heading, see _EmptyMaterials — centers
-                        // in the remaining space below it, both
-                        // horizontally and vertically. Expanded needs a
-                        // bounded parent, so it wraps the LayoutBuilder
-                        // (legitimate here — this outer Column is itself
-                        // inside the grandparent's Expanded, so bounded) —
-                        // not anything inside the SingleChildScrollView's
-                        // child slot below, which always gets an unbounded
-                        // max height; centering there is done by the inner
-                        // Column's own `mainAxisAlignment: center` against
-                        // a ConstrainedBox(minHeight:) floor instead, the
-                        // standard "center if it fits, scroll if it
-                        // doesn't" pattern, so a short screen scrolls
-                        // instead of overflowing.
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  20,
-                                  18,
-                                  20,
-                                  0,
+                return Column(
+                  children: [
+                    _Header(
+                      course: widget.course,
+                      color: courseColor,
+                      onBack: () => Navigator.of(context).pop(_changed),
+                      onDelete: _deleting ? null : _confirmDelete,
+                    ),
+                    Expanded(
+                      child: loading
+                          ? const Center(child: CircularProgressIndicator())
+                          : hasError
+                          ? _ErrorState(onRetry: _reload)
+                          : hasMaterials
+                          ? _MaterialsScrollView(
+                              materials: materials,
+                              searchController: _searchController,
+                              searchQuery: _searchQuery,
+                              onSearchChanged: _onSearchChanged,
+                              onClearSearch: _clearSearch,
+                              sortOrder: _sortOrder,
+                              onSortChanged: _onSortChanged,
+                              onUpload: () => _openUpload(materials),
+                              onDeleteMaterial: _confirmDeleteMaterial,
+                              deletingMaterialIds: _deletingMaterialIds,
+                              onQuizTap: _openQuiz,
+                              onFlashcardsTap: _openFlashcards,
+                            )
+                          // No materials yet: Study Tools stays fixed at the
+                          // top (locked, as always); the "Add your first
+                          // material" card — including its own "Course
+                          // materials" heading, see _EmptyMaterials — centers
+                          // in the remaining space below it, both
+                          // horizontally and vertically. Expanded needs a
+                          // bounded parent, so it wraps the LayoutBuilder
+                          // (legitimate here — this outer Column is itself
+                          // inside the grandparent's Expanded, so bounded) —
+                          // not anything inside the SingleChildScrollView's
+                          // child slot below, which always gets an unbounded
+                          // max height; centering there is done by the inner
+                          // Column's own `mainAxisAlignment: center` against
+                          // a ConstrainedBox(minHeight:) floor instead, the
+                          // standard "center if it fits, scroll if it
+                          // doesn't" pattern, so a short screen scrolls
+                          // instead of overflowing.
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    20,
+                                    18,
+                                    20,
+                                    0,
+                                  ),
+                                  child: _StudyTools(
+                                    unlocked: false,
+                                    onQuizTap: _openQuiz,
+                                    onFlashcardsTap: _openFlashcards,
+                                  ),
                                 ),
-                                child: _StudyTools(
-                                  unlocked: false,
-                                  onQuizTap: _openQuiz,
-                                  onFlashcardsTap: _openFlashcards,
-                                ),
-                              ),
-                              Expanded(
-                                child: LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    return SingleChildScrollView(
-                                      child: ConstrainedBox(
-                                        constraints: BoxConstraints(
-                                          minHeight: constraints.maxHeight,
-                                        ),
-                                        child: Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: [
-                                            Padding(
-                                              padding: const EdgeInsets.all(
-                                                20,
+                                Expanded(
+                                  child: LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      return SingleChildScrollView(
+                                        child: ConstrainedBox(
+                                          constraints: BoxConstraints(
+                                            minHeight: constraints.maxHeight,
+                                          ),
+                                          child: Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Padding(
+                                                padding: const EdgeInsets.all(
+                                                  20,
+                                                ),
+                                                child: _EmptyMaterials(
+                                                  onUpload: () =>
+                                                      _openUpload(materials),
+                                                ),
                                               ),
-                                              child: _EmptyMaterials(
-                                                onUpload: () =>
-                                                    _openUpload(materials),
-                                              ),
-                                            ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                    );
-                                  },
+                                      );
+                                    },
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                  ),
-                ],
-              );
-            },
+                              ],
+                            ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -341,30 +349,30 @@ class _Header extends StatelessWidget {
         color: color,
         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _CircleButton(icon: Icons.arrow_back, onTap: onBack),
-              _CircleButton(
-                icon: Icons.delete_outline,
-                onTap: onDelete,
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            course.courseName,
-            style: const TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.02 * 28,
-              color: Colors.white,
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _CircleButton(icon: Icons.arrow_back, onTap: onBack),
+                _CircleButton(icon: Icons.delete_outline, onTap: onDelete),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 14),
+            Text(
+              course.courseName,
+              style: const TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.02 * 28,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -391,7 +399,9 @@ class _CircleButton extends StatelessWidget {
         child: Icon(
           icon,
           size: 20,
-          color: onTap == null ? Colors.white.withValues(alpha: 0.5) : Colors.white,
+          color: onTap == null
+              ? Colors.white.withValues(alpha: 0.5)
+              : Colors.white,
         ),
       ),
     );
@@ -609,9 +619,8 @@ class _MaterialsScrollView extends StatelessWidget {
     // Scales with the system text size (not just a fixed 46dp) so the
     // pinned row can't clip/overflow under a large accessibility font —
     // 46 is the design's own value at the default (1.0) scale.
-    final scaledFontSize = MediaQuery.textScalerOf(
-      context,
-    ).scale(_kSearchFieldFontSize);
+    final scaledFontSize = MediaQuery.textScalerOf(context)
+        .scale(_kSearchFieldFontSize);
     final fieldHeight = math.max(46.0, scaledFontSize * 1.6 + 20.0);
     final headerExtent = 12 + fieldHeight + 10;
 
@@ -1054,11 +1063,7 @@ class _NoResultsCard extends StatelessWidget {
               color: AppColors.cardTint,
               borderRadius: BorderRadius.circular(20),
             ),
-            child: const Icon(
-              Icons.search,
-              size: 26,
-              color: AppColors.navy,
-            ),
+            child: const Icon(Icons.search, size: 26, color: AppColors.navy),
           ),
           const SizedBox(height: 12),
           const Text(

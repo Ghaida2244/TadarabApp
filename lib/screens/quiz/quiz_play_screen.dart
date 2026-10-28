@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/enums.dart';
 import '../../models/question.dart';
@@ -8,6 +9,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/draggable_overflow_text.dart';
 import '../../widgets/save_and_leave_sheet.dart';
+import '../../widgets/status_bar_style.dart';
 import 'performance_summary_screen.dart';
 import 'widgets/quiz_icon_button.dart';
 
@@ -108,7 +110,10 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     final session = await widget.service.fetchSession(widget.sessionId!);
     final questions = await widget.service.fetchQuestions(widget.sessionId!);
     _mode = session.mode;
-    _index = session.currentQuestionIndex.clamp(0, questions.isEmpty ? 0 : questions.length - 1);
+    _index = session.currentQuestionIndex.clamp(
+      0,
+      questions.isEmpty ? 0 : questions.length - 1,
+    );
     for (var i = 0; i < questions.length; i++) {
       if (questions[i].studentAnswer != null) {
         _localAnswers[i] = questions[i].studentAnswer!;
@@ -151,7 +156,10 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     final nextIndex = _index + 1;
     setState(() {
       _index = nextIndex;
-      _revealed = isRevealedState(mode: _mode, current: data.questions[nextIndex]);
+      _revealed = isRevealedState(
+        mode: _mode,
+        current: data.questions[nextIndex],
+      );
     });
     if (!widget.isPractice && !widget.isExamDraft) {
       await widget.service.setCurrentQuestionIndex(
@@ -270,7 +278,9 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Thanks — we will take a look at this question.')),
+      const SnackBar(
+        content: Text('Thanks — we will take a look at this question.'),
+      ),
     );
   }
 
@@ -282,7 +292,8 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     final answered = _localAnswers.length;
     final leave = await showSaveAndLeaveSheetModal<bool>(
       context,
-      body: 'You have answered $answered of ${data.questions.length} so far. '
+      body:
+          'You have answered $answered of ${data.questions.length} so far. '
           'We will keep this session so you can pick it up where you left off.',
       onSaveAndLeave: () => Navigator.of(context).pop(true),
       onKeepGoing: () => Navigator.of(context).pop(false),
@@ -294,195 +305,248 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: FutureBuilder<_PlayData>(
-        future: _dataFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const SafeArea(child: Center(child: CircularProgressIndicator()));
-          }
-          if (snapshot.hasError || !snapshot.hasData || snapshot.data!.questions.isEmpty) {
-            return SafeArea(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(22),
-                  child: Text("Couldn't load this quiz.", style: AppTypography.quizEmptyTitle),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.navy),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: FutureBuilder<_PlayData>(
+          future: _dataFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const SafeArea(
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (snapshot.hasError ||
+                !snapshot.hasData ||
+                snapshot.data!.questions.isEmpty) {
+              return SafeArea(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(22),
+                    child: Text(
+                      "Couldn't load this quiz.",
+                      style: AppTypography.quizEmptyTitle,
+                    ),
+                  ),
                 ),
-              ),
-            );
-          }
-          final data = snapshot.data!;
-          final questions = data.questions;
-          final total = questions.length;
-          final isLast = _index >= total - 1;
-          final current = questions[_index];
-          final picked = _localAnswers[_index];
-          final hasPick = picked != null;
-          // The X shows for Learning mode and for Practice (always
-          // Learning-styled) — only a real Exam-mode session has none.
-          // _askExit itself branches practice's "exit immediately, no
-          // prompt" from a real session's save-and-leave sheet.
-          final canExit = widget.isPractice || _mode == Mode.learning;
-          final locked = !widget.isPractice && _mode == Mode.exam;
+              );
+            }
+            final data = snapshot.data!;
+            final questions = data.questions;
+            final total = questions.length;
+            final isLast = _index >= total - 1;
+            final current = questions[_index];
+            final picked = _localAnswers[_index];
+            final hasPick = picked != null;
+            // The X shows for Learning mode and for Practice (always
+            // Learning-styled) — only a real Exam-mode session has none.
+            // _askExit itself branches practice's "exit immediately, no
+            // prompt" from a real session's save-and-leave sheet.
+            final canExit = widget.isPractice || _mode == Mode.learning;
+            final locked = !widget.isPractice && _mode == Mode.exam;
 
-          return SafeArea(
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
-                  decoration: const BoxDecoration(color: AppColors.navy),
-                  child: Column(
-                    children: [
-                      Row(
+            return SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+                    decoration: const BoxDecoration(color: AppColors.navy),
+                    child: SafeArea(
+                      bottom: false,
+                      child: Column(
                         children: [
-                          if (canExit)
-                            QuizIconButton(
-                              icon: Icons.close,
-                              size: 34,
-                              semanticLabel: 'Leave quiz',
-                              onTap: () => _askExit(data),
-                            ),
-                          if (locked)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.14),
-                                borderRadius: BorderRadius.circular(999),
+                          Row(
+                            children: [
+                              if (canExit)
+                                QuizIconButton(
+                                  icon: Icons.close,
+                                  size: 34,
+                                  semanticLabel: 'Leave quiz',
+                                  onTap: () => _askExit(data),
+                                ),
+                              if (locked)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.14),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.lock_outline,
+                                        size: 13,
+                                        color: Colors.white,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'LOCKED',
+                                        style: AppTypography.quizBadge.copyWith(
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Question ${_index + 1} of $total',
+                                  style: AppTypography.quizOption(
+                                    FontWeight.w900,
+                                    color: Colors.white,
+                                  ).copyWith(fontSize: 15),
+                                ),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.lock_outline, size: 13, color: Colors.white),
-                                  const SizedBox(width: 6),
-                                  Text('LOCKED', style: AppTypography.quizBadge.copyWith(color: Colors.white)),
-                                ],
+                              Text(
+                                widget.isPractice
+                                    ? 'Practice'
+                                    : (_mode == Mode.learning
+                                          ? 'Learning'
+                                          : 'Exam'),
+                                style: AppTypography.quizHeaderMeta,
                               ),
-                            ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Question ${_index + 1} of $total',
-                              style: AppTypography.quizOption(FontWeight.w900, color: Colors.white).copyWith(fontSize: 15),
-                            ),
+                            ],
                           ),
-                          Text(
-                            widget.isPractice ? 'Practice' : (_mode == Mode.learning ? 'Learning' : 'Exam'),
-                            style: AppTypography.quizHeaderMeta,
+                          const SizedBox(height: 13),
+                          Row(
+                            children: List.generate(total, (i) {
+                              final Color color;
+                              if (i == _index) {
+                                color = AppColors.red;
+                              } else if (_localAnswers.containsKey(i)) {
+                                color = Colors.white.withValues(alpha: 0.75);
+                              } else {
+                                color = Colors.white.withValues(alpha: 0.22);
+                              }
+                              return Expanded(
+                                child: Container(
+                                  margin: EdgeInsets.only(
+                                    right: i == total - 1 ? 0 : 4,
+                                  ),
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    color: color,
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                ),
+                              );
+                            }),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 13),
-                      Row(
-                        children: List.generate(total, (i) {
-                          final Color color;
-                          if (i == _index) {
-                            color = AppColors.red;
-                          } else if (_localAnswers.containsKey(i)) {
-                            color = Colors.white.withValues(alpha: 0.75);
-                          } else {
-                            color = Colors.white.withValues(alpha: 0.22);
-                          }
-                          return Expanded(
-                            child: Container(
-                              margin: EdgeInsets.only(right: i == total - 1 ? 0 : 4),
-                              height: 6,
-                              decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(999)),
-                            ),
-                          );
-                        }),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(22),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              // NOTE 10: fontSize 20 / w800 locally — app_typography.dart
-                              // is frozen, so quizQuestion's own 21/w900 stays
-                              // untouched and this overrides just those two
-                              // properties at the call site instead.
-                              child: Text(
-                                current.questionText,
-                                style: AppTypography.quizQuestion.copyWith(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w800,
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(22),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                // NOTE 10: fontSize 20 / w800 locally — app_typography.dart
+                                // is frozen, so quizQuestion's own 21/w900 stays
+                                // untouched and this overrides just those two
+                                // properties at the call site instead.
+                                child: Text(
+                                  current.questionText,
+                                  style: AppTypography.quizQuestion.copyWith(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
+                                  ),
                                 ),
                               ),
-                            ),
-                            if (!widget.isPractice)
-                              IconButton(
-                                onPressed: () => _report(data),
-                                icon: const Icon(Icons.flag_outlined, size: 20, color: AppColors.placeholder),
-                                tooltip: 'Report this question',
+                              if (!widget.isPractice)
+                                IconButton(
+                                  onPressed: () => _report(data),
+                                  icon: const Icon(
+                                    Icons.flag_outlined,
+                                    size: 20,
+                                    color: AppColors.placeholder,
+                                  ),
+                                  tooltip: 'Report this question',
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 18),
+                          ...current.options.map((option) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _OptionTile(
+                                option: option,
+                                index: current.options.indexOf(option),
+                                selected: picked == option,
+                                revealed: _revealed,
+                                isCorrectOption:
+                                    option == current.correctAnswer,
+                                onTap: () => _pick(data, option),
                               ),
+                            );
+                          }),
+                          if (_revealed) ...[
+                            const SizedBox(height: 16),
+                            _ExplanationPanel(question: current),
                           ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 14, 22, 26),
+                    child: Column(
+                      children: [
+                        AppButton(
+                          label: nextButtonLabel(
+                            mode: _mode,
+                            revealed: _revealed,
+                            isLastQuestion: isLast,
+                          ),
+                          height: 54,
+                          borderRadius: 16,
+                          variant: AppButtonVariant.accent,
+                          // While loading, AppButton already shows its own
+                          // grey disabledShadow — leave shadowColor unset so
+                          // this override doesn't stomp it.
+                          shadowColor: _finishing
+                              ? null
+                              : AppColors.navy.withValues(alpha: 0.10),
+                          disabledBackgroundColor: AppColors.disabledRedFill,
+                          disabledRemovesShadow: true,
+                          loading: _finishing,
+                          onPressed: hasPick && !_finishing
+                              ? () => _advance(data)
+                              : null,
                         ),
-                        const SizedBox(height: 18),
-                        ...current.options.map((option) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _OptionTile(
-                              option: option,
-                              index: current.options.indexOf(option),
-                              selected: picked == option,
-                              revealed: _revealed,
-                              isCorrectOption: option == current.correctAnswer,
-                              onTap: () => _pick(data, option),
-                            ),
-                          );
-                        }),
-                        if (_revealed) ...[
-                          const SizedBox(height: 16),
-                          _ExplanationPanel(question: current),
+                        if (locked) ...[
+                          const SizedBox(height: 10),
+                          AppButton(
+                            label: 'Previous',
+                            variant: AppButtonVariant.outlinedBrand,
+                            height: 50,
+                            borderRadius: 16,
+                            shadowColor: AppColors.navy.withValues(alpha: 0.10),
+                            onPressed: _index == 0
+                                ? null
+                                : () => _previous(data),
+                          ),
                         ],
                       ],
                     ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(22, 14, 22, 26),
-                  child: Column(
-                    children: [
-                      AppButton(
-                        label: nextButtonLabel(mode: _mode, revealed: _revealed, isLastQuestion: isLast),
-                        height: 54,
-                        borderRadius: 16,
-                        variant: AppButtonVariant.accent,
-                        // While loading, AppButton already shows its own
-                        // grey disabledShadow — leave shadowColor unset so
-                        // this override doesn't stomp it.
-                        shadowColor: _finishing ? null : AppColors.navy.withValues(alpha: 0.10),
-                        disabledBackgroundColor: AppColors.disabledRedFill,
-                        disabledRemovesShadow: true,
-                        loading: _finishing,
-                        onPressed: hasPick && !_finishing ? () => _advance(data) : null,
-                      ),
-                      if (locked) ...[
-                        const SizedBox(height: 10),
-                        AppButton(
-                          label: 'Previous',
-                          variant: AppButtonVariant.outlinedBrand,
-                          height: 50,
-                          borderRadius: 16,
-                          shadowColor: AppColors.navy.withValues(alpha: 0.10),
-                          onPressed: _index == 0 ? null : () => _previous(data),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -577,9 +641,16 @@ class _OptionTile extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(option, style: AppTypography.quizOption(weight, color: textColor)),
+              child: Text(
+                option,
+                style: AppTypography.quizOption(weight, color: textColor),
+              ),
             ),
-            if (mark != null) Text(mark, style: AppTypography.quizBadge.copyWith(color: markColor)),
+            if (mark != null)
+              Text(
+                mark,
+                style: AppTypography.quizBadge.copyWith(color: markColor),
+              ),
           ],
         ),
       ),
@@ -629,14 +700,23 @@ class _ExplanationPanel extends StatelessWidget {
                     color: Colors.white.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.menu_book_outlined, size: 17, color: Colors.white),
+                  child: const Icon(
+                    Icons.menu_book_outlined,
+                    size: 17,
+                    color: Colors.white,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('FIND IT IN YOUR MATERIAL', style: AppTypography.quizPanelLabel(color: Colors.white.withValues(alpha: 0.55))),
+                      Text(
+                        'FIND IT IN YOUR MATERIAL',
+                        style: AppTypography.quizPanelLabel(
+                          color: Colors.white.withValues(alpha: 0.55),
+                        ),
+                      ),
                       const SizedBox(height: 2),
                       DraggableOverflowText(
                         text: question.sourceLocation,

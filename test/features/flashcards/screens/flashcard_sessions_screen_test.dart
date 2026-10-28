@@ -978,4 +978,50 @@ void main() {
       },
     );
   });
+
+  group('status bar / safe area', () {
+    testWidgets(
+      'the header background reaches the top of the screen under a real '
+      'top inset (no white strip above it), and the title sits below the '
+      'status-bar inset',
+      (tester) async {
+        const insets = EdgeInsets.only(top: 48);
+        // Taller than the default test surface: the empty state's dashed
+        // card is otherwise right at the edge of overflowing once the
+        // inset eats into the available height — unrelated to the header
+        // fix itself.
+        await tester.binding.setSurfaceSize(const Size(800, 900));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: const MediaQueryData(
+                padding: insets,
+                viewPadding: insets,
+              ),
+              child: FlashcardSessionsScreen(
+                uid: 'uid-1',
+                courseId: 'course-1',
+                email: 'student@example.com',
+                service: FakeFlashcardService(sessions: const []),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final headerFinder = find.byWidgetPredicate((w) {
+          if (w is! Container) return false;
+          final decoration = w.decoration;
+          return decoration is BoxDecoration &&
+              decoration.color == AppColors.red;
+        });
+        expect(tester.getRect(headerFinder.first).top, 0);
+
+        final titleRect = tester.getRect(find.text('Flashcards'));
+        expect(titleRect.top, greaterThan(48));
+      },
+    );
+  });
 }

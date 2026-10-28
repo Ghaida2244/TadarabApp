@@ -16,6 +16,7 @@ import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
 import 'package:tadarab_app/widgets/color_picker_dialog.dart';
 import 'package:tadarab_app/widgets/color_swatch_tile.dart';
+import 'package:tadarab_app/widgets/screen_header.dart';
 
 import '../../helpers/fake_calendar_service.dart';
 import '../../helpers/fake_reminder_scheduler.dart';
@@ -1450,6 +1451,103 @@ void main() {
       // The reason line never shows alongside the in-flight state.
       expect(find.byKey(const ValueKey('save-reason')), findsNothing);
     });
+  });
+
+  group('header (matches Add course\'s)', () {
+    testWidgets(
+      'shows a close "X" on the right, no back arrow, the title and the '
+      'subtitle',
+      (tester) async {
+        await pumpAddEvent(tester);
+
+        expect(find.text('Add Event'), findsOneWidget);
+        expect(find.text('Add an event to your calendar'), findsOneWidget);
+        expect(find.byIcon(Icons.close), findsOneWidget);
+        expect(find.byIcon(Icons.arrow_back), findsNothing);
+        expect(find.byIcon(Icons.chevron_left), findsNothing);
+
+        // Title left-aligned, close button to its right.
+        final titleRect = tester.getRect(find.text('Add Event'));
+        final closeRect = tester.getRect(find.byIcon(Icons.close));
+        expect(closeRect.left, greaterThan(titleRect.right));
+      },
+    );
+
+    testWidgets('has a "Close" accessibility label', (tester) async {
+      await pumpAddEvent(tester);
+      expect(find.bySemanticsLabel('Close'), findsOneWidget);
+    });
+
+    testWidgets(
+      'tapping the close button pops the screen, exactly like the old '
+      'back arrow did',
+      (tester) async {
+        await pumpAddEvent(tester);
+
+        await tester.tap(find.byIcon(Icons.close));
+        await tester.pumpAndSettle();
+
+        expect(poppedResult, isNull);
+        expect(find.text('Add Event'), findsNothing);
+        expect(find.text('open'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'the close button is disabled (dimmed, non-interactive) while '
+      'saving — same as the old back arrow',
+      (tester) async {
+        await pumpAddEvent(tester, service: _SlowCalendarService());
+        await fillValidForm(tester);
+        await tester.tap(find.text('Save Event'));
+        await tester.pump();
+
+        final icon = tester.widget<Icon>(find.byIcon(Icons.close));
+        expect((icon.color as Color).a, closeTo(0.4, 0.01));
+
+        await tester.tap(find.byIcon(Icons.close));
+        await tester.pump();
+        expect(find.text('Add Event'), findsOneWidget);
+      },
+    );
+  });
+
+  group('status bar / safe area', () {
+    testWidgets(
+      'the header background reaches the top of the screen under a real '
+      'top inset (no white strip above it), and the title sits below the '
+      'status-bar inset',
+      (tester) async {
+        const insets = EdgeInsets.only(top: 48);
+        await tester.binding.setSurfaceSize(const Size(600, 1600));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: const MediaQueryData(
+                padding: insets,
+                viewPadding: insets,
+              ),
+              child: AddEventScreen(
+                uid: 'uid-1',
+                calendarService: FakeCalendarService(),
+                courses: const [],
+                reminderScheduler: FakeReminderScheduler(),
+                now: mainNow,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final headerRect = tester.getRect(find.byType(ScreenHeader));
+        expect(headerRect.top, 0);
+
+        final titleRect = tester.getRect(find.text('Add Event'));
+        expect(titleRect.top, greaterThan(48));
+      },
+    );
   });
 }
 

@@ -15,6 +15,8 @@ import '../../widgets/app_button.dart';
 import '../../widgets/app_error_banner.dart';
 import '../../widgets/color_picker_dialog.dart';
 import '../../widgets/color_swatch_tile.dart';
+import '../../widgets/screen_header.dart';
+import '../../widgets/status_bar_style.dart';
 import 'calendar_styles.dart';
 import 'widgets/calendar_pickers.dart';
 import 'widgets/reminder_card.dart';
@@ -404,11 +406,18 @@ class _AddEventScreenState extends State<AddEventScreen> {
   Widget build(BuildContext context) {
     final reason = _saveReason;
 
-    return Scaffold(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.navy),
+      child: Scaffold(
       backgroundColor: Colors.white,
       body: Column(
         children: [
-          _AddEventHeader(enabled: !_saving),
+          ScreenHeader(
+            title: 'Add Event',
+            subtitle: 'Add an event to your calendar',
+            backgroundColor: AppColors.navy,
+            onClose: _saving ? null : () => Navigator.of(context).pop(),
+          ),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(22),
@@ -581,6 +590,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -594,62 +604,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
       _selectedColor = hexFromColor(picked);
       _colorPickedByUser = true;
     });
-  }
-}
-
-/// Navy header with the circular back chip.
-class _AddEventHeader extends StatelessWidget {
-  const _AddEventHeader({required this.enabled});
-
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        color: AppColors.navy,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
-      ),
-      padding: const EdgeInsets.fromLTRB(22, 0, 22, 22),
-      child: SafeArea(
-        bottom: false,
-        child: Row(
-          children: [
-            Semantics(
-              button: true,
-              label: 'Back',
-              child: GestureDetector(
-                onTap: enabled ? () => Navigator.of(context).pop() : null,
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.chevron_left,
-                    size: 19,
-                    color: Colors.white.withValues(alpha: enabled ? 1 : 0.4),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Text(
-                'Add Event',
-                style: CalendarText.headerTitle,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 
