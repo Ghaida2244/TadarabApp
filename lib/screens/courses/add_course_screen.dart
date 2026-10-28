@@ -4,6 +4,7 @@ import '../../models/course.dart';
 import '../../services/courses_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
+import '../../widgets/color_swatch_tile.dart';
 import 'widgets/course_icon.dart';
 
 /// Create-a-course screen, opened from the `+` header button or the
@@ -426,119 +427,31 @@ class _ColorGrid extends StatelessWidget {
       crossAxisCount: 5,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
+      // Not currently visible here — this screen's whole body is already
+      // wrapped in a SafeArea, which consumes the ambient MediaQuery
+      // padding before it reaches this grid — but set explicitly anyway so
+      // this grid can never pick up the same inherited safe-area padding
+      // Add Event's did, should that SafeArea ever move or narrow. See
+      // add_event_screen.dart's identical grid for the full explanation.
+      padding: EdgeInsets.zero,
       mainAxisSpacing: 10,
       crossAxisSpacing: 10,
       childAspectRatio: 1,
       children: [
         for (final preset in kCoursePresetColors)
-          _Swatch(
+          ColorSwatchTile(
             key: ValueKey(preset),
             color: parseHexColor(preset),
+            hex: preset,
             locked: isColorTaken(preset, existingCourses),
             selected: _isPresetSelected(preset),
             onTap: () => onPick(preset),
           ),
-        _CustomSwatch(selected: _isCustomSelected(), onTap: onPickCustom),
+        CustomColorSwatchTile(
+          selected: _isCustomSelected(),
+          onTap: onPickCustom,
+        ),
       ],
-    );
-  }
-}
-
-class _Swatch extends StatelessWidget {
-  const _Swatch({
-    super.key,
-    required this.color,
-    required this.locked,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final Color color;
-  final bool locked;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: locked ? null : onTap,
-      child: Opacity(
-        opacity: locked ? 0.3 : 1,
-        child: Container(
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: selected ? AppColors.navy : Colors.transparent,
-              width: 3,
-            ),
-            boxShadow: locked
-                ? null
-                : [
-                    BoxShadow(
-                      color: AppColors.navy.withValues(alpha: 0.15),
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-          ),
-          child: Icon(
-            selected
-                ? Icons.check
-                : locked
-                ? Icons.close
-                : null,
-            size: 18,
-            color: Colors.white,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CustomSwatch extends StatelessWidget {
-  const _CustomSwatch({required this.selected, required this.onTap});
-
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: selected ? AppColors.navy : Colors.transparent,
-            width: 3,
-          ),
-          gradient: const SweepGradient(
-            colors: [
-              Color(0xFFFF0000),
-              Color(0xFFFFD400),
-              Color(0xFF38D200),
-              Color(0xFF00D4C8),
-              Color(0xFF0066FF),
-              Color(0xFF8A00E6),
-              Color(0xFFFF00A8),
-              Color(0xFFFF0000),
-            ],
-          ),
-        ),
-        child: Container(
-          width: 26,
-          height: 26,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.92),
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(Icons.add, size: 16, color: AppColors.navy),
-        ),
-      ),
     );
   }
 }

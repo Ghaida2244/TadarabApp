@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -10,10 +12,10 @@ import '../../theme/app_theme.dart';
 import '../../utils/event_time.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_error_banner.dart';
-import '../../widgets/dashed_border.dart';
+import '../../widgets/color_picker_dialog.dart';
+import '../../widgets/color_swatch_tile.dart';
 import 'calendar_styles.dart';
 import 'widgets/calendar_pickers.dart';
-import 'widgets/color_picker_dialog.dart';
 import 'widgets/reminder_card.dart';
 
 /// Maximum length of an event name — `eventName` is VARCHAR(100) in the SRS
@@ -76,9 +78,25 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   Course? _selectedCourse;
   bool _coursesOpen = false;
-  late String _selectedColor = _swatches.first;
+  late String _selectedColor = defaultEventColor(
+    widget.courses.map((c) => c.color),
+  );
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
+
+  /// The student's saved quick-colours, fetched once when this screen
+  /// opens. Starts empty so the colour row shows its default tile
+  /// immediately rather than waiting on this with a loading spinner; a
+  /// failed read leaves it empty for good, which [eventColorTiles] already
+  /// treats as "nothing saved yet".
+  List<String> _savedColors = [];
+
+  /// True until the student explicitly picks a tile or a dialog colour —
+  /// while true, [_loadSavedColors] is still allowed to recompute
+  /// [_selectedColor] once the saved list resolves (rule 5's "default
+  /// selection" depends on that list, which isn't known at construction
+  /// time).
+  bool _colorAutoSelected = true;
 
   bool _reminderEnabled = false;
 
@@ -97,12 +115,6 @@ class _AddEventScreenState extends State<AddEventScreen> {
   String? _errorMessage;
 
   DateTime get _now => widget.now ?? DateTime.now();
-
-  /// The four offered swatches: the pool minus every hue the student's
-  /// courses already use, so a hand-coloured event can't be mistaken for a
-  /// course-linked one.
-  List<String> get _swatches =>
-      eventSwatchesFor(widget.courses.map((c) => c.color));
 
   /// A course's colour wins over the presets — the chip says the event
   /// "will use this course color", so the picker is replaced, not merely
@@ -138,9 +150,56 @@ class _AddEventScreenState extends State<AddEventScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _loadSavedColors();
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSavedColors() async {
+    try {
+      final saved = await widget.calendarService.loadSavedEventColors(
+        widget.uid,
+      );
+      if (!mounted) return;
+      setState(() {
+        _savedColors = saved;
+        if (_colorAutoSelected) {
+          _selectedColor = initialEventColor(
+            savedColors: saved,
+            courseColors: widget.courses.map((c) => c.color),
+          );
+        }
+      });
+    } catch (_) {
+      // Never blocks the form: the row just falls back to showing only its
+      // default tile and the "+".
+    }
+  }
+
+  /// Drops [hex] from the saved list immediately (no confirmation) and, if
+  /// it was the selected colour, falls back to the new default per rule 5.
+  /// The Firestore write is fire-and-forget — best effort, and never
+  /// touches any event.
+  void _removeSavedColor(String hex) {
+    setState(() {
+      _savedColors = _savedColors
+          .where((c) => c.toUpperCase() != hex.toUpperCase())
+          .toList();
+      if (_selectedColor.toUpperCase() == hex.toUpperCase()) {
+        _selectedColor = initialEventColor(
+          savedColors: _savedColors,
+          courseColors: widget.courses.map((c) => c.color),
+        );
+        _colorAutoSelected = true;
+      }
+    });
+    unawaited(widget.calendarService.removeSavedEventColor(widget.uid, hex));
   }
 
   Future<void> _pickDate() async {
@@ -268,6 +327,18 @@ class _AddEventScreenState extends State<AddEventScreen> {
       // skipped silently.
       await widget.calendarService.addEvent(widget.uid, toSave);
 
+      // Only a standalone event's colour feeds the saved list — a
+      // course-linked event's colour comes from the course, not a pick of
+      // its own. Fire-and-forget: best effort, never delays the pop below.
+      if (_selectedCourse == null) {
+        unawaited(
+          widget.calendarService.recordStandaloneEventColor(
+            widget.uid,
+            toSave.color,
+          ),
+        );
+      }
+
       if (!mounted) return;
       // Captured before popping: the message is shown on the Calendar screen
       // underneath, which is where the student lands.
@@ -361,12 +432,22 @@ class _AddEventScreenState extends State<AddEventScreen> {
                     const SizedBox(height: 24),
                     const _FieldLabel('EVENT COLOR'),
                     const SizedBox(height: 10),
-                    _ColorSwatchRow(
-                      swatches: _swatches,
+                    _ColorSwatchGrid(
+                      tiles: eventColorTiles(
+                        defaultColor: defaultEventColor(
+                          widget.courses.map((c) => c.color),
+                        ),
+                        savedColors: _savedColors,
+                        courseColors: widget.courses.map((c) => c.color),
+                        selectedColor: _selectedColor,
+                      ),
                       selected: _selectedColor,
-                      onSelected: (hex) =>
-                          setState(() => _selectedColor = hex),
+                      onSelected: (hex) => setState(() {
+                        _selectedColor = hex;
+                        _colorAutoSelected = false;
+                      }),
                       onCustom: _pickCustomColor,
+                      onRemove: _removeSavedColor,
                     ),
                   ],
 
@@ -473,12 +554,15 @@ class _AddEventScreenState extends State<AddEventScreen> {
   }
 
   Future<void> _pickCustomColor() async {
-    final picked = await showEventColorPicker(
+    final picked = await showColorPicker(
       context: context,
       initial: parseHexColor(_selectedColor),
     );
     if (picked == null) return;
-    setState(() => _selectedColor = hexFromColor(picked));
+    setState(() {
+      _selectedColor = hexFromColor(picked);
+      _colorAutoSelected = false;
+    });
   }
 }
 
@@ -524,7 +608,13 @@ class _AddEventHeader extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 13),
-            Text('Add Event', style: CalendarText.headerTitle),
+            Expanded(
+              child: Text(
+                'Add Event',
+                style: CalendarText.headerTitle,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
       ),
@@ -820,78 +910,61 @@ class _CourseColorChip extends StatelessWidget {
   }
 }
 
-/// The four course-aware swatches plus the dashed "+" for a custom colour.
-class _ColorSwatchRow extends StatelessWidget {
-  const _ColorSwatchRow({
-    required this.swatches,
+/// The saved/default/selected colour tiles plus the rainbow "+" for a
+/// custom colour, in the same 5-column grid as Add course's colour grid so
+/// the two screens' pickers look and size identically.
+class _ColorSwatchGrid extends StatelessWidget {
+  const _ColorSwatchGrid({
+    required this.tiles,
     required this.selected,
     required this.onSelected,
     required this.onCustom,
+    required this.onRemove,
   });
 
-  final List<String> swatches;
+  final List<EventColorTile> tiles;
   final String selected;
   final ValueChanged<String> onSelected;
   final VoidCallback onCustom;
+  final ValueChanged<String> onRemove;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return GridView.count(
+      crossAxisCount: 5,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      // Without an explicit padding, a ListView/GridView pads itself with
+      // the ambient MediaQuery safe-area insets (status bar / nav bar) —
+      // meant for a full-bleed scrollable, not this short, shrink-wrapped
+      // grid sitting inside an already-padded SingleChildScrollView. This
+      // screen's body (unlike Add course's, which wraps its whole body in
+      // SafeArea) has no SafeArea around the scroll area, so that padding
+      // leaked straight through and showed up as two large gaps around the
+      // colour tiles on a real device — invisible in a widget test, whose
+      // default MediaQuery has zero padding.
+      padding: EdgeInsets.zero,
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      childAspectRatio: 1,
       children: [
-        for (final hex in swatches) ...[
-          Semantics(
-            button: true,
-            selected: hex == selected,
-            label: 'Event color $hex',
-            child: GestureDetector(
-              onTap: () => onSelected(hex),
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                width: 52,
-                height: 52,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: parseHexColor(hex),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: hex == selected
-                      ? [
-                          BoxShadow(
-                            color: AppColors.navy.withValues(alpha: 0.22),
-                            offset: const Offset(0, 3),
-                          ),
-                        ]
-                      : const [
-                          BoxShadow(
-                            color: AppColors.cardTint,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                ),
-                child: hex == selected
-                    ? const Icon(Icons.check, size: 22, color: Colors.white)
-                    : null,
-              ),
-            ),
+        for (final tile in tiles)
+          ColorSwatchTile(
+            key: ValueKey(tile.hex),
+            color: parseHexColor(tile.hex),
+            hex: tile.hex,
+            selected: tile.hex.toUpperCase() == selected.toUpperCase(),
+            onTap: () => onSelected(tile.hex),
+            onRemove: tile.removable ? () => onRemove(tile.hex) : null,
           ),
-          const SizedBox(width: 10),
-        ],
-        Semantics(
-          button: true,
-          label: 'Custom event color',
-          child: GestureDetector(
-            key: const ValueKey('custom-color'),
-            onTap: onCustom,
-            behavior: HitTestBehavior.opaque,
-            child: DashedRoundedBorder(
-              color: AppColors.textOnDisabled,
-              borderRadius: 16,
-              child: const SizedBox(
-                width: 52,
-                height: 52,
-                child: Icon(Icons.add, size: 20, color: AppColors.textSecondary),
-              ),
-            ),
-          ),
+        // Never shown as selected: a colour picked from its dialog gets its
+        // own extra tile (added by `eventColorTiles`) rather than marking
+        // the "+" itself — unlike Add course, which has no such extra tile
+        // and so marks the "+" directly instead.
+        CustomColorSwatchTile(
+          key: const ValueKey('custom-color'),
+          selected: false,
+          onTap: onCustom,
         ),
       ],
     );

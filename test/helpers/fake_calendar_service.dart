@@ -14,6 +14,10 @@ class FakeCalendarService extends CalendarService {
     this.deleteError,
     this.addError,
     this.nextEventId = 'new-event-id',
+    this.recentColors = const [],
+    this.recentColorsError,
+    this.savedColors = const [],
+    this.savedColorsError,
   });
 
   /// Emitted by [watchEventsForMonth] regardless of which month is asked
@@ -25,6 +29,25 @@ class FakeCalendarService extends CalendarService {
   final CalendarFailure? addError;
   /// The ID handed out by [newEventId] and [addEvent].
   final String nextEventId;
+
+  /// Returned by [standaloneEventColorsMostRecentFirst], already in the
+  /// order a test wants — this fake doesn't re-derive it from [events].
+  final List<String> recentColors;
+  final CalendarFailure? recentColorsError;
+
+  /// Returned by [loadSavedEventColors] — this fake doesn't model the
+  /// missing-field seeding, since that's [CalendarService]'s own real
+  /// logic, covered separately by `calendar_service_test.dart` against a
+  /// fake Firestore.
+  final List<String> savedColors;
+  final CalendarFailure? savedColorsError;
+
+  /// Every colour [recordStandaloneEventColor] was called with, in call
+  /// order.
+  final List<String> recordedColors = [];
+
+  /// Every colour [removeSavedEventColor] was called with, in call order.
+  final List<String> removedColors = [];
 
   final List<String> deletedEventIds = [];
   final List<CalendarEvent> addedEvents = [];
@@ -60,5 +83,30 @@ class FakeCalendarService extends CalendarService {
   Future<void> deleteEvent(String uid, String eventId) async {
     if (deleteError != null) throw deleteError!;
     deletedEventIds.add(eventId);
+  }
+
+  @override
+  Future<List<String>> standaloneEventColorsMostRecentFirst(
+    String uid, {
+    int limit = 5,
+  }) async {
+    if (recentColorsError != null) throw recentColorsError!;
+    return recentColors.take(limit).toList();
+  }
+
+  @override
+  Future<List<String>> loadSavedEventColors(String uid) async {
+    if (savedColorsError != null) throw savedColorsError!;
+    return savedColors;
+  }
+
+  @override
+  Future<void> recordStandaloneEventColor(String uid, String colorHex) async {
+    recordedColors.add(colorHex);
+  }
+
+  @override
+  Future<void> removeSavedEventColor(String uid, String colorHex) async {
+    removedColors.add(colorHex);
   }
 }

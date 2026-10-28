@@ -27,8 +27,9 @@ void main() {
   AppButton saveButton(WidgetTester tester) =>
       tester.widget<AppButton>(find.widgetWithText(AppButton, 'Save course'));
 
-  Finder swatchFinder() =>
-      find.byWidgetPredicate((w) => w.runtimeType.toString() == '_Swatch');
+  Finder swatchFinder() => find.byWidgetPredicate(
+    (w) => w.runtimeType.toString() == 'ColorSwatchTile',
+  );
 
   testWidgets(
     'no color selected: Save is disabled even with a valid unique name',

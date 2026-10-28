@@ -134,7 +134,7 @@ void main() {
         await tester.pump();
         await tester.tap(
           find
-              .byWidgetPredicate((w) => w.runtimeType.toString() == '_Swatch')
+              .byWidgetPredicate((w) => w.runtimeType.toString() == 'ColorSwatchTile')
               .first,
         );
         await tester.pump();
@@ -190,7 +190,7 @@ void main() {
         await tester.pump();
         await tester.tap(
           find
-              .byWidgetPredicate((w) => w.runtimeType.toString() == '_Swatch')
+              .byWidgetPredicate((w) => w.runtimeType.toString() == 'ColorSwatchTile')
               .first,
         );
         await tester.pump();

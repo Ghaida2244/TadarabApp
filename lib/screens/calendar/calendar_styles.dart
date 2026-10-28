@@ -279,20 +279,111 @@ String hexFromColor(Color color) {
   return '#${rgb.toRadixString(16).padLeft(6, '0').toUpperCase()}';
 }
 
-/// How many swatches the colour row shows, per the handoff's `.slice(0, 4)`.
-const int kEventSwatchCount = 4;
-
-/// The swatches to offer given the colours [courseColors] already uses.
-/// Falls back to the head of the pool if courses have somehow claimed so
-/// many hues that fewer than [kEventSwatchCount] remain, so the row is
-/// never empty.
-List<String> eventSwatchesFor(Iterable<String> courseColors) {
+/// The colour Add Event preselects when it opens: green, unless a course
+/// already uses it, then the medium amber, then the next free colour in
+/// [kEventSwatchPool]'s own order; if every pool colour is somehow already
+/// claimed by a course, the pool's first colour anyway — the row is never
+/// actually left with no selection.
+String defaultEventColor(Iterable<String> courseColors) {
+  const green = '#16A34A';
+  const amber = '#F5A524';
   final taken = courseColors.map((c) => c.toUpperCase()).toSet();
-  final free = kEventSwatchPool
-      .where((hex) => !taken.contains(hex.toUpperCase()))
-      .toList();
-  if (free.length >= kEventSwatchCount) {
-    return free.take(kEventSwatchCount).toList();
+  if (!taken.contains(green)) return green;
+  if (!taken.contains(amber)) return amber;
+  for (final hex in kEventSwatchPool) {
+    if (!taken.contains(hex.toUpperCase())) return hex;
   }
-  return kEventSwatchPool.take(kEventSwatchCount).toList();
+  return kEventSwatchPool.first;
+}
+
+/// The colour Add Event preselects when it opens, now that its quick
+/// colours are a saved list rather than derived from existing events: the
+/// first colour in [savedColors] that isn't currently a course's, or —
+/// if the list is empty or every saved colour is now a course's —
+/// [defaultEventColor].
+String initialEventColor({
+  required List<String> savedColors,
+  required Iterable<String> courseColors,
+}) {
+  final takenByCourse = courseColors.map((c) => c.toUpperCase()).toSet();
+  for (final hex in savedColors) {
+    if (!takenByCourse.contains(hex.toUpperCase())) return hex;
+  }
+  return defaultEventColor(courseColors);
+}
+
+/// One tile in Add Event's colour row.
+class EventColorTile {
+  const EventColorTile(this.hex, {this.removable = false});
+
+  final String hex;
+
+  /// True only for a tile drawn from the student's saved list — never the
+  /// default-when-empty tile or the extra selected-colour tile, and never
+  /// the "+" tile (which isn't represented here at all; the caller adds it
+  /// separately). Only a removable tile shows the "×" badge.
+  final bool removable;
+
+  @override
+  bool operator ==(Object other) =>
+      other is EventColorTile && other.hex == hex && other.removable == removable;
+
+  @override
+  int get hashCode => Object.hash(hex, removable);
+
+  @override
+  String toString() => 'EventColorTile($hex, removable: $removable)';
+}
+
+/// The colour tiles Add Event's colour row offers, in display order — the
+/// dashed/rainbow "+" tile is added separately by the caller, after these:
+///
+/// 1. [savedColors] (already capped at 5 and ordered most-recent-first by
+///    the caller), each marked [EventColorTile.removable] so its tile shows
+///    the "×" badge — or, if the list is empty (once course colours are
+///    filtered out), one non-removable tile for [defaultColor] instead, so
+///    the row is never just the "+" with nothing selected.
+/// 2. One extra, non-removable tile for [selectedColor], if it isn't
+///    already covered by 1 (e.g. just picked from the full colour-picker
+///    dialog).
+///
+/// A colour any of [courseColors] currently uses is dropped from
+/// [savedColors] and from the empty-list [defaultColor] fallback — the
+/// student already gets that colour by picking the course itself — but
+/// never from [selectedColor]: the dialog can still freely pick any
+/// colour, course-matching or not. Dropping a saved colour this way never
+/// changes the saved list itself — the filter only applies to what's
+/// displayed.
+List<EventColorTile> eventColorTiles({
+  required String defaultColor,
+  required List<String> savedColors,
+  required Iterable<String> courseColors,
+  String? selectedColor,
+}) {
+  final takenByCourse = courseColors.map((c) => c.toUpperCase()).toSet();
+  final tiles = <EventColorTile>[];
+  final seen = <String>{};
+
+  void addTile(String hex, {bool removable = false}) {
+    if (seen.add(hex.toUpperCase())) {
+      tiles.add(EventColorTile(hex, removable: removable));
+    }
+  }
+
+  final visibleSaved = savedColors.where(
+    (hex) => !takenByCourse.contains(hex.toUpperCase()),
+  );
+  if (visibleSaved.isEmpty) {
+    if (!takenByCourse.contains(defaultColor.toUpperCase())) {
+      addTile(defaultColor);
+    }
+  } else {
+    for (final hex in visibleSaved) {
+      addTile(hex, removable: true);
+    }
+  }
+
+  if (selectedColor != null) addTile(selectedColor);
+
+  return tiles;
 }

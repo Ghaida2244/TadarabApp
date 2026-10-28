@@ -57,6 +57,26 @@ void main() {
     return ref.id;
   }
 
+  Future<String> seedColored(
+    String uid, {
+    required DateTime date,
+    required String color,
+    String? courseId,
+  }) async {
+    final ref = await events(uid).add(
+      CalendarEvent(
+        eventId: '',
+        eventName: 'E',
+        eventDate: date,
+        eventTime: '12:00',
+        color: color,
+        email: 'student@example.com',
+        courseId: courseId,
+      ).toFirestore(),
+    );
+    return ref.id;
+  }
+
   setUp(() {
     firestore = FakeFirebaseFirestore();
     reminders = FakeReminderScheduler();
@@ -291,6 +311,281 @@ void main() {
       final doc = await events('uid-1').doc(id).get();
       expect(doc.exists, isTrue);
       expect(doc.data()!['eventName'], 'Midterm');
+    });
+  });
+
+  group('standaloneEventColorsMostRecentFirst', () {
+    test(
+      'returns distinct colours of events without a course, most '
+      'recent (by event date) first',
+      () async {
+        await seedColored('u1', date: DateTime(2026, 5, 1), color: '#2563EB');
+        await seedColored(
+          'u1',
+          date: DateTime(2026, 5, 10),
+          color: '#7C3AED',
+        );
+        await seedColored('u1', date: DateTime(2026, 5, 5), color: '#16A34A');
+
+        final result = await service.standaloneEventColorsMostRecentFirst(
+          'u1',
+        );
+
+        expect(result, ['#7C3AED', '#16A34A', '#2563EB']);
+      },
+    );
+
+    test('excludes events linked to a course', () async {
+      await seedColored(
+        'u1',
+        date: DateTime(2026, 5, 10),
+        color: '#2563EB',
+        courseId: 'c1',
+      );
+      await seedColored('u1', date: DateTime(2026, 5, 1), color: '#16A34A');
+
+      final result = await service.standaloneEventColorsMostRecentFirst(
+        'u1',
+      );
+
+      expect(result, ['#16A34A']);
+    });
+
+    test(
+      'de-duplicates a repeated colour, keeping only its most recent slot',
+      () async {
+        await seedColored('u1', date: DateTime(2026, 5, 1), color: '#2563EB');
+        await seedColored(
+          'u1',
+          date: DateTime(2026, 5, 10),
+          color: '#2563EB',
+        );
+        await seedColored('u1', date: DateTime(2026, 5, 5), color: '#7C3AED');
+
+        final result = await service.standaloneEventColorsMostRecentFirst(
+          'u1',
+        );
+
+        expect(result, ['#2563EB', '#7C3AED']);
+      },
+    );
+
+    test('caps at the given limit', () async {
+      await seedColored('u1', date: DateTime(2026, 5, 1), color: '#2563EB');
+      await seedColored('u1', date: DateTime(2026, 5, 2), color: '#7C3AED');
+      await seedColored('u1', date: DateTime(2026, 5, 3), color: '#16A34A');
+
+      final result = await service.standaloneEventColorsMostRecentFirst(
+        'u1',
+        limit: 2,
+      );
+
+      expect(result, ['#16A34A', '#7C3AED']);
+    });
+
+    test('never returns another student\'s colours', () async {
+      await seedColored('u1', date: DateTime(2026, 5, 1), color: '#2563EB');
+      await seedColored('u2', date: DateTime(2026, 5, 1), color: '#7C3AED');
+
+      final result = await service.standaloneEventColorsMostRecentFirst(
+        'u1',
+      );
+
+      expect(result, ['#2563EB']);
+    });
+
+    test(
+      'a student with no standalone events gets an empty list, not an error',
+      () async {
+        expect(
+          await service.standaloneEventColorsMostRecentFirst('u1'),
+          isEmpty,
+        );
+      },
+    );
+  });
+
+  group('loadSavedEventColors', () {
+    DocumentReference<Map<String, dynamic>> userDoc(String uid) =>
+        firestore.collection('users').doc(uid);
+
+    test(
+      'seeds from the student\'s standalone events, and persists the seed, '
+      'when the field has never been written',
+      () async {
+        await seedColored('u1', date: DateTime(2026, 5, 1), color: '#2563EB');
+        await seedColored('u1', date: DateTime(2026, 5, 10), color: '#7C3AED');
+        await seedColored(
+          'u1',
+          date: DateTime(2026, 5, 5),
+          color: '#16A34A',
+          courseId: 'c1',
+        );
+
+        final result = await service.loadSavedEventColors('u1');
+
+        expect(result, ['#7C3AED', '#2563EB']);
+        final stored = (await userDoc('u1').get()).data();
+        expect(stored!['savedEventColors'], ['#7C3AED', '#2563EB']);
+      },
+    );
+
+    test(
+      'does not reseed an already-written empty list, even with standalone '
+      'events to seed from',
+      () async {
+        await userDoc('u1').set({'savedEventColors': <String>[]});
+        await seedColored('u1', date: DateTime(2026, 5, 1), color: '#2563EB');
+
+        final result = await service.loadSavedEventColors('u1');
+
+        expect(result, isEmpty);
+      },
+    );
+
+    test('returns the saved list exactly as stored', () async {
+      await userDoc('u1').set({
+        'savedEventColors': ['#AAAAAA', '#BBBBBB'],
+      });
+
+      final result = await service.loadSavedEventColors('u1');
+
+      expect(result, ['#AAAAAA', '#BBBBBB']);
+    });
+
+    test('never returns another student\'s saved colours', () async {
+      await userDoc('u1').set({'savedEventColors': <String>[]});
+      await userDoc('u2').set({
+        'savedEventColors': ['#AAAAAA'],
+      });
+
+      expect(await service.loadSavedEventColors('u1'), isEmpty);
+    });
+  });
+
+  group('recordStandaloneEventColor', () {
+    DocumentReference<Map<String, dynamic>> userDoc(String uid) =>
+        firestore.collection('users').doc(uid);
+
+    test('adds a new colour to the front when there is room', () async {
+      await userDoc('u1').set({
+        'savedEventColors': ['#111111', '#222222'],
+      });
+
+      await service.recordStandaloneEventColor('u1', '#333333');
+
+      final stored = (await userDoc('u1').get()).data();
+      expect(stored!['savedEventColors'], ['#333333', '#111111', '#222222']);
+    });
+
+    test(
+      'moves an already-saved colour to the front instead of duplicating it',
+      () async {
+        await userDoc('u1').set({
+          'savedEventColors': ['#111111', '#222222', '#333333'],
+        });
+
+        await service.recordStandaloneEventColor('u1', '#222222');
+
+        final stored = (await userDoc('u1').get()).data();
+        expect(stored!['savedEventColors'], ['#222222', '#111111', '#333333']);
+      },
+    );
+
+    test(
+      'does not add a new colour once the list is full of 5 others',
+      () async {
+        const full = [
+          '#111111',
+          '#222222',
+          '#333333',
+          '#444444',
+          '#555555',
+        ];
+        await userDoc('u1').set({'savedEventColors': full});
+
+        await service.recordStandaloneEventColor('u1', '#666666');
+
+        final stored = (await userDoc('u1').get()).data();
+        expect(stored!['savedEventColors'], full);
+      },
+    );
+
+    test(
+      'still moves an already-saved colour to the front even when the '
+      'list is full',
+      () async {
+        const full = [
+          '#111111',
+          '#222222',
+          '#333333',
+          '#444444',
+          '#555555',
+        ];
+        await userDoc('u1').set({'savedEventColors': full});
+
+        await service.recordStandaloneEventColor('u1', '#555555');
+
+        final stored = (await userDoc('u1').get()).data();
+        expect(stored!['savedEventColors'], [
+          '#555555',
+          '#111111',
+          '#222222',
+          '#333333',
+          '#444444',
+        ]);
+      },
+    );
+
+    test('starts the list from scratch when nothing was ever saved', () async {
+      await service.recordStandaloneEventColor('u1', '#111111');
+
+      final stored = (await userDoc('u1').get()).data();
+      expect(stored!['savedEventColors'], ['#111111']);
+    });
+  });
+
+  group('removeSavedEventColor', () {
+    DocumentReference<Map<String, dynamic>> userDoc(String uid) =>
+        firestore.collection('users').doc(uid);
+
+    test('removes the colour, keeping the rest in order', () async {
+      await userDoc('u1').set({
+        'savedEventColors': ['#111111', '#222222', '#333333'],
+      });
+
+      await service.removeSavedEventColor('u1', '#222222');
+
+      final stored = (await userDoc('u1').get()).data();
+      expect(stored!['savedEventColors'], ['#111111', '#333333']);
+    });
+
+    test('a colour not in the list leaves it unchanged', () async {
+      await userDoc('u1').set({
+        'savedEventColors': ['#111111'],
+      });
+
+      await service.removeSavedEventColor('u1', '#999999');
+
+      final stored = (await userDoc('u1').get()).data();
+      expect(stored!['savedEventColors'], ['#111111']);
+    });
+
+    test('never touches any event, even one sharing the removed colour', () async {
+      final id = await seedColored(
+        'u1',
+        date: DateTime(2026, 5, 1),
+        color: '#111111',
+      );
+      await userDoc('u1').set({
+        'savedEventColors': ['#111111'],
+      });
+
+      await service.removeSavedEventColor('u1', '#111111');
+
+      final event = await events('u1').doc(id).get();
+      expect(event.exists, isTrue);
+      expect(event.data()!['color'], '#111111');
     });
   });
 }
