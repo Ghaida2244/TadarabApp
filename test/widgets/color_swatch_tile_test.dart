@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/color_swatch_tile.dart';
 
 void main() {
@@ -97,6 +98,41 @@ void main() {
       expect(tapped, isTrue);
     });
 
+    Border borderOf(WidgetTester tester) =>
+        (tester
+                    .widget<Container>(
+                      find
+                          .descendant(
+                            of: find.byType(ColorSwatchTile),
+                            matching: find.byType(Container),
+                          )
+                          .first,
+                    )
+                    .decoration!
+                as BoxDecoration)
+            .border! as Border;
+
+    testWidgets(
+      'the selected border is thinner than 3px and softer than full '
+      'opacity navy',
+      (tester) async {
+        await pumpSwatch(tester, selected: true);
+
+        final border = borderOf(tester);
+        expect(border.top.width, lessThan(3));
+        expect(border.top.color, AppColors.navy.withValues(alpha: 0.75));
+        expect(border.top.color.a, lessThan(1));
+      },
+    );
+
+    testWidgets('an unselected tile keeps a fully transparent border', (
+      tester,
+    ) async {
+      await pumpSwatch(tester, selected: false);
+
+      expect(borderOf(tester).top.color, Colors.transparent);
+    });
+
     testWidgets('shows no remove badge when onRemove is omitted', (
       tester,
     ) async {
@@ -178,6 +214,40 @@ void main() {
       await tester.tap(find.byType(CustomColorSwatchTile));
 
       expect(tapped, isTrue);
+    });
+
+    Border borderOf(WidgetTester tester) =>
+        (tester
+                    .widget<Container>(
+                      find
+                          .descendant(
+                            of: find.byType(CustomColorSwatchTile),
+                            matching: find.byType(Container),
+                          )
+                          .first,
+                    )
+                    .decoration!
+                as BoxDecoration)
+            .border! as Border;
+
+    testWidgets(
+      'the selected border matches ColorSwatchTile\'s: thinner than 3px, '
+      'softer than full opacity navy',
+      (tester) async {
+        await pumpCustom(tester, selected: true);
+
+        final border = borderOf(tester);
+        expect(border.top.width, lessThan(3));
+        expect(border.top.color, AppColors.navy.withValues(alpha: 0.75));
+      },
+    );
+
+    testWidgets('an unselected tile keeps a fully transparent border', (
+      tester,
+    ) async {
+      await pumpCustom(tester, selected: false);
+
+      expect(borderOf(tester).top.color, Colors.transparent);
     });
   });
 }

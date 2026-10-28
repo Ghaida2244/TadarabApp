@@ -2,6 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
+/// The selected-state border: thinner and softer than a plain opaque
+/// [AppColors.navy] ring, while staying visible next to an unselected tile
+/// — shared by [ColorSwatchTile] and [CustomColorSwatchTile] so the two
+/// stay identical.
+const double _kSelectedBorderWidth = 1.8;
+const double _kSelectedBorderOpacity = 0.75;
+
 /// One rounded-square colour option in a colour-picking grid: Add course's
 /// preset swatches and Add Event's default/recent/selected tiles both use
 /// this, so the two screens' grids look and behave identically.
@@ -63,8 +70,10 @@ class ColorSwatchTile extends StatelessWidget {
                   color: color,
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(
-                    color: selected ? AppColors.navy : Colors.transparent,
-                    width: 3,
+                    color: selected
+                        ? AppColors.navy.withValues(alpha: _kSelectedBorderOpacity)
+                        : Colors.transparent,
+                    width: _kSelectedBorderWidth,
                   ),
                   boxShadow: locked
                       ? null
@@ -164,8 +173,10 @@ class CustomColorSwatchTile extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: selected ? AppColors.navy : Colors.transparent,
-              width: 3,
+              color: selected
+                  ? AppColors.navy.withValues(alpha: _kSelectedBorderOpacity)
+                  : Colors.transparent,
+              width: _kSelectedBorderWidth,
             ),
             gradient: const SweepGradient(
               colors: [
