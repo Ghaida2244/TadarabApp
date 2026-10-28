@@ -7,8 +7,11 @@ import 'package:firebase_storage/firebase_storage.dart';
 
 import '../models/course.dart';
 import '../models/study_material.dart';
+import '../utils/default_colors.dart';
 import 'calendar_service.dart';
 import 'text_extraction_service.dart';
+
+export '../utils/default_colors.dart' show kDefaultCourseColor;
 
 /// A user-facing Courses/Materials failure. [message] is always safe to
 /// show directly, per the NFR that every network/API call surfaces a clear,
@@ -37,13 +40,6 @@ const _networkTimeout = Duration(seconds: 15);
 /// reads/writes, since it's an actual multi-MB transfer (up to
 /// [kMaxMaterialFileSizeBytes]) rather than a small document.
 const _uploadTimeout = Duration(seconds: 60);
-
-/// The default course/event colour: green. The single source of truth for
-/// that hex value — [kCoursePresetColors]'s first entry and Add Event's own
-/// `defaultEventColor` (`lib/screens/calendar/calendar_styles.dart`) both
-/// reference this constant instead of each hard-coding '#16A34A', so the two
-/// screens' idea of "the default colour" can never quietly drift apart.
-const kDefaultCourseColor = '#16A34A';
 
 /// The 5 preset course-color swatches (courses_material_upload_spec.md §2),
 /// lifted from the design handoff's `PALETTE` (its first 5 entries — the
@@ -90,7 +86,8 @@ bool isColorTaken(
 }) {
   final normalized = colorHex.toUpperCase();
   return existingCourses.any(
-    (c) => c.courseId != excludingCourseId && c.color.toUpperCase() == normalized,
+    (c) =>
+        c.courseId != excludingCourseId && c.color.toUpperCase() == normalized,
   );
 }
 
@@ -193,7 +190,10 @@ class CoursesService {
     }
   }
 
-  Future<List<StudyMaterial>> fetchMaterials(String uid, String courseId) async {
+  Future<List<StudyMaterial>> fetchMaterials(
+    String uid,
+    String courseId,
+  ) async {
     try {
       final snap = await _materialsRef(
         uid,
@@ -272,9 +272,10 @@ class CoursesService {
       for (final doc in materialsSnap.docs) {
         final material = StudyMaterial.fromFirestore(doc);
         try {
-          await _storage.ref(material.document).delete().timeout(
-            _networkTimeout,
-          );
+          await _storage
+              .ref(material.document)
+              .delete()
+              .timeout(_networkTimeout);
         } catch (_) {
           // Orphaned file; nothing references it any more from Firestore.
         }
@@ -299,7 +300,8 @@ class CoursesService {
     void Function(double progress)? onProgress,
   }) async {
     final docRef = _materialsRef(uid, courseId).doc();
-    final storagePath = 'users/$uid/courses/$courseId/materials/${docRef.id}.$type';
+    final storagePath =
+        'users/$uid/courses/$courseId/materials/${docRef.id}.$type';
     final ref = _storage.ref(storagePath);
 
     try {
@@ -381,10 +383,10 @@ class CoursesService {
     StudyMaterial material,
   ) async {
     try {
-      await _materialsRef(uid, courseId)
-          .doc(material.materialId)
-          .delete()
-          .timeout(_networkTimeout);
+      await _materialsRef(
+        uid,
+        courseId,
+      ).doc(material.materialId).delete().timeout(_networkTimeout);
     } on FirebaseException {
       throw CoursesFailure(_networkFailureMessage);
     } on TimeoutException {

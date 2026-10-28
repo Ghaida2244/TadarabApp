@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../utils/default_colors.dart';
 import 'enums.dart';
 
 /// A calendar entry, optionally linked to a course, with an optional reminder.
@@ -13,7 +14,7 @@ class CalendarEvent {
     this.reminderEnabled = false,
     this.reminderBefore,
     this.reminderUnit,
-    this.color = '#10B981',
+    this.color = kDefaultCourseColor,
     required this.email,
     this.courseId,
   });
@@ -53,6 +54,7 @@ class CalendarEvent {
   ) {
     final data = doc.data()!;
     final reminderUnitValue = data['reminderUnit'] as String?;
+    final storedColor = data['color'] as String?;
     return CalendarEvent(
       eventId: doc.id,
       eventName: data['eventName'] as String,
@@ -63,7 +65,9 @@ class CalendarEvent {
       reminderUnit: reminderUnitValue == null
           ? null
           : ReminderUnitJson.fromJson(reminderUnitValue),
-      color: data['color'] as String? ?? '#10B981',
+      color: storedColor == null || storedColor.isEmpty
+          ? kDefaultCourseColor
+          : storedColor,
       email: data['email'] as String,
       courseId: data['courseId'] as String?,
     );
