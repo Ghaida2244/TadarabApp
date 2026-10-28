@@ -25,6 +25,7 @@ class CalendarScreen extends StatefulWidget {
   const CalendarScreen({
     super.key,
     required this.uid,
+    required this.active,
     this.calendarService,
     this.coursesService,
     this.homeDataService,
@@ -33,6 +34,18 @@ class CalendarScreen extends StatefulWidget {
   });
 
   final String uid;
+
+  /// Whether this is the currently-selected bottom-nav tab. Home keeps this
+  /// screen alive in a persistent `IndexedStack`, so its State survives tab
+  /// switches — without reloading [_courses] on becoming active again, a
+  /// course created, renamed, or deleted on the Courses tab would stay
+  /// invisible here: missing from (or lingering in) Add Event's course
+  /// dropdown, its colour exclusion and random default colour, and the day
+  /// sheet's course names — all of which read from the same [_courses] —
+  /// until Calendar happened to be torn down and rebuilt. Mirrors the exact
+  /// pattern the Courses tab's own screen already uses for the same
+  /// problem.
+  final bool active;
 
   /// Overridable for tests; defaults to the real Firestore-backed services.
   final CalendarService? calendarService;
@@ -84,6 +97,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void initState() {
     super.initState();
     _loadCourses();
+  }
+
+  @override
+  void didUpdateWidget(covariant CalendarScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Becoming the active tab again is the only trigger — a course may
+    // have been created, renamed, or deleted on the Courses tab while this
+    // one sat inactive. Staying active (or going inactive) never refetches.
+    if (widget.active && !oldWidget.active) _loadCourses();
   }
 
   /// Course names are enrichment, not the screen's subject: a failure here

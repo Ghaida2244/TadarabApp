@@ -137,6 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
             2,
             () => CalendarScreen(
               uid: widget.uid,
+              active: _tabIndex == 2,
               calendarService: widget.calendarService,
               homeDataService: _dataService,
               now: _now,
