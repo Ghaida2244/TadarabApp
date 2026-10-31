@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/calendar_event.dart';
 import '../../models/course.dart';
@@ -8,6 +9,7 @@ import '../../services/home_data_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/event_time.dart';
 import '../../widgets/app_error_banner.dart';
+import '../../widgets/status_bar_style.dart';
 import 'add_event_screen.dart';
 import 'calendar_styles.dart';
 import 'widgets/calendar_header.dart';
@@ -25,6 +27,7 @@ class CalendarScreen extends StatefulWidget {
   const CalendarScreen({
     super.key,
     required this.uid,
+    required this.active,
     this.calendarService,
     this.coursesService,
     this.homeDataService,
@@ -33,6 +36,18 @@ class CalendarScreen extends StatefulWidget {
   });
 
   final String uid;
+
+  /// Whether this is the currently-selected bottom-nav tab. Home keeps this
+  /// screen alive in a persistent `IndexedStack`, so its State survives tab
+  /// switches — without reloading [_courses] on becoming active again, a
+  /// course created, renamed, or deleted on the Courses tab would stay
+  /// invisible here: missing from (or lingering in) Add Event's course
+  /// dropdown, its colour exclusion and random default colour, and the day
+  /// sheet's course names — all of which read from the same [_courses] —
+  /// until Calendar happened to be torn down and rebuilt. Mirrors the exact
+  /// pattern the Courses tab's own screen already uses for the same
+  /// problem.
+  final bool active;
 
   /// Overridable for tests; defaults to the real Firestore-backed services.
   final CalendarService? calendarService;
@@ -86,6 +101,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _loadCourses();
   }
 
+  @override
+  void didUpdateWidget(covariant CalendarScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Becoming the active tab again is the only trigger — a course may
+    // have been created, renamed, or deleted on the Courses tab while this
+    // one sat inactive. Staying active (or going inactive) never refetches.
+    if (widget.active && !oldWidget.active) _loadCourses();
+  }
+
   /// Course names are enrichment, not the screen's subject: a failure here
   /// leaves [_courses] empty so rows simply omit the course line, rather
   /// than blocking events that loaded perfectly well. The events themselves
@@ -137,7 +161,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
           uid: widget.uid,
           calendarService: _calendarService,
           courses: _courses,
-          initialDate: _month,
           now: _now,
         ),
       ),
@@ -161,6 +184,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         events: events,
         coursesById: _coursesById,
         onDeleteRequested: (event) => _confirmDelete(sheetContext, event),
+        now: _now,
       ),
     );
   }
@@ -194,88 +218,91 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white,
-      child: Column(
-        children: [
-          CalendarHeader(
-            month: _month,
-            isYearView: _yearView,
-            showBackToToday: !isSameMonth(_month, _now),
-            onPrevious: () => _step(-1),
-            onNext: () => _step(1),
-            onToggleView: _toggleView,
-            onBackToToday: _backToToday,
-            onAddEvent: _openAddEvent,
-          ),
-          Expanded(
-            child: StreamBuilder<List<CalendarEvent>>(
-              key: ValueKey(
-                _yearView
-                    ? 'year-${_month.year}-$_retryToken'
-                    : 'month-$_month-$_retryToken',
-              ),
-              stream: _yearView
-                  ? _calendarService.watchEventsForYear(
-                      widget.uid,
-                      _month.year,
-                    )
-                  : _calendarService.watchEventsForMonth(widget.uid, _month),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return _CalendarError(
-                    message: snapshot.error is CalendarFailure
-                        ? (snapshot.error as CalendarFailure).message
-                        : "Couldn't load your calendar. Please try again.",
-                    onRetry: () => setState(() => _retryToken++),
-                  );
-                }
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                final events = snapshot.data ?? const <CalendarEvent>[];
-                final grouped = groupEventsByDay(events);
-
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-                  child: _yearView
-                      ? YearGrid(
-                          year: _month.year,
-                          eventsByDay: grouped,
-                          today: _now,
-                          onMonthSelected: _openMonthFromYear,
-                        )
-                      : Column(
-                          children: [
-                            Expanded(
-                              child: MonthGrid(
-                                month: _month,
-                                eventsByDay: grouped,
-                                today: _now,
-                                onDayTap: (day) =>
-                                    _openDay(day, grouped[day] ?? const []),
-                              ),
-                            ),
-                            // Not in the handoff, whose empty-month branch
-                            // renders nothing — kept so a blank month doesn't
-                            // read as a failed load.
-                            if (events.isEmpty) ...[
-                              const SizedBox(height: 14),
-                              Text(
-                                'No events yet. Tap "Add Event" to schedule '
-                                'your first one.',
-                                textAlign: TextAlign.center,
-                                style: CalendarText.monthEmpty,
-                              ),
-                            ],
-                          ],
-                        ),
-                );
-              },
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.navy),
+      child: Container(
+        color: Colors.white,
+        child: Column(
+          children: [
+            CalendarHeader(
+              month: _month,
+              isYearView: _yearView,
+              showBackToToday: !isSameMonth(_month, _now),
+              onPrevious: () => _step(-1),
+              onNext: () => _step(1),
+              onToggleView: _toggleView,
+              onBackToToday: _backToToday,
+              onAddEvent: _openAddEvent,
             ),
-          ),
-        ],
+            Expanded(
+              child: StreamBuilder<List<CalendarEvent>>(
+                key: ValueKey(
+                  _yearView
+                      ? 'year-${_month.year}-$_retryToken'
+                      : 'month-$_month-$_retryToken',
+                ),
+                stream: _yearView
+                    ? _calendarService.watchEventsForYear(
+                        widget.uid,
+                        _month.year,
+                      )
+                    : _calendarService.watchEventsForMonth(widget.uid, _month),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return _CalendarError(
+                      message: snapshot.error is CalendarFailure
+                          ? (snapshot.error as CalendarFailure).message
+                          : "Couldn't load your calendar. Please try again.",
+                      onRetry: () => setState(() => _retryToken++),
+                    );
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  final events = snapshot.data ?? const <CalendarEvent>[];
+                  final grouped = groupEventsByDay(events);
+
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+                    child: _yearView
+                        ? YearGrid(
+                            year: _month.year,
+                            eventsByDay: grouped,
+                            today: _now,
+                            onMonthSelected: _openMonthFromYear,
+                          )
+                        : Column(
+                            children: [
+                              Expanded(
+                                child: MonthGrid(
+                                  month: _month,
+                                  eventsByDay: grouped,
+                                  today: _now,
+                                  onDayTap: (day) =>
+                                      _openDay(day, grouped[day] ?? const []),
+                                ),
+                              ),
+                              // Not in the handoff, whose empty-month branch
+                              // renders nothing — kept so a blank month doesn't
+                              // read as a failed load.
+                              if (events.isEmpty) ...[
+                                const SizedBox(height: 14),
+                                Text(
+                                  'No events yet. Tap "Add Event" to schedule '
+                                  'your first one.',
+                                  textAlign: TextAlign.center,
+                                  style: CalendarText.monthEmpty,
+                                ),
+                              ],
+                            ],
+                          ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

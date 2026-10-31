@@ -293,4 +293,55 @@ void main() {
       expect(find.byType(TimePickerDialog), findsNothing);
     });
   });
+
+  group('time picker — initial value', () {
+    testWidgets(
+      'opens on the injected current time when there is no initialTime',
+      (tester) async {
+        TimeOfDay? result;
+        await openPicker(
+          tester,
+          open: (context) async {
+            result = await pickEventTime(
+              context: context,
+              initialTime: null,
+              now: DateTime(2026, 5, 3, 14, 37),
+            );
+          },
+        );
+
+        // Accepting the dial's own pre-selected value without changing it
+        // reveals what it opened on.
+        await tester.tap(find.text('OK'));
+        await tester.pumpAndSettle();
+
+        expect(result, const TimeOfDay(hour: 14, minute: 37));
+      },
+    );
+
+    testWidgets(
+      'opens on initialTime when one is set, ignoring a different now — '
+      'this is what lets Add Event/Study Reminder reopen on an '
+      'already-picked or already-saved time instead of the current one',
+      (tester) async {
+        TimeOfDay? result;
+        await openPicker(
+          tester,
+          open: (context) async {
+            result = await pickEventTime(
+              context: context,
+              initialTime: const TimeOfDay(hour: 6, minute: 15),
+              now: DateTime(2026, 5, 3, 14, 37),
+            );
+          },
+        );
+
+        await tester.tap(find.text('OK'));
+        await tester.pumpAndSettle();
+
+        expect(result, const TimeOfDay(hour: 6, minute: 15));
+      },
+    );
+
+  });
 }

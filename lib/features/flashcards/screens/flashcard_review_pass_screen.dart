@@ -8,7 +8,9 @@ import '../widgets/header_circle_button.dart';
 import '../widgets/progress_pips.dart';
 
 /// Screen 4: read-only browsing of a session's "Needs Review" flashcards,
-/// in their existing stored order. Zero writes anywhere — see CLAUDE.md.
+/// in whatever order the caller hands them in (currently shuffled fresh on
+/// each open — see FlashcardPerformanceSummaryScreen._reviewNow). Zero
+/// writes anywhere — see CLAUDE.md.
 ///
 /// Per the design handoff, this reuses the exact same pip-strip progress
 /// component as the Flip Deck (not a continuous bar) — the practice/review
@@ -18,7 +20,9 @@ import '../widgets/progress_pips.dart';
 class FlashcardReviewPassScreen extends StatefulWidget {
   const FlashcardReviewPassScreen({super.key, required this.flashcards});
 
-  /// Already filtered to reviewStatus == needsReview, in stored order.
+  /// Already filtered to reviewStatus == needsReview. Order is the
+  /// caller's choice — not necessarily stored order (see the class doc
+  /// comment above).
   final List<Flashcard> flashcards;
 
   @override
@@ -26,8 +30,7 @@ class FlashcardReviewPassScreen extends StatefulWidget {
       _FlashcardReviewPassScreenState();
 }
 
-class _FlashcardReviewPassScreenState
-    extends State<FlashcardReviewPassScreen> {
+class _FlashcardReviewPassScreenState extends State<FlashcardReviewPassScreen> {
   int _index = 0;
   bool _flipped = false;
 
@@ -104,7 +107,9 @@ class _FlashcardReviewPassScreenState
                   ProgressPips(
                     total: total,
                     currentIndex: _index,
-                    statuses: widget.flashcards.map((f) => f.reviewStatus).toList(),
+                    statuses: widget.flashcards
+                        .map((f) => f.reviewStatus)
+                        .toList(),
                   ),
                 ],
               ),

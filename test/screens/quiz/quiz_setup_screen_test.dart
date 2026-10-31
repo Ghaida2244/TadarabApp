@@ -519,4 +519,42 @@ void main() {
       expect(enabledButton.onPressed, isNotNull);
     },
   );
+
+  group('status bar / safe area', () {
+    testWidgets(
+      'the header background reaches the top of the screen under a real '
+      'top inset (no white strip above it), and the title sits below the '
+      'status-bar inset',
+      (tester) async {
+        const insets = EdgeInsets.only(top: 48);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: const MediaQueryData(
+                padding: insets,
+                viewPadding: insets,
+              ),
+              child: QuizSetupScreen(
+                courseId: 'course-1',
+                courseName: 'IS230',
+                service: FakeQuizSessionService(materials: const []),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final headerFinder = find.byWidgetPredicate((w) {
+          if (w is! Container) return false;
+          final decoration = w.decoration;
+          return decoration is BoxDecoration &&
+              decoration.color == AppColors.navy;
+        });
+        expect(tester.getRect(headerFinder.first).top, 0);
+
+        final titleRect = tester.getRect(find.text('Quiz setup'));
+        expect(titleRect.top, greaterThan(48));
+      },
+    );
+  });
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../logic/session_stacking.dart';
 import '../../models/enums.dart';
@@ -13,6 +14,7 @@ import '../../widgets/retake_label_pill.dart';
 import '../../widgets/scrollable_title_pill.dart';
 import '../../widgets/session_stack_card.dart';
 import '../../widgets/session_stack_focus_view.dart';
+import '../../widgets/status_bar_style.dart';
 import 'quiz_navigation.dart';
 import 'quiz_play_screen.dart';
 import 'quiz_setup_screen.dart';
@@ -184,9 +186,8 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
     }
     final fresh = await widget.service.fetchSessions(widget.courseId);
     if (!mounted) return;
-    final stillStack = groupQuizSessions(
-      fresh,
-    ).any((e) => _keyFor(e.group) == _openStackKey && e.group.isStack);
+    final stillStack = groupQuizSessions(fresh)
+        .any((e) => _keyFor(e.group) == _openStackKey && e.group.isStack);
     setState(() {
       _sessionsFuture = Future.value(fresh);
       _materialTitlesFuture = _loadMaterialTitles();
@@ -248,15 +249,15 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
         _retakingSource = null;
       });
 
-      final message = result.note ??
+      final message =
+          result.note ??
           (result.gotFewerThanRequested
               ? 'Generated ${result.session.numberOfQuestions} of '
-                  '${result.requestedCount} requested.'
+                    '${result.requestedCount} requested.'
               : null);
       if (message != null) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(message)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
       }
 
       if (result.session.mode == Mode.exam) {
@@ -306,29 +307,33 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: _openStackKey == null,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-        _closeStack();
-      },
-      child: Scaffold(
-        backgroundColor: Colors.white,
-        body: SafeArea(
-          child: Stack(
-            children: [
-              _buildBody(),
-              _buildFocusViewIfOpen(context),
-              if (_retakingSource != null)
-                GenerationLoadingOverlay(
-                  config: kQuizRetakeLoadingConfig,
-                  fixedLine: buildGenerationFixedLine(
-                    count: _retakingSource!.numberOfQuestions,
-                    noun: 'questions',
-                    difficulties: _retakingSource!.difficultyLevels.toSet(),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.navy),
+      child: PopScope(
+        canPop: _openStackKey == null,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          _closeStack();
+        },
+        child: Scaffold(
+          backgroundColor: Colors.white,
+          body: SafeArea(
+            top: false,
+            child: Stack(
+              children: [
+                _buildBody(),
+                _buildFocusViewIfOpen(context),
+                if (_retakingSource != null)
+                  GenerationLoadingOverlay(
+                    config: kQuizRetakeLoadingConfig,
+                    fixedLine: buildGenerationFixedLine(
+                      count: _retakingSource!.numberOfQuestions,
+                      noun: 'questions',
+                      difficulties: _retakingSource!.difficultyLevels.toSet(),
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -381,10 +386,8 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
                   onRetake: session.isSessionCompleted
                       ? () => _retake(session)
                       : null,
-                  onDelete: () => _confirmDelete(
-                    session,
-                    closeFocusIfGroupShrinks: true,
-                  ),
+                  onDelete: () =>
+                      _confirmDelete(session, closeFocusIfGroupShrinks: true),
                   isRetaking: _retakingSessionIds.contains(session.sessionId),
                 );
               },
@@ -399,152 +402,148 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
 
   Widget _buildBody() {
     return Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
-              decoration: const BoxDecoration(
-                color: AppColors.navy,
-                borderRadius: BorderRadius.vertical(
-                  bottom: Radius.circular(28),
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
+          decoration: const BoxDecoration(
+            color: AppColors.navy,
+            borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: Row(
+              children: [
+                QuizIconButton(
+                  icon: Icons.arrow_back,
+                  semanticLabel: 'Back to course',
+                  onTap:
+                      widget.onBackToCourse ??
+                      () => Navigator.of(context).maybePop(),
                 ),
-              ),
-              child: Row(
-                children: [
-                  QuizIconButton(
-                    icon: Icons.arrow_back,
-                    semanticLabel: 'Back to course',
-                    onTap:
-                        widget.onBackToCourse ??
-                        () => Navigator.of(context).maybePop(),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Text(
+                    'Quiz sessions',
+                    style: AppTypography.quizHeaderTitle,
                   ),
-                  const SizedBox(width: 13),
-                  Expanded(
-                    child: Text(
-                      'Quiz sessions',
-                      style: AppTypography.quizHeaderTitle,
-                    ),
-                  ),
-                  FutureBuilder<List<QuizSession>>(
-                    future: _sessionsFuture,
-                    builder: (context, snapshot) {
-                      final count = snapshot.data?.length;
-                      return Text(
-                        count == null
-                            ? ''
-                            : (count == 1 ? '1 session' : '$count sessions'),
-                        style: AppTypography.quizHeaderMeta,
-                      );
-                    },
-                  ),
-                ],
-              ),
+                ),
+                FutureBuilder<List<QuizSession>>(
+                  future: _sessionsFuture,
+                  builder: (context, snapshot) {
+                    final count = snapshot.data?.length;
+                    return Text(
+                      count == null
+                          ? ''
+                          : (count == 1 ? '1 session' : '$count sessions'),
+                      style: AppTypography.quizHeaderMeta,
+                    );
+                  },
+                ),
+              ],
             ),
-            Expanded(
-              child: FutureBuilder<List<QuizSession>>(
-                future: _sessionsFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snapshot.hasError) {
-                    return _ErrorState(onRetry: _reload);
-                  }
-                  final sessions = snapshot.data ?? const [];
-                  if (sessions.isEmpty) {
-                    return const _EmptyState();
-                  }
-                  final entries = groupQuizSessions(sessions);
-                  return FutureBuilder<Map<String, String>>(
-                    future: _materialTitlesFuture,
-                    builder: (context, materialsSnapshot) {
-                      final materialTitles = materialsSnapshot.data ?? const {};
-                      return ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(22, 0, 22, 12),
-                        itemCount: entries.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 12),
-                        itemBuilder: (context, index) {
-                          final entry = entries[index];
-                          final group = entry.group;
-                          final top = group.top;
-                          final topCard = _SessionCard(
-                            session: top,
-                            sessionsInList: sessions,
-                            service: widget.service,
-                            materialTitles: materialTitles,
-                            onAct: top.isSessionCompleted
-                                ? () => _viewSummary(top)
-                                : () => _resume(top),
-                            onRetake: top.isSessionCompleted
-                                ? () => _retake(top)
-                                : null,
-                            onDelete: () => _confirmDelete(top),
-                            isRetaking: _retakingSessionIds.contains(
-                              top.sessionId,
+          ),
+        ),
+        Expanded(
+          child: FutureBuilder<List<QuizSession>>(
+            future: _sessionsFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return _ErrorState(onRetry: _reload);
+              }
+              final sessions = snapshot.data ?? const [];
+              if (sessions.isEmpty) {
+                return const _EmptyState();
+              }
+              final entries = groupQuizSessions(sessions);
+              return FutureBuilder<Map<String, String>>(
+                future: _materialTitlesFuture,
+                builder: (context, materialsSnapshot) {
+                  final materialTitles = materialsSnapshot.data ?? const {};
+                  return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(22, 0, 22, 12),
+                    itemCount: entries.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final entry = entries[index];
+                      final group = entry.group;
+                      final top = group.top;
+                      final topCard = _SessionCard(
+                        session: top,
+                        sessionsInList: sessions,
+                        service: widget.service,
+                        materialTitles: materialTitles,
+                        onAct: top.isSessionCompleted
+                            ? () => _viewSummary(top)
+                            : () => _resume(top),
+                        onRetake: top.isSessionCompleted
+                            ? () => _retake(top)
+                            : null,
+                        onDelete: () => _confirmDelete(top),
+                        isRetaking: _retakingSessionIds.contains(top.sessionId),
+                        // A collapsed stack's top card shows no action
+                        // buttons and no delete of its own — tapping
+                        // it opens the focus view instead, where every
+                        // attempt gets its own full card. A lone
+                        // session (group.isStack == false) renders
+                        // exactly as it always has.
+                        isStackTop: group.isStack,
+                      );
+                      final card = group.isStack
+                          ? SessionStackCard(
+                              stackSize: group.sessions.length,
+                              cardBuilder: (_) => topCard,
+                              onOpenStack: () => _openStack(group),
+                            )
+                          : topCard;
+                      if (!entry.showHeader) return card;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(top: 14, bottom: 2),
+                            child: Row(
+                              children: [
+                                Text(
+                                  entry.headerLabel,
+                                  style: AppTypography.quizEyebrow,
+                                ),
+                                const SizedBox(width: 9),
+                                const Expanded(
+                                  child: Divider(
+                                    color: AppColors.cardTint,
+                                    height: 2,
+                                  ),
+                                ),
+                              ],
                             ),
-                            // A collapsed stack's top card shows no action
-                            // buttons and no delete of its own — tapping
-                            // it opens the focus view instead, where every
-                            // attempt gets its own full card. A lone
-                            // session (group.isStack == false) renders
-                            // exactly as it always has.
-                            isStackTop: group.isStack,
-                          );
-                          final card = group.isStack
-                              ? SessionStackCard(
-                                  stackSize: group.sessions.length,
-                                  cardBuilder: (_) => topCard,
-                                  onOpenStack: () => _openStack(group),
-                                )
-                              : topCard;
-                          if (!entry.showHeader) return card;
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.only(
-                                  top: 14,
-                                  bottom: 2,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Text(
-                                      entry.headerLabel,
-                                      style: AppTypography.quizEyebrow,
-                                    ),
-                                    const SizedBox(width: 9),
-                                    const Expanded(
-                                      child: Divider(
-                                        color: AppColors.cardTint,
-                                        height: 2,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              card,
-                            ],
-                          );
-                        },
+                          ),
+                          card,
+                        ],
                       );
                     },
                   );
                 },
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.fromLTRB(22, 10, 22, 26),
-              color: Colors.white,
-              child: AppButton(
-                label: 'Start new quiz',
-                variant: AppButtonVariant.accent,
-                height: 56,
-                borderRadius: 18,
-                shadowColor: AppColors.navy.withValues(alpha: 0.10),
-                onPressed: _openSetup,
-              ),
-            ),
-          ],
-        );
+              );
+            },
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.fromLTRB(22, 10, 22, 26),
+          color: Colors.white,
+          child: AppButton(
+            label: 'Start new quiz',
+            variant: AppButtonVariant.accent,
+            height: 56,
+            borderRadius: 18,
+            shadowColor: AppColors.navy.withValues(alpha: 0.10),
+            onPressed: _openSetup,
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -742,8 +741,7 @@ class _SessionCard extends StatelessWidget {
                               Wrap(
                                 spacing: 7,
                                 runSpacing: 4,
-                                crossAxisAlignment:
-                                    WrapCrossAlignment.center,
+                                crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
                                   // "Original"/"Retake N" — shown only
                                   // once this session actually has a
@@ -870,8 +868,7 @@ class _SessionCard extends StatelessWidget {
                                       child: AppButton(
                                         label: 'Retake',
                                         variant: AppButtonVariant.outlinedBrand,
-                                        onPressed:
-                                            isRetaking ? null : onRetake,
+                                        onPressed: isRetaking ? null : onRetake,
                                         height: _kButtonHeight,
                                         borderRadius: 12,
                                         fontSize: 13,
@@ -908,7 +905,6 @@ class _SessionCard extends StatelessWidget {
     );
   }
 }
-
 
 class _DeleteSessionDialog extends StatelessWidget {
   @override

@@ -10,7 +10,10 @@ import 'package:tadarab_app/models/student.dart';
 import 'package:tadarab_app/models/study_material.dart';
 import 'package:tadarab_app/screens/courses/course_detail_screen.dart';
 import 'package:tadarab_app/screens/home/home_screen.dart';
+import 'package:tadarab_app/screens/home/widgets/upcoming_section.dart';
 import 'package:tadarab_app/services/home_data_service.dart';
+import 'package:tadarab_app/utils/rank.dart';
+import 'package:tadarab_app/widgets/session_stack_card.dart';
 
 import '../helpers/fake_calendar_service.dart';
 import '../helpers/fake_courses_service.dart';
@@ -32,6 +35,7 @@ void main() {
     FakeFlashcardService? flashcardService,
     VoidCallback? onSignOut,
     bool reducedMotion = false,
+    double textScaleFactor = 1.0,
   }) async {
     final home = HomeScreen(
       uid: 'uid-1',
@@ -49,11 +53,15 @@ void main() {
       now: now,
       onSignOut: onSignOut,
     );
+    final needsMediaQuery = reducedMotion || textScaleFactor != 1.0;
     await tester.pumpWidget(
       MaterialApp(
-        home: reducedMotion
+        home: needsMediaQuery
             ? MediaQuery(
-                data: const MediaQueryData(disableAnimations: true),
+                data: MediaQueryData(
+                  disableAnimations: reducedMotion,
+                  textScaler: TextScaler.linear(textScaleFactor),
+                ),
                 child: home,
               )
             : home,
@@ -126,7 +134,7 @@ void main() {
         await tester.pump();
         await tester.tap(
           find
-              .byWidgetPredicate((w) => w.runtimeType.toString() == '_Swatch')
+              .byWidgetPredicate((w) => w.runtimeType.toString() == 'ColorSwatchTile')
               .first,
         );
         await tester.pump();
@@ -182,7 +190,7 @@ void main() {
         await tester.pump();
         await tester.tap(
           find
-              .byWidgetPredicate((w) => w.runtimeType.toString() == '_Swatch')
+              .byWidgetPredicate((w) => w.runtimeType.toString() == 'ColorSwatchTile')
               .first,
         );
         await tester.pump();
@@ -223,8 +231,26 @@ void main() {
         ),
       );
 
-      expect(find.text('108'), findsNothing);
+      expect(find.textContaining('108'), findsNothing);
     });
+
+    testWidgets(
+      'no decorative initial-letter circle in the greeting — it had no '
+      'tap behavior and is gone now',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(
+            student: Student(uid: 'u', email: 'e@x.com', name: 'Ghaida'),
+          ),
+        );
+
+        // The removed circle's only content was the bare first-letter
+        // initial ('G') on its own — nothing else in the greeting header
+        // renders a standalone single capital letter.
+        expect(find.text('G'), findsNothing);
+      },
+    );
   });
 
   group('has courses, nothing in progress', () {
@@ -239,32 +265,164 @@ void main() {
       expect(find.text('Nothing in progress'), findsOneWidget);
       expect(find.text('Start a new session'), findsOneWidget);
       expect(find.text('Turn your lectures into quizzes.'), findsNothing);
-      expect(
-        find.text(
-          'No upcoming events yet. Once you add events, they\'ll show up here.',
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('No events in the next 7 days'), findsOneWidget);
     });
 
-    testWidgets('the points badge shows once the student has a course', (
-      tester,
+    testWidgets(
+      'the points badge shows once the student has a course, with the '
+      'short rank name and points on one line',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(
+            courses: [aCourse],
+            student: Student(
+              uid: 'u',
+              email: 'e@x.com',
+              name: 'Ghaida',
+              totalPoints: 108,
+            ),
+          ),
+        );
+
+        // 108 is Active Learner (100-299) — shortName drops " Learner".
+        expect(find.text('Active · 108'), findsOneWidget);
+      },
+    );
+
+    // Other pill-shaped buttons elsewhere on Home (e.g. "Start a new
+    // session") share this same circular(999) radius, so this still needs
+    // to anchor on the badge's own label text to find the right one.
+    Finder badgePill(String label) => find.ancestor(
+      of: find.text(label),
+      matching: find.byWidgetPredicate(
+        (w) =>
+            w is Container &&
+            w.decoration is BoxDecoration &&
+            (w.decoration! as BoxDecoration).borderRadius ==
+                BorderRadius.circular(999),
+      ),
+    );
+
+    testWidgets(
+      'just below a rank threshold, the points badge is tinted with that '
+      'rank\'s own color (99 pts — Beginner Learner)',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(
+            courses: [aCourse],
+            student: Student(
+              uid: 'u',
+              email: 'e@x.com',
+              name: 'Ghaida',
+              totalPoints: 99,
+            ),
+          ),
+        );
+
+        expect(find.text('Beginner · 99'), findsOneWidget);
+        final color =
+            (tester.widget<Container>(badgePill('Beginner · 99')).decoration!
+                    as BoxDecoration)
+                .color;
+        expect(color, rankForPoints(99).color.withValues(alpha: 0.12));
+      },
+    );
+
+    testWidgets(
+      'crossing a rank threshold changes the points badge color (100 pts '
+      '— Active Learner, not Beginner Learner\'s color)',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(
+            courses: [aCourse],
+            student: Student(
+              uid: 'u',
+              email: 'e@x.com',
+              name: 'Ghaida',
+              totalPoints: 100,
+            ),
+          ),
+        );
+
+        expect(find.text('Active · 100'), findsOneWidget);
+        final color =
+            (tester.widget<Container>(badgePill('Active · 100')).decoration!
+                    as BoxDecoration)
+                .color;
+        expect(color, rankForPoints(100).color.withValues(alpha: 0.12));
+        expect(color, isNot(rankForPoints(99).color.withValues(alpha: 0.12)));
+      },
+    );
+
+    // Verifies the greeting Row's own layout directly via geometry, rather
+    // than asserting zero exceptions screen-wide: at 1.5x/2x text scale,
+    // the Today's Progress week row (today_progress_card.dart, untouched
+    // by this change) separately overflows its own day cells — a real,
+    // pre-existing bug this task didn't ask to fix (confirmed by manually
+    // inspecting the overflow output at both scales: every reported
+    // RenderFlex belongs to that file's _DayCell, none to home_screen.dart).
+    // That overflow must still be consumed below or the test would
+    // auto-fail on teardown; the greeting itself is then checked
+    // independently, on its own terms, via geometry.
+    Future<void> expectGreetingFitsAt(
+      WidgetTester tester,
+      double textScaleFactor,
     ) async {
+      const longName = 'Alexandra Christodoulopoulou';
       await pumpHome(
         tester,
+        textScaleFactor: textScaleFactor,
         dataService: FakeHomeDataService(
           courses: [aCourse],
           student: Student(
             uid: 'u',
             email: 'e@x.com',
-            name: 'Ghaida',
-            totalPoints: 108,
+            name: longName,
+            totalPoints: 616, // Focused Learner (300-699).
           ),
         ),
       );
+      // Consumes the known, unrelated today_progress_card.dart overflow(s)
+      // above so this test doesn't auto-fail on them.
+      tester.takeException();
 
-      expect(find.text('108'), findsOneWidget);
-    });
+      expect(find.text('Focused · 616'), findsOneWidget);
+      final nameRect = tester.getRect(find.text(longName));
+      final pillRect = tester.getRect(
+        find.ancestor(
+          of: find.text('Focused · 616'),
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is Container &&
+                w.decoration is BoxDecoration &&
+                (w.decoration! as BoxDecoration).borderRadius ==
+                    BorderRadius.circular(999),
+          ),
+        ),
+      );
+      final screenWidth =
+          tester.view.physicalSize.width / tester.view.devicePixelRatio;
+
+      // The ellipsized name never reaches into the pill's own space, and
+      // the pill (natural width, not stretched) never runs off-screen.
+      expect(nameRect.right, lessThanOrEqualTo(pillRect.left));
+      expect(pillRect.right, lessThanOrEqualTo(screenWidth));
+    }
+
+    testWidgets(
+      'a long student name at 1.5x text scale never overlaps or pushes '
+      'the points pill off-screen',
+      (tester) => expectGreetingFitsAt(tester, 1.5),
+    );
+
+    testWidgets(
+      'a long student name at 2x text scale never overlaps or pushes '
+      'the points pill off-screen',
+      (tester) => expectGreetingFitsAt(tester, 2.0),
+    );
   });
 
   group('weekly progress row', () {
@@ -797,7 +955,9 @@ void main() {
               eventId: 'e1',
               eventName: 'Midterm',
               eventDate: DateTime(2026, 3, 11),
-              eventTime: '12:00 PM',
+              // Stored as "HH:mm"; later than `now` (14:30) so it's still
+              // upcoming, not already started.
+              eventTime: '18:00',
               email: 'e@x.com',
             ),
           ),
@@ -806,7 +966,7 @@ void main() {
               eventId: 'e2',
               eventName: 'GP1 report',
               eventDate: DateTime(2026, 3, 20),
-              eventTime: '11:59 PM',
+              eventTime: '23:59',
               email: 'e@x.com',
             ),
           ),
@@ -826,6 +986,406 @@ void main() {
         expect(find.text('Today'), findsOneWidget);
         expect(find.text('GP1 report'), findsOneWidget);
         expect(find.text('9d'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'shows the stored time in display form (e.g. "6:00 PM"), not the '
+      'raw "HH:mm" string',
+      (tester) async {
+        await pumpHome(
+          tester,
+          dataService: FakeHomeDataService(
+            courses: [aCourse],
+            upcomingEvents: [
+              UpcomingEventView(
+                event: CalendarEvent(
+                  eventId: 'e1',
+                  eventName: 'Study group',
+                  eventDate: DateTime(2026, 3, 11),
+                  eventTime: '18:00',
+                  email: 'e@x.com',
+                ),
+              ),
+            ],
+          ),
+        );
+
+        expect(find.textContaining('6:00 PM'), findsOneWidget);
+        expect(find.textContaining('18:00'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'an event disappears on its own once the clock passes its start '
+      'time, without a network re-fetch, and leaves no pending timer',
+      (tester) async {
+        // `now` (declared at the top of this file) is 2026-03-11 14:30.
+        final soon = UpcomingEventView(
+          event: CalendarEvent(
+            eventId: 'soon',
+            eventName: 'Standup',
+            eventDate: DateTime(2026, 3, 11),
+            eventTime: '14:31', // one minute after `now`
+            email: 'e@x.com',
+          ),
+        );
+        final later = UpcomingEventView(
+          event: CalendarEvent(
+            eventId: 'later',
+            eventName: 'Workshop',
+            eventDate: DateTime(2026, 3, 12),
+            eventTime: '08:00',
+            email: 'e@x.com',
+          ),
+        );
+        final dataService = FakeHomeDataService(
+          courses: [aCourse],
+          upcomingEvents: [soon, later],
+        );
+
+        await pumpHome(tester, dataService: dataService);
+
+        expect(find.text('Standup'), findsOneWidget);
+        expect(find.text('Workshop'), findsOneWidget);
+        expect(dataService.fetchUpcomingEventsCalls, 1);
+
+        // Advance the fake clock past "soon"'s 14:31 start. The timer's
+        // setState rebuilds with a brand-new Future.wait([...]) instance
+        // (recreated on every build, same as every other reload) — an
+        // extra pump() lets FutureBuilder resolve that and repaint before
+        // asserting on it.
+        await tester.pump(const Duration(minutes: 2));
+        await tester.pump();
+
+        expect(find.text('Standup'), findsNothing);
+        expect(find.text('Workshop'), findsOneWidget);
+        // Pruned locally from the already-fetched list — no second fetch.
+        expect(dataService.fetchUpcomingEventsCalls, 1);
+
+        // Unmount before the test ends: dispose() cancels the timer that
+        // was just re-armed for "Workshop", so no pending Timer leaks out
+        // of this test.
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+
+    UpcomingEventView upcomingEvent({
+      required String id,
+      required String name,
+      required DateTime date,
+      required String time,
+      String? courseName,
+    }) => UpcomingEventView(
+      event: CalendarEvent(
+        eventId: id,
+        eventName: name,
+        eventDate: date,
+        eventTime: time,
+        email: 'e@x.com',
+      ),
+      courseName: courseName,
+    );
+
+    // UpcomingSection renders directly off the list it's given, in the
+    // order given — exactly what the real `notYetStartedUpcoming` pipeline
+    // guarantees (already filtered to not-yet-started and sorted by start
+    // time). So fixtures below are built pre-sorted, same as production
+    // data would be.
+    Future<void> pumpUpcomingSection(
+      WidgetTester tester, {
+      required List<UpcomingEventView> events,
+    }) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: UpcomingSection(events: events, now: now, onSeeAll: () {}),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'shows "No events in the next 7 days" when there are none',
+      (tester) async {
+        await pumpUpcomingSection(tester, events: const []);
+
+        expect(find.text('No events in the next 7 days'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a day with a single event is a plain, non-stacked card',
+      (tester) async {
+        await pumpUpcomingSection(
+          tester,
+          events: [
+            upcomingEvent(
+              id: 'e1',
+              name: 'Lecture',
+              date: DateTime(2026, 3, 11),
+              time: '18:00',
+            ),
+          ],
+        );
+
+        expect(find.text('Lecture'), findsOneWidget);
+        expect(find.byType(SessionStackCard), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a day with 2 events collapses into a stack with 1 peek, fronted by '
+      'the nearest not-yet-started event',
+      (tester) async {
+        await pumpUpcomingSection(
+          tester,
+          events: [
+            upcomingEvent(
+              id: 'e1',
+              name: 'Nearest',
+              date: DateTime(2026, 3, 11),
+              time: '15:00',
+            ),
+            upcomingEvent(
+              id: 'e2',
+              name: 'Later',
+              date: DateTime(2026, 3, 11),
+              time: '20:00',
+            ),
+          ],
+        );
+
+        final stack = tester.widget<SessionStackCard>(
+          find.byType(SessionStackCard),
+        );
+        expect(stack.stackSize, 2);
+        expect(find.text('Nearest'), findsOneWidget);
+        expect(find.text('Later'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a day with 3 or more events still collapses into one stack '
+      '(SessionStackCard caps its own peek count at 2)',
+      (tester) async {
+        await pumpUpcomingSection(
+          tester,
+          events: [
+            upcomingEvent(
+              id: 'e1',
+              name: 'First',
+              date: DateTime(2026, 3, 11),
+              time: '15:00',
+            ),
+            upcomingEvent(
+              id: 'e2',
+              name: 'Second',
+              date: DateTime(2026, 3, 11),
+              time: '17:00',
+            ),
+            upcomingEvent(
+              id: 'e3',
+              name: 'Third',
+              date: DateTime(2026, 3, 11),
+              time: '20:00',
+            ),
+          ],
+        );
+
+        final stack = tester.widget<SessionStackCard>(
+          find.byType(SessionStackCard),
+        );
+        expect(stack.stackSize, 3);
+      },
+    );
+
+    testWidgets(
+      'tapping the stack expands to show all of the day\'s events, same '
+      'size and style, in time order; tapping again collapses it',
+      (tester) async {
+        await pumpUpcomingSection(
+          tester,
+          events: [
+            upcomingEvent(
+              id: 'e1',
+              name: 'Nearest',
+              date: DateTime(2026, 3, 11),
+              time: '15:00',
+            ),
+            upcomingEvent(
+              id: 'e2',
+              name: 'Later',
+              date: DateTime(2026, 3, 11),
+              time: '20:00',
+            ),
+          ],
+        );
+
+        expect(find.text('Later'), findsNothing);
+
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+
+        // Peeks gone while expanded — both events now render as full cards.
+        expect(find.byType(SessionStackCard), findsNothing);
+        expect(find.text('Nearest'), findsOneWidget);
+        expect(find.text('Later'), findsOneWidget);
+
+        final nearestSize = tester.getSize(
+          find
+              .ancestor(of: find.text('Nearest'), matching: find.byType(Container))
+              .first,
+        );
+        final laterSize = tester.getSize(
+          find
+              .ancestor(of: find.text('Later'), matching: find.byType(Container))
+              .first,
+        );
+        expect(nearestSize.height, laterSize.height);
+
+        // The nearest event's card is the time-ordered first one.
+        expect(
+          tester.getTopLeft(find.text('Nearest')).dy,
+          lessThan(tester.getTopLeft(find.text('Later')).dy),
+        );
+
+        // Tap the front card again to collapse.
+        await tester.tap(find.text('Nearest'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(SessionStackCard), findsOneWidget);
+        expect(find.text('Later'), findsNothing);
+      },
+    );
+
+    testWidgets('multiple days render in ascending date order', (
+      tester,
+    ) async {
+      await pumpUpcomingSection(
+        tester,
+        events: [
+          upcomingEvent(
+            id: 'e1',
+            name: 'TodayEvent',
+            date: DateTime(2026, 3, 11),
+            time: '15:00',
+          ),
+          upcomingEvent(
+            id: 'e2',
+            name: 'TomorrowEvent',
+            date: DateTime(2026, 3, 12),
+            time: '08:00',
+          ),
+        ],
+      );
+
+      final todayY = tester.getTopLeft(find.text('TodayEvent')).dy;
+      final tomorrowY = tester.getTopLeft(find.text('TomorrowEvent')).dy;
+      expect(todayY, lessThan(tomorrowY));
+    });
+
+    testWidgets(
+      'the stack front card exposes an accessible expand/collapse label, '
+      'including the expanded state',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+
+        await pumpUpcomingSection(
+          tester,
+          events: [
+            upcomingEvent(
+              id: 'e1',
+              name: 'Nearest',
+              date: DateTime(2026, 3, 11), // today, per the fixed `now`
+              time: '15:00',
+            ),
+            upcomingEvent(
+              id: 'e2',
+              name: 'Later',
+              date: DateTime(2026, 3, 11),
+              time: '20:00',
+            ),
+          ],
+        );
+
+        expect(
+          find.bySemanticsLabel('Today, 2 events, tap to expand'),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.byType(SessionStackCard));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.bySemanticsLabel('Today, 2 events, tap to collapse'),
+          findsOneWidget,
+        );
+
+        handle.dispose();
+      },
+    );
+
+    testWidgets(
+      'within a stacked day, the front event disappearing promotes the '
+      'next one to front; dropping to 1 event renders a plain card; '
+      'dropping to 0 removes the day entirely — all via the live timer, '
+      'with no re-fetch and no pending timer left',
+      (tester) async {
+        // `now` is 2026-03-11 14:30.
+        final first = UpcomingEventView(
+          event: CalendarEvent(
+            eventId: 'first',
+            eventName: 'Standup',
+            eventDate: DateTime(2026, 3, 11),
+            eventTime: '14:31', // 1 minute after `now`
+            email: 'e@x.com',
+          ),
+        );
+        final second = UpcomingEventView(
+          event: CalendarEvent(
+            eventId: 'second',
+            eventName: 'Sync',
+            eventDate: DateTime(2026, 3, 11),
+            eventTime: '14:33', // 3 minutes after `now`
+            email: 'e@x.com',
+          ),
+        );
+        final dataService = FakeHomeDataService(
+          courses: [aCourse],
+          upcomingEvents: [first, second],
+        );
+
+        await pumpHome(tester, dataService: dataService);
+
+        // Collapsed stack of 2, fronted by "Standup".
+        expect(find.byType(SessionStackCard), findsOneWidget);
+        expect(find.text('Standup'), findsOneWidget);
+        expect(find.text('Sync'), findsNothing);
+
+        // Advance past "Standup"'s 14:31 start — "Sync" is now the day's
+        // only event, so it renders as a plain card, not a stack.
+        await tester.pump(const Duration(minutes: 2));
+        await tester.pump();
+
+        expect(find.byType(SessionStackCard), findsNothing);
+        expect(find.text('Standup'), findsNothing);
+        expect(find.text('Sync'), findsOneWidget);
+        expect(dataService.fetchUpcomingEventsCalls, 1);
+
+        // Advance past "Sync"'s 14:33 start — the day's last event is gone,
+        // so the whole day's entry disappears and the section falls back
+        // to its empty state.
+        await tester.pump(const Duration(minutes: 2));
+        await tester.pump();
+
+        expect(find.text('Sync'), findsNothing);
+        expect(find.text('No events in the next 7 days'), findsOneWidget);
+        expect(dataService.fetchUpcomingEventsCalls, 1);
+
+        // Unmount so dispose() cancels any timer still armed.
+        await tester.pumpWidget(const SizedBox());
       },
     );
   });

@@ -24,9 +24,31 @@ const _deleteFailureMessage =
     "Couldn't delete this event. Check your connection and try again.";
 const _deleteCourseEventsFailureMessage =
     "Couldn't delete this course's events. Check your connection and try again.";
+const _loadRecentColorsFailureMessage =
+    "Couldn't load your recent colors. Check your connection and try again.";
+const _loadSavedColorsFailureMessage =
+    "Couldn't load your saved colors. Check your connection and try again.";
 
 /// Firestore caps a single batched write at 500 operations.
 const _maxBatchSize = 500;
+
+/// The field on `users/{uid}` holding Add Event's saved quick-colour list.
+const _savedEventColorsField = 'savedEventColors';
+
+/// The most quick-colours Add Event ever saves for one student.
+const _kMaxSavedEventColors = 5;
+
+/// Hard cap on how many raw event documents
+/// [CalendarService.standaloneEventColorsMostRecentFirst] ever reads.
+/// `courseId == null` can't be pushed into the query itself without a new
+/// composite index (an equality filter on `courseId` plus the `eventDate`
+/// order-by is exactly the two-different-fields shape that needed Home's
+/// composite indexes in Phase B) — so that filtering happens in Dart after
+/// a plain, single-field-ordered fetch, and this cap bounds how much that
+/// fetch ever reads. A student with more than 200 events is an accepted,
+/// extreme edge case where the recent-colours list may miss a handful of
+/// her most recent standalone events.
+const _kStandaloneColorFetchCap = 200;
 
 /// Firestore-backed calendar data, scoped to users/{uid}/events/{eventId}.
 /// Injectable (like [HomeDataService] and [AuthService]) so widget tests can
@@ -71,6 +93,9 @@ class CalendarService {
 
   CollectionReference<Map<String, dynamic>> _events(String uid) =>
       _firestore.collection('users').doc(uid).collection('events');
+
+  DocumentReference<Map<String, dynamic>> _userDoc(String uid) =>
+      _firestore.collection('users').doc(uid);
 
   /// Every event whose date falls inside [month], soonest first.
   ///
@@ -191,6 +216,149 @@ class CalendarService {
       }
     }
     return docs.length;
+  }
+
+  /// The student's own recent colours, for Add Event's colour row: distinct
+  /// colours of her events that are *not* linked to a course, most recently
+  /// used first, capped at [limit].
+  ///
+  /// Ordered by `eventDate` descending rather than a creation timestamp —
+  /// [CalendarEvent] has no `createdAt` field (adding one is a model change
+  /// needing full-team review, and wasn't asked for here), so the event's
+  /// own date is the closest available stand-in for "recently used".
+  ///
+  /// `courseId == null` is filtered in Dart, not in the query, to avoid
+  /// needing a new composite index (see [_kStandaloneColorFetchCap]) — so
+  /// this reads at most [fetchCap] documents (default
+  /// [_kStandaloneColorFetchCap], Add Event's own call is unchanged), then
+  /// keeps going through them in order until [limit] distinct standalone
+  /// colours are found. Add course needs every distinct colour, not just
+  /// the most recent few — since a preset only a little further back than
+  /// [limit] would otherwise look free when it isn't — so it passes
+  /// `fetchCap: null` (no cap at all) along with a generous [limit].
+  Future<List<String>> standaloneEventColorsMostRecentFirst(
+    String uid, {
+    int limit = 5,
+    int? fetchCap = _kStandaloneColorFetchCap,
+  }) async {
+    final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
+    try {
+      var query = _events(uid).orderBy('eventDate', descending: true);
+      if (fetchCap != null) query = query.limit(fetchCap);
+      final snap = await query.get();
+      docs = snap.docs;
+    } catch (_) {
+      throw CalendarFailure(_loadRecentColorsFailureMessage);
+    }
+
+    final colors = <String>[];
+    final seen = <String>{};
+    for (final doc in docs) {
+      final event = CalendarEvent.fromFirestore(doc);
+      if (event.courseId != null) continue;
+      if (seen.add(event.color.toUpperCase())) colors.add(event.color);
+      if (colors.length >= limit) break;
+    }
+    return colors;
+  }
+
+  List<String> _savedColorsFrom(Map<String, dynamic>? data) {
+    final raw = data?[_savedEventColorsField];
+    if (raw is List) return raw.whereType<String>().toList();
+    return [];
+  }
+
+  /// Loads the student's saved quick-colours for Add Event's colour row:
+  /// upper-case "#RRGGBB" strings on `users/{uid}`, newest first, at most
+  /// [_kMaxSavedEventColors].
+  ///
+  /// If the field has never been written for this account, it's seeded
+  /// (best effort — the seed is still returned even if the write below
+  /// fails) from her standalone events via
+  /// [standaloneEventColorsMostRecentFirst], so a student with existing
+  /// colour history isn't started from scratch. Once the field exists —
+  /// even as an empty list, e.g. after removing every saved colour — it's
+  /// never reseeded.
+  Future<List<String>> loadSavedEventColors(String uid) async {
+    Map<String, dynamic>? data;
+    try {
+      final snap = await _userDoc(uid).get();
+      data = snap.data();
+    } catch (_) {
+      throw CalendarFailure(_loadSavedColorsFailureMessage);
+    }
+
+    if (data != null && data.containsKey(_savedEventColorsField)) {
+      return _savedColorsFrom(data);
+    }
+
+    final seeded = await standaloneEventColorsMostRecentFirst(
+      uid,
+      limit: _kMaxSavedEventColors,
+    );
+    try {
+      await _userDoc(
+        uid,
+      ).set({_savedEventColorsField: seeded}, SetOptions(merge: true));
+    } catch (_) {
+      // Best effort — the seed is still handed back even if it couldn't be
+      // persisted; the next load simply seeds again.
+    }
+    return seeded;
+  }
+
+  /// Moves [colorHex] to the front of the student's saved event-colour
+  /// list, or adds it there if the list has room (fewer than
+  /// [_kMaxSavedEventColors]). If the list is already full and doesn't
+  /// already contain the colour, it's simply not added — the event that
+  /// triggered this call is saved regardless; only this list declines the
+  /// new entry.
+  ///
+  /// Runs inside a transaction, so two overlapping saves can't read-modify-
+  /// write the list and silently lose one update. Best effort: a failure
+  /// here never fails the event save that triggered it.
+  Future<void> recordStandaloneEventColor(String uid, String colorHex) async {
+    try {
+      await _firestore.runTransaction((txn) async {
+        final snap = await txn.get(_userDoc(uid));
+        final current = _savedColorsFrom(snap.data());
+        final upper = colorHex.toUpperCase();
+        final withoutIt = current
+            .where((c) => c.toUpperCase() != upper)
+            .toList();
+        final wasPresent = withoutIt.length != current.length;
+        if (!wasPresent && current.length >= _kMaxSavedEventColors) {
+          return;
+        }
+        txn.set(_userDoc(uid), {
+          _savedEventColorsField: [colorHex, ...withoutIt],
+        }, SetOptions(merge: true));
+      });
+    } catch (_) {
+      // Best effort, per the doc comment above.
+    }
+  }
+
+  /// Removes [colorHex] from the student's saved event-colour list, run
+  /// inside a transaction for the same read-modify-write safety as
+  /// [recordStandaloneEventColor]. Best effort — the Add Event screen
+  /// updates its own row immediately regardless of whether this succeeds.
+  /// Never touches any event.
+  Future<void> removeSavedEventColor(String uid, String colorHex) async {
+    final upper = colorHex.toUpperCase();
+    try {
+      await _firestore.runTransaction((txn) async {
+        final snap = await txn.get(_userDoc(uid));
+        final current = _savedColorsFrom(snap.data());
+        final updated = current.where((c) => c.toUpperCase() != upper).toList();
+        if (updated.length == current.length) return;
+        txn.set(_userDoc(uid), {
+          _savedEventColorsField: updated,
+        }, SetOptions(merge: true));
+      });
+    } catch (_) {
+      // Best effort, per the doc comment above.
+    }
   }
 }
 

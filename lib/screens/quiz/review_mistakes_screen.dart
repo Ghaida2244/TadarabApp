@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/question.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/draggable_overflow_text.dart';
+import '../../widgets/status_bar_style.dart';
 import 'widgets/quiz_icon_button.dart';
 
 /// A mistake paired with its 1-based position in the *full*, unfiltered
@@ -39,71 +41,88 @@ class _ReviewMistakesScreenState extends State<ReviewMistakesScreen> {
   @override
   Widget build(BuildContext context) {
     final count = widget.mistakes.length;
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
-              decoration: const BoxDecoration(
-                color: AppColors.navy,
-                borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
-              ),
-              child: Row(
-                children: [
-                  QuizIconButton(
-                    icon: Icons.arrow_back,
-                    semanticLabel: 'Back',
-                    onTap: () => Navigator.of(context).maybePop(),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.navy),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
+                decoration: const BoxDecoration(
+                  color: AppColors.navy,
+                  borderRadius: BorderRadius.vertical(
+                    bottom: Radius.circular(28),
                   ),
-                  const SizedBox(width: 13),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Your mistakes', style: AppTypography.quizHeaderTitle.copyWith(fontSize: 22)),
-                        Text(
-                          count == 1
-                              ? '1 wrong out of ${widget.totalQuestions}'
-                              : '$count wrong out of ${widget.totalQuestions}',
-                          style: AppTypography.quizHeaderMeta,
+                ),
+                child: SafeArea(
+                  bottom: false,
+                  child: Row(
+                    children: [
+                      QuizIconButton(
+                        icon: Icons.arrow_back,
+                        semanticLabel: 'Back',
+                        onTap: () => Navigator.of(context).maybePop(),
+                      ),
+                      const SizedBox(width: 13),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Your mistakes',
+                              style: AppTypography.quizHeaderTitle.copyWith(
+                                fontSize: 22,
+                              ),
+                            ),
+                            Text(
+                              count == 1
+                                  ? '1 wrong out of ${widget.totalQuestions}'
+                                  : '$count wrong out of ${widget.totalQuestions}',
+                              style: AppTypography.quizHeaderMeta,
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-            Expanded(
-              child: widget.mistakes.isEmpty
-                  ? Center(
-                      child: Text('No mistakes to review.', style: AppTypography.quizEmptyTitle),
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(22, 12, 22, 16),
-                      itemCount: widget.mistakes.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 12),
-                      itemBuilder: (context, index) {
-                        final q = widget.mistakes[index].question;
-                        final number = widget.mistakes[index].number;
-                        final open = _open.contains(q.questionId);
-                        return _MistakeCard(
-                          number: number,
-                          question: q,
-                          open: open,
-                          onToggle: () => setState(() {
-                            if (open) {
-                              _open.remove(q.questionId);
-                            } else {
-                              _open.add(q.questionId);
-                            }
-                          }),
-                        );
-                      },
-                    ),
-            ),
-          ],
+              Expanded(
+                child: widget.mistakes.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No mistakes to review.',
+                          style: AppTypography.quizEmptyTitle,
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(22, 12, 22, 16),
+                        itemCount: widget.mistakes.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 12),
+                        itemBuilder: (context, index) {
+                          final q = widget.mistakes[index].question;
+                          final number = widget.mistakes[index].number;
+                          final open = _open.contains(q.questionId);
+                          return _MistakeCard(
+                            number: number,
+                            question: q,
+                            open: open,
+                            onToggle: () => setState(() {
+                              if (open) {
+                                _open.remove(q.questionId);
+                              } else {
+                                _open.add(q.questionId);
+                              }
+                            }),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -148,21 +167,42 @@ class _MistakeCard extends StatelessWidget {
             ),
             child: Text(
               'QUESTION $number',
-              style: AppTypography.quizBadge.copyWith(color: AppColors.errorBannerBody),
+              style: AppTypography.quizBadge.copyWith(
+                color: AppColors.errorBannerBody,
+              ),
             ),
           ),
           const SizedBox(height: 11),
-          Text(question.questionText, style: AppTypography.quizCardTitle.copyWith(fontSize: 16)),
+          Text(
+            question.questionText,
+            style: AppTypography.quizCardTitle.copyWith(fontSize: 16),
+          ),
           const SizedBox(height: 11),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-            decoration: BoxDecoration(color: AppColors.errorBackground, borderRadius: BorderRadius.circular(14)),
+            decoration: BoxDecoration(
+              color: AppColors.errorBackground,
+              borderRadius: BorderRadius.circular(14),
+            ),
             child: Row(
               children: [
-                Container(width: 8, height: 8, decoration: const BoxDecoration(color: AppColors.red, shape: BoxShape.circle)),
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: AppColors.red,
+                    shape: BoxShape.circle,
+                  ),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(chose, style: AppTypography.quizOption(FontWeight.w900, color: AppColors.errorBannerHeading).copyWith(fontSize: 13)),
+                  child: Text(
+                    chose,
+                    style: AppTypography.quizOption(
+                      FontWeight.w900,
+                      color: AppColors.errorBannerHeading,
+                    ).copyWith(fontSize: 13),
+                  ),
                 ),
               ],
             ),
@@ -171,15 +211,28 @@ class _MistakeCard extends StatelessWidget {
             const SizedBox(height: 11),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-              decoration: BoxDecoration(color: AppColors.successBackground, borderRadius: BorderRadius.circular(14)),
+              decoration: BoxDecoration(
+                color: AppColors.successBackground,
+                borderRadius: BorderRadius.circular(14),
+              ),
               child: Row(
                 children: [
-                  Container(width: 8, height: 8, decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle)),
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: AppColors.success,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'Correct: ${question.correctAnswer}',
-                      style: AppTypography.quizOption(FontWeight.w900, color: AppColors.successDark).copyWith(fontSize: 13),
+                      style: AppTypography.quizOption(
+                        FontWeight.w900,
+                        color: AppColors.successDark,
+                      ).copyWith(fontSize: 13),
                     ),
                   ),
                 ],
@@ -188,13 +241,19 @@ class _MistakeCard extends StatelessWidget {
             const SizedBox(height: 11),
             Container(
               padding: const EdgeInsets.all(13),
-              decoration: BoxDecoration(color: AppColors.surfaceMuted, borderRadius: BorderRadius.circular(14)),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceMuted,
+                borderRadius: BorderRadius.circular(14),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('EXPLANATION', style: AppTypography.quizPanelLabel()),
                   const SizedBox(height: 5),
-                  Text(question.explanation, style: AppTypography.quizPanelBody.copyWith(fontSize: 13)),
+                  Text(
+                    question.explanation,
+                    style: AppTypography.quizPanelBody.copyWith(fontSize: 13),
+                  ),
                 ],
               ),
             ),
@@ -211,11 +270,18 @@ class _MistakeCard extends StatelessWidget {
                         width: 34,
                         alignment: Alignment.center,
                         color: Colors.white.withValues(alpha: 0.1),
-                        child: const Icon(Icons.menu_book_outlined, size: 14, color: Colors.white),
+                        child: const Icon(
+                          Icons.menu_book_outlined,
+                          size: 14,
+                          color: Colors.white,
+                        ),
                       ),
                       Expanded(
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -229,7 +295,9 @@ class _MistakeCard extends StatelessWidget {
                               const SizedBox(height: 2),
                               DraggableOverflowText(
                                 text: question.sourceLocation,
-                                style: AppTypography.quizSourceValue.copyWith(fontSize: 12),
+                                style: AppTypography.quizSourceValue.copyWith(
+                                  fontSize: 12,
+                                ),
                                 fadeColor: AppColors.navy,
                               ),
                             ],

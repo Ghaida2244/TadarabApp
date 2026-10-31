@@ -94,7 +94,6 @@ class FakeHomeDataService extends HomeDataService {
   Future<List<UpcomingEventView>> fetchUpcomingEvents(
     String uid, {
     DateTime? now,
-    int limit = 5,
   }) async {
     fetchUpcomingEventsCalls++;
     return upcomingEvents;

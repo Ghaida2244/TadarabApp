@@ -13,25 +13,22 @@ import 'package:flutter/material.dart';
 ///
 /// ---
 ///
-/// **INTEGRATION POINT — `Student.currentRank` is not written anywhere yet.**
+/// **INTEGRATION POINT — `Student.currentRank` is now kept in sync.**
 ///
-/// Every screen derives the rank from `totalPoints` through
-/// [rankForPoints], so the displayed rank is always correct. The *stored*
-/// `currentRank` field still holds whatever it was created with
-/// (`'Beginner Learner'`) and will disagree with the displayed value.
-///
-/// To close that gap: wherever `totalPoints` is incremented, also set
-/// `currentRank` to `rankForPoints(newTotal).name`. Today that is two
-/// places, both in Ghaida's services —
-/// `QuizSessionService` (`'totalPoints': FieldValue.increment(...)`, in
-/// both the complete and retake-complete paths) and `FlashcardService`
-/// (the same increment in its completion batch). Because
+/// Every screen derives the rank from `totalPoints` through [rankForPoints]
+/// regardless, so the displayed rank was always correct even before this
+/// was wired up. The *stored* `currentRank` field is now written alongside
+/// every `totalPoints` increment, at all three places points are ever
+/// awarded: `QuizSessionService.completeSession`,
+/// `.submitExamSession`, and `FlashcardService.completeSession` (each via
+/// their own private `_pointsAndRankUpdate` helper). Because
 /// `FieldValue.increment` never reveals the resulting total, each call site
-/// needs the new total read back (or computed from the known previous
-/// value) before it can write the matching rank.
-///
-/// Deliberately not done here: those are another member's files, and the
-/// change needs coordinating with her. See CLAUDE.md's Progress Log.
+/// reads the student's current `totalPoints` first and computes
+/// `newTotal = current + earnedPoints` itself; a missing `totalPoints`
+/// field on an existing doc reads as 0, and a failed read (or a missing
+/// student doc) simply skips the `currentRank` write for that completion —
+/// `totalPoints` itself is still written as before, and the rank, being
+/// always re-derived from it anyway, is never actually wrong for long.
 @immutable
 class Rank {
   const Rank({

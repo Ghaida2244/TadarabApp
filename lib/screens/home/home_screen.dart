@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../features/flashcards/flashcard_navigation.dart';
@@ -12,6 +14,9 @@ import '../../services/flashcard_service.dart';
 import '../../services/home_data_service.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/event_time.dart' show eventDateTime;
+import '../../utils/rank.dart';
+import '../profile/widgets/rank_icon.dart';
 import '../calendar/calendar_screen.dart';
 import '../courses/add_course_screen.dart';
 import '../courses/course_detail_screen.dart';
@@ -132,6 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
             2,
             () => CalendarScreen(
               uid: widget.uid,
+              active: _tabIndex == 2,
               calendarService: widget.calendarService,
               homeDataService: _dataService,
               now: _now,
@@ -218,6 +224,30 @@ class _HomeTabState extends State<_HomeTab> {
   late Future<InProgressSession?> _inProgress;
   late Future<List<UpcomingEventView>> _upcoming;
 
+  /// Once [_upcoming] resolves, holds a locally re-pruned version of its
+  /// list — set only when [_onUpcomingTimerFired] removes an event whose
+  /// start has just passed, without a second Firestore round trip. Reset
+  /// to null on every [_loadAll] (a fresh fetch supersedes it). Null means
+  /// "show whatever [_upcoming] resolved to, unmodified".
+  List<UpcomingEventView>? _liveUpcoming;
+
+  /// Fires the moment the soonest not-yet-started event in the current
+  /// Upcoming list is no longer upcoming, so it can disappear on its own
+  /// without the student needing to leave and return to the tab. Re-armed
+  /// after every fetch and after every time it fires; cancelled in
+  /// [dispose] and while this tab isn't [_HomeTab.active] (no point
+  /// ticking toward a UI update nothing is showing).
+  Timer? _upcomingTimer;
+
+  /// The "now" [_scheduleUpcomingTimer] measures the next [Timer]'s
+  /// [Duration] from. Reset to [_HomeTab.now] on every [_loadAll], then
+  /// advanced to each firing's own moment in [_onUpcomingTimerFired] —
+  /// never left at the original, increasingly-stale [_HomeTab.now], or
+  /// every re-arm after the first would compute a [Duration] too long by
+  /// however much (fake or real) time had already passed since that
+  /// original snapshot, drifting later with every event removed.
+  late DateTime _upcomingClock;
+
   @override
   void initState() {
     super.initState();
@@ -232,8 +262,19 @@ class _HomeTabState extends State<_HomeTab> {
     // [refreshToken] (an event was added or deleted on the Calendar tab,
     // which can happen while Home is inactive).
     final becameActive = widget.active && !oldWidget.active;
+    final becameInactive = !widget.active && oldWidget.active;
     final dataChangedElsewhere = widget.refreshToken != oldWidget.refreshToken;
     if (becameActive || dataChangedElsewhere) _reload();
+    // _reload() already re-arms the timer via _loadAll()/_scheduleUpcomingTimer
+    // for the becameActive case; this only needs to additionally cancel it
+    // when the tab stops being the one on screen.
+    if (becameInactive) _upcomingTimer?.cancel();
+  }
+
+  @override
+  void dispose() {
+    _upcomingTimer?.cancel();
+    super.dispose();
   }
 
   void _loadAll() {
@@ -243,13 +284,50 @@ class _HomeTabState extends State<_HomeTab> {
       now: widget.now,
     );
     _inProgress = widget.dataService.fetchInProgressSession(widget.uid);
-    _upcoming = widget.dataService.fetchUpcomingEvents(
+    _liveUpcoming = null;
+    _upcomingClock = widget.now;
+    final upcoming = widget.dataService.fetchUpcomingEvents(
       widget.uid,
       now: widget.now,
     );
+    _upcoming = upcoming;
+    upcoming.then(_scheduleUpcomingTimer);
   }
 
   void _reload() => setState(_loadAll);
+
+  /// Arms [_upcomingTimer] for [events]' own soonest start, so the card
+  /// disappears on its own the moment that passes. A no-op with nothing
+  /// armed when [events] is empty, this tab isn't active, or the widget
+  /// has already been disposed — the two latter checks matter because this
+  /// runs from a Future callback, which can land after either.
+  void _scheduleUpcomingTimer(List<UpcomingEventView> events) {
+    _upcomingTimer?.cancel();
+    if (!mounted || !widget.active || events.isEmpty) return;
+    // events is already sorted soonest-first — see notYetStartedUpcoming.
+    final soonestStart = eventDateTime(events.first.event);
+    final duration = soonestStart.difference(_upcomingClock);
+    _upcomingTimer = Timer(
+      duration.isNegative ? Duration.zero : duration,
+      () => _onUpcomingTimerFired(events, soonestStart),
+    );
+  }
+
+  /// Re-prunes [previousEvents] as of [firedAt] (the exact moment the
+  /// timer was armed for) rather than re-fetching — the student's course
+  /// names are already attached to every surviving event, so there is
+  /// nothing a network call would add here. Advances [_upcomingClock] to
+  /// match before re-arming for whatever's next.
+  void _onUpcomingTimerFired(
+    List<UpcomingEventView> previousEvents,
+    DateTime firedAt,
+  ) {
+    if (!mounted) return;
+    _upcomingClock = firedAt;
+    final pruned = notYetStartedUpcomingViews(previousEvents, now: firedAt);
+    setState(() => _liveUpcoming = pruned);
+    _scheduleUpcomingTimer(pruned);
+  }
 
   /// Fetches one earlier week's data for [TodayProgressCard]'s streak row
   /// pager — the exact same query `_loadAll` already uses for the current
@@ -470,7 +548,11 @@ class _HomeTabState extends State<_HomeTab> {
           final courses = results[0] as List<Course>;
           final weeklyProgress = results[1] as WeeklyProgress;
           final inProgress = results[2] as InProgressSession?;
-          final upcoming = results[3] as List<UpcomingEventView>;
+          // Prefer the locally re-pruned list (set once the clock has
+          // passed an event's start since this Future resolved) over the
+          // Future's own resolved value, which never changes on its own.
+          final upcoming =
+              _liveUpcoming ?? (results[3] as List<UpcomingEventView>);
 
           return StreamBuilder<Student?>(
             stream: widget.dataService.watchStudent(widget.uid),
@@ -544,6 +626,20 @@ String _greetingFor(DateTime now) {
   return 'Good evening';
 }
 
+/// [color] as-is, unless it's too light to read as small bold text over a
+/// near-white background (WCAG contrast under ~4.5:1 against white) — in
+/// which case a darkened version is returned instead.
+/// [Color.computeLuminance] already implements the WCAG relative-luminance
+/// formula, so this needs no hand-rolled colour math. Catches the lighter
+/// rank colours (e.g. tier 1's grey `0xFF9AA0C4` and tier 7's amber
+/// `0xFFF5A524`) without touching the darker ones, which already read fine
+/// as-is.
+Color _readableOnLight(Color color) {
+  final contrastAgainstWhite = 1.05 / (color.computeLuminance() + 0.05);
+  if (contrastAgainstWhite >= 4.5) return color;
+  return Color.lerp(color, Colors.black, 0.4) ?? color;
+}
+
 class _Greeting extends StatelessWidget {
   const _Greeting({
     required this.student,
@@ -558,89 +654,76 @@ class _Greeting extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = student?.name ?? '';
-    final initial = name.trim().isEmpty
-        ? ''
-        : name.trim().substring(0, 1).toUpperCase();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _greetingFor(now),
-                style: AppTypography.subtitle.copyWith(fontSize: 13),
-              ),
-              Text(
-                name,
-                style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.02 * 26,
-                  height: 1.1,
-                  color: AppColors.navy,
+          // Expanded so a long name ellipsizes instead of pushing the
+          // points pill off-screen or overflowing the Row.
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _greetingFor(now),
+                  style: AppTypography.subtitle.copyWith(fontSize: 13),
                 ),
-              ),
-            ],
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.02 * 26,
+                    height: 1.1,
+                    color: AppColors.navy,
+                  ),
+                ),
+              ],
+            ),
           ),
-          Row(
-            children: [
-              if (showPointsBadge && student != null) ...[
-                Container(
+          if (showPointsBadge && student != null) ...[
+            const SizedBox(width: 8),
+            Builder(
+              builder: (context) {
+                final totalPoints = student!.totalPoints;
+                // Derived from totalPoints, not the stored currentRank —
+                // matches every other rank display in the app.
+                final rank = rankForPoints(totalPoints);
+                final textColor = _readableOnLight(rank.color);
+                return Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: AppColors.warningBackground,
+                    // Same tint style the Ranks screen uses for the
+                    // current rank (rank.color at 12% alpha).
+                    color: rank.color.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: AppColors.pointsBadgeDot,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
+                      RankIcon(tier: rank.tier, color: rank.color, size: 12),
                       const SizedBox(width: 6),
                       Text(
-                        '${student!.totalPoints}',
-                        style: const TextStyle(
+                        '${rank.shortName} · $totalPoints',
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w900,
-                          color: AppColors.warningText,
+                          color: textColor,
                         ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 8),
-              ],
-              Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(
-                  color: AppColors.cardTint,
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  initial,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.navy,
-                  ),
-                ),
-              ),
-            ],
-          ),
+                );
+              },
+            ),
+          ],
         ],
       ),
     );

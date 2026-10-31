@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -10,10 +13,12 @@ import '../../theme/app_theme.dart';
 import '../../utils/event_time.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_error_banner.dart';
-import '../../widgets/dashed_border.dart';
+import '../../widgets/color_picker_dialog.dart';
+import '../../widgets/color_swatch_tile.dart';
+import '../../widgets/screen_header.dart';
+import '../../widgets/status_bar_style.dart';
 import 'calendar_styles.dart';
 import 'widgets/calendar_pickers.dart';
-import 'widgets/color_picker_dialog.dart';
 import 'widgets/reminder_card.dart';
 
 /// Maximum length of an event name — `eventName` is VARCHAR(100) in the SRS
@@ -32,6 +37,7 @@ const kReminderNotScheduledMessage =
 
 /// The reasons Save stays disabled, in the order the design checks them.
 const kSaveReasonName = 'Add an event name to continue.';
+const kSaveReasonColor = 'Pick a color to continue.';
 const kSaveReasonDate = 'Pick a date to continue.';
 const kSaveReasonTime = 'Pick a time to continue.';
 const kSaveReasonReminder = 'Fix the reminder to continue.';
@@ -48,8 +54,8 @@ class AddEventScreen extends StatefulWidget {
     required this.calendarService,
     required this.courses,
     this.reminderScheduler,
-    this.initialDate,
     this.now,
+    this.random,
   });
 
   final String uid;
@@ -62,12 +68,12 @@ class AddEventScreen extends StatefulWidget {
   /// Overridable for tests; defaults to the real notification-backed one.
   final ReminderScheduler? reminderScheduler;
 
-  /// The month the Calendar was showing, used to seed the date picker so
-  /// adding an event to a browsed month doesn't jump back to today.
-  final DateTime? initialDate;
-
   /// Overridable for tests, so reminder validation is deterministic.
   final DateTime? now;
+
+  /// Overridable for tests, so the one-time random default colour
+  /// ([randomEventColor]) is deterministic given a seeded [Random].
+  final Random? random;
 
   @override
   State<AddEventScreen> createState() => _AddEventScreenState();
@@ -81,9 +87,40 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   Course? _selectedCourse;
   bool _coursesOpen = false;
-  late String _selectedColor = _swatches.first;
+
+  /// The screen's current colour selection — null only for the brief
+  /// window before [_assignDefaultColor] has run (it needs the saved
+  /// colours, which are fetched asynchronously). Never written to directly
+  /// outside [_assignDefaultColor]/[_pickColor]/[_pickCustomColor]/
+  /// [_removeSavedColor].
+  String? _selectedColor;
+
+  /// The one-time random default ([randomEventColor]), computed once by
+  /// [_assignDefaultColor] and never recomputed afterwards. Kept
+  /// separately from [_selectedColor] so that removing whichever saved
+  /// tile the student has selected has something fixed to fall back to,
+  /// without ever drawing a fresh random colour.
+  String? _defaultColor;
+
+  /// True once [_assignDefaultColor] has run — guards it from ever running
+  /// a second time, since the random pick must happen exactly once per
+  /// screen open and then stay fixed.
+  bool _defaultColorAssigned = false;
+
+  /// True once the student has explicitly picked a tile or a dialog
+  /// colour — after that, [_assignDefaultColor] must never override her
+  /// choice, even if it's still resolving when she picks.
+  bool _colorPickedByUser = false;
+
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
+
+  /// The student's saved quick-colours, fetched once when this screen
+  /// opens — also exactly the "standalone event colours" [randomEventColor]
+  /// excludes, since a saved colour is by definition one a standalone event
+  /// already uses. Starts empty, which [_assignDefaultColor] treats as "no
+  /// standalone colours to exclude"; a failed read falls back to the same.
+  List<String> _savedColors = [];
 
   bool _reminderEnabled = false;
 
@@ -103,16 +140,11 @@ class _AddEventScreenState extends State<AddEventScreen> {
 
   DateTime get _now => widget.now ?? DateTime.now();
 
-  /// The four offered swatches: the pool minus every hue the student's
-  /// courses already use, so a hand-coloured event can't be mistaken for a
-  /// course-linked one.
-  List<String> get _swatches =>
-      eventSwatchesFor(widget.courses.map((c) => c.color));
-
   /// A course's colour wins over the presets — the chip says the event
   /// "will use this course color", so the picker is replaced, not merely
-  /// overridden.
-  String get _effectiveColor => _selectedCourse?.color ?? _selectedColor;
+  /// overridden. Null only while no course is selected and the one-time
+  /// default hasn't resolved yet — [_saveReason] gates Save on that.
+  String? get _effectiveColor => _selectedCourse?.color ?? _selectedColor;
 
   bool get _nameFilled => _nameController.text.trim().isNotEmpty;
 
@@ -136,10 +168,17 @@ class _AddEventScreenState extends State<AddEventScreen> {
   /// Why Save is disabled, or null when the form is ready to submit.
   String? get _saveReason {
     if (!_nameFilled) return kSaveReasonName;
+    if (_effectiveColor == null) return kSaveReasonColor;
     if (_selectedDate == null) return kSaveReasonDate;
     if (_selectedTime == null) return kSaveReasonTime;
     if (_reminderInvalid) return kSaveReasonReminder;
     return null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedColors();
   }
 
   @override
@@ -148,10 +187,61 @@ class _AddEventScreenState extends State<AddEventScreen> {
     super.dispose();
   }
 
+  Future<void> _loadSavedColors() async {
+    var saved = const <String>[];
+    try {
+      saved = await widget.calendarService.loadSavedEventColors(widget.uid);
+    } catch (_) {
+      // Never blocks the form: the default below still gets assigned, just
+      // with no standalone colours to exclude, and the row falls back to
+      // showing only the default tile and the "+".
+    }
+    if (!mounted) return;
+    setState(() {
+      _savedColors = saved;
+      _assignDefaultColor();
+    });
+  }
+
+  /// Picks the one-time random default and, unless the student has already
+  /// picked something herself in the meantime, selects it. Guarded by
+  /// [_defaultColorAssigned] so this can only ever run once per screen
+  /// open — the pick itself must never change afterwards, including on a
+  /// later reload.
+  void _assignDefaultColor() {
+    if (_defaultColorAssigned) return;
+    _defaultColorAssigned = true;
+    _defaultColor = randomEventColor(
+      courseColors: widget.courses.map((c) => c.color),
+      standaloneColors: _savedColors,
+      random: widget.random,
+    );
+    if (!_colorPickedByUser) _selectedColor = _defaultColor;
+  }
+
+  /// Drops [hex] from the saved list immediately (no confirmation) and, if
+  /// it was the selected colour, falls back to the fixed one-time default
+  /// — never a freshly-drawn random colour.
+  /// The Firestore write is fire-and-forget — best effort, and never
+  /// touches any event.
+  void _removeSavedColor(String hex) {
+    setState(() {
+      _savedColors = _savedColors
+          .where((c) => c.toUpperCase() != hex.toUpperCase())
+          .toList();
+      if (_selectedColor != null &&
+          _selectedColor!.toUpperCase() == hex.toUpperCase()) {
+        _selectedColor = _defaultColor;
+        _colorPickedByUser = false;
+      }
+    });
+    unawaited(widget.calendarService.removeSavedEventColor(widget.uid, hex));
+  }
+
   Future<void> _pickDate() async {
     final picked = await pickEventDate(
       context: context,
-      initialDate: _selectedDate ?? widget.initialDate ?? _now,
+      initialDate: _selectedDate ?? _now,
       now: _now,
     );
     if (picked == null) return;
@@ -162,6 +252,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
     final picked = await pickEventTime(
       context: context,
       initialTime: _selectedTime,
+      now: _now,
     );
     if (picked == null) return;
     setState(() => _selectedTime = picked);
@@ -231,7 +322,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
       reminderEnabled: _reminderEnabled,
       reminderBefore: _reminderEnabled ? _reminderAmount : null,
       reminderUnit: _reminderEnabled ? _reminderUnit : null,
-      color: _effectiveColor,
+      color: _effectiveColor!,
       // Filled in from the signed-in student by CalendarService.addEvent;
       // this screen has no access to the student's email.
       email: '',
@@ -272,6 +363,18 @@ class _AddEventScreenState extends State<AddEventScreen> {
       // skipped silently.
       await widget.calendarService.addEvent(widget.uid, toSave);
 
+      // Only a standalone event's colour feeds the saved list — a
+      // course-linked event's colour comes from the course, not a pick of
+      // its own. Fire-and-forget: best effort, never delays the pop below.
+      if (_selectedCourse == null) {
+        unawaited(
+          widget.calendarService.recordStandaloneEventColor(
+            widget.uid,
+            toSave.color,
+          ),
+        );
+      }
+
       if (!mounted) return;
       // Captured before popping: the message is shown on the Calendar screen
       // underneath, which is where the student lands.
@@ -303,11 +406,18 @@ class _AddEventScreenState extends State<AddEventScreen> {
   Widget build(BuildContext context) {
     final reason = _saveReason;
 
-    return Scaffold(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.navy),
+      child: Scaffold(
       backgroundColor: Colors.white,
       body: Column(
         children: [
-          _AddEventHeader(enabled: !_saving),
+          ScreenHeader(
+            title: 'Add Event',
+            subtitle: 'Add an event to your calendar',
+            backgroundColor: AppColors.navy,
+            onClose: _saving ? null : () => Navigator.of(context).pop(),
+          ),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(22),
@@ -365,12 +475,19 @@ class _AddEventScreenState extends State<AddEventScreen> {
                     const SizedBox(height: 24),
                     const _FieldLabel('EVENT COLOR'),
                     const SizedBox(height: 10),
-                    _ColorSwatchRow(
-                      swatches: _swatches,
+                    _ColorSwatchGrid(
+                      tiles: eventColorTiles(
+                        savedColors: _savedColors,
+                        courseColors: widget.courses.map((c) => c.color),
+                        selectedColor: _selectedColor,
+                      ),
                       selected: _selectedColor,
-                      onSelected: (hex) =>
-                          setState(() => _selectedColor = hex),
+                      onSelected: (hex) => setState(() {
+                        _selectedColor = hex;
+                        _colorPickedByUser = true;
+                      }),
                       onCustom: _pickCustomColor,
+                      onRemove: _removeSavedColor,
                     ),
                   ],
 
@@ -473,66 +590,20 @@ class _AddEventScreenState extends State<AddEventScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
   Future<void> _pickCustomColor() async {
-    final picked = await showEventColorPicker(
-      context: context,
-      initial: parseHexColor(_selectedColor),
+    final initial = parseHexColor(
+      _selectedColor ?? _defaultColor ?? kEventSwatchPool.first,
     );
+    final picked = await showColorPicker(context: context, initial: initial);
     if (picked == null) return;
-    setState(() => _selectedColor = hexFromColor(picked));
-  }
-}
-
-/// Navy header with the circular back chip.
-class _AddEventHeader extends StatelessWidget {
-  const _AddEventHeader({required this.enabled});
-
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        color: AppColors.navy,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
-      ),
-      padding: const EdgeInsets.fromLTRB(22, 0, 22, 22),
-      child: SafeArea(
-        bottom: false,
-        child: Row(
-          children: [
-            Semantics(
-              button: true,
-              label: 'Back',
-              child: GestureDetector(
-                onTap: enabled ? () => Navigator.of(context).pop() : null,
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.chevron_left,
-                    size: 19,
-                    color: Colors.white.withValues(alpha: enabled ? 1 : 0.4),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 13),
-            Text('Add Event', style: CalendarText.headerTitle),
-          ],
-        ),
-      ),
-    );
+    setState(() {
+      _selectedColor = hexFromColor(picked);
+      _colorPickedByUser = true;
+    });
   }
 }
 
@@ -824,78 +895,61 @@ class _CourseColorChip extends StatelessWidget {
   }
 }
 
-/// The four course-aware swatches plus the dashed "+" for a custom colour.
-class _ColorSwatchRow extends StatelessWidget {
-  const _ColorSwatchRow({
-    required this.swatches,
+/// The saved/default/selected colour tiles plus the rainbow "+" for a
+/// custom colour, in the same 5-column grid as Add course's colour grid so
+/// the two screens' pickers look and size identically.
+class _ColorSwatchGrid extends StatelessWidget {
+  const _ColorSwatchGrid({
+    required this.tiles,
     required this.selected,
     required this.onSelected,
     required this.onCustom,
+    required this.onRemove,
   });
 
-  final List<String> swatches;
-  final String selected;
+  final List<EventColorTile> tiles;
+  final String? selected;
   final ValueChanged<String> onSelected;
   final VoidCallback onCustom;
+  final ValueChanged<String> onRemove;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return GridView.count(
+      crossAxisCount: 5,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      // Without an explicit padding, a ListView/GridView pads itself with
+      // the ambient MediaQuery safe-area insets (status bar / nav bar) —
+      // meant for a full-bleed scrollable, not this short, shrink-wrapped
+      // grid sitting inside an already-padded SingleChildScrollView. This
+      // screen's body (unlike Add course's, which wraps its whole body in
+      // SafeArea) has no SafeArea around the scroll area, so that padding
+      // leaked straight through and showed up as two large gaps around the
+      // colour tiles on a real device — invisible in a widget test, whose
+      // default MediaQuery has zero padding.
+      padding: EdgeInsets.zero,
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      childAspectRatio: 1,
       children: [
-        for (final hex in swatches) ...[
-          Semantics(
-            button: true,
-            selected: hex == selected,
-            label: 'Event color $hex',
-            child: GestureDetector(
-              onTap: () => onSelected(hex),
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                width: 52,
-                height: 52,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: parseHexColor(hex),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: hex == selected
-                      ? [
-                          BoxShadow(
-                            color: AppColors.navy.withValues(alpha: 0.22),
-                            offset: const Offset(0, 3),
-                          ),
-                        ]
-                      : const [
-                          BoxShadow(
-                            color: AppColors.cardTint,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                ),
-                child: hex == selected
-                    ? const Icon(Icons.check, size: 22, color: Colors.white)
-                    : null,
-              ),
-            ),
+        for (final tile in tiles)
+          ColorSwatchTile(
+            key: ValueKey(tile.hex),
+            color: parseHexColor(tile.hex),
+            hex: tile.hex,
+            selected: tile.hex.toUpperCase() == selected?.toUpperCase(),
+            onTap: () => onSelected(tile.hex),
+            onRemove: tile.removable ? () => onRemove(tile.hex) : null,
           ),
-          const SizedBox(width: 10),
-        ],
-        Semantics(
-          button: true,
-          label: 'Custom event color',
-          child: GestureDetector(
-            key: const ValueKey('custom-color'),
-            onTap: onCustom,
-            behavior: HitTestBehavior.opaque,
-            child: DashedRoundedBorder(
-              color: AppColors.textOnDisabled,
-              borderRadius: 16,
-              child: const SizedBox(
-                width: 52,
-                height: 52,
-                child: Icon(Icons.add, size: 20, color: AppColors.textSecondary),
-              ),
-            ),
-          ),
+        // Never shown as selected: a colour picked from its dialog gets its
+        // own extra tile (added by `eventColorTiles`) rather than marking
+        // the "+" itself — unlike Add course, which has no such extra tile
+        // and so marks the "+" directly instead.
+        CustomColorSwatchTile(
+          key: const ValueKey('custom-color'),
+          selected: false,
+          onTap: onCustom,
         ),
       ],
     );

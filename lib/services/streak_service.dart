@@ -57,12 +57,12 @@ int effectiveStreak({
   return gapInDays <= 1 ? storedStreak : 0;
 }
 
-/// Firestore-backed wrapper around [computeNextStreak]. Called once a quiz
-/// session is actually committed (completed) — see
-/// `QuizSessionService.completeSession` and `.submitExamSession`, its two
-/// current callers. Flashcard session completion (Deemah's feature, not
-/// built yet) will call this too once it exists. Never touches
-/// totalPoints — the streak is fully independent of the points system.
+/// Firestore-backed wrapper around [computeNextStreak]. Called once a real
+/// (non-practice) session is actually committed (completed) — see
+/// `QuizSessionService.completeSession`/`.submitExamSession` and
+/// `FlashcardService.completeSession`, its three current callers. Never
+/// touches totalPoints — the streak is fully independent of the points
+/// system.
 class StreakService {
   StreakService({FirebaseFirestore? firestore})
     : _firestoreOverride = firestore;

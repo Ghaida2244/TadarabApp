@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/course.dart';
 import '../../services/courses_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
+import '../../widgets/status_bar_style.dart';
 import 'add_course_screen.dart';
 import 'course_detail_screen.dart';
 import 'widgets/course_icon.dart';
@@ -84,34 +86,39 @@ class _CoursesListScreenState extends State<CoursesListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: FutureBuilder<List<CourseListItem>>(
-          future: _courses,
-          builder: (context, snapshot) {
-            final items = snapshot.data;
-            final loading = snapshot.connectionState != ConnectionState.done;
-            final hasError = snapshot.hasError;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.navy),
+      child: Scaffold(
+        body: SafeArea(
+          top: false,
+          bottom: false,
+          child: FutureBuilder<List<CourseListItem>>(
+            future: _courses,
+            builder: (context, snapshot) {
+              final items = snapshot.data;
+              final loading =
+                  snapshot.connectionState != ConnectionState.done;
+              final hasError = snapshot.hasError;
 
-            return Column(
-              children: [
-                _Header(
-                  courseCount: loading || hasError ? null : items!.length,
-                  onAdd: _openAddCourse,
-                ),
-                Expanded(
-                  child: loading
-                      ? const Center(child: CircularProgressIndicator())
-                      : hasError
-                      ? _ErrorState(onRetry: _reload)
-                      : items!.isEmpty
-                      ? _EmptyState(onAdd: _openAddCourse)
-                      : _CourseList(items: items, onTap: _openCourseDetail),
-                ),
-              ],
-            );
-          },
+              return Column(
+                children: [
+                  _Header(
+                    courseCount: loading || hasError ? null : items!.length,
+                    onAdd: _openAddCourse,
+                  ),
+                  Expanded(
+                    child: loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : hasError
+                        ? _ErrorState(onRetry: _reload)
+                        : items!.isEmpty
+                        ? _EmptyState(onAdd: _openAddCourse)
+                        : _CourseList(items: items, onTap: _openCourseDetail),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -132,56 +139,62 @@ class _Header extends StatelessWidget {
         color: AppColors.navy,
         borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Courses',
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.02 * 26,
-                  color: Colors.white,
-                ),
-              ),
-              if (courseCount != null)
-                Text(
-                  '$courseCount course${courseCount == 1 ? '' : 's'}',
+      child: SafeArea(
+        bottom: false,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Courses',
                   style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white.withValues(alpha: 0.65),
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.02 * 26,
+                    color: Colors.white,
                   ),
                 ),
-            ],
-          ),
-          // Hidden at zero courses — the big "Add your first course" button
-          // in the empty state is the only add action there, per the
-          // design note. Also hidden while courseCount is still unknown
-          // (loading/error), since it's not yet known whether there's a
-          // course to count.
-          if (courseCount != null && courseCount! > 0)
-            GestureDetector(
-              onTap: onAdd,
-              child: Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(
-                  color: AppColors.red,
-                  borderRadius: BorderRadius.all(Radius.circular(14)),
-                  boxShadow: [
-                    BoxShadow(color: AppColors.redShadow, offset: Offset(0, 4)),
-                  ],
-                ),
-                child: const Icon(Icons.add, size: 24, color: Colors.white),
-              ),
+                if (courseCount != null)
+                  Text(
+                    '$courseCount course${courseCount == 1 ? '' : 's'}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white.withValues(alpha: 0.65),
+                    ),
+                  ),
+              ],
             ),
-        ],
+            // Hidden at zero courses — the big "Add your first course" button
+            // in the empty state is the only add action there, per the
+            // design note. Also hidden while courseCount is still unknown
+            // (loading/error), since it's not yet known whether there's a
+            // course to count.
+            if (courseCount != null && courseCount! > 0)
+              GestureDetector(
+                onTap: onAdd,
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: AppColors.red,
+                    borderRadius: BorderRadius.all(Radius.circular(14)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.redShadow,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.add, size: 24, color: Colors.white),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

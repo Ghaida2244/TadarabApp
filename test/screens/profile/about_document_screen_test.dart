@@ -225,6 +225,8 @@ void main() {
       expect(retake.body, contains('earns its own points'));
       expect(retake.body, contains('new questions or cards'));
       expect(retake.body, isNot(contains('Replaces your old results')));
+      // No em dash — the design handoff's copy style avoids it.
+      expect(retake.body, isNot(contains('—')));
     });
 
     test('the points tiles match the values the code actually awards', () {

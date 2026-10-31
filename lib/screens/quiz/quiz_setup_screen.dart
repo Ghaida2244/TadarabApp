@@ -8,6 +8,7 @@ import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/generation_loading_overlay.dart';
+import '../../widgets/status_bar_style.dart';
 import 'quiz_play_screen.dart';
 import 'widgets/quiz_icon_button.dart';
 
@@ -17,8 +18,7 @@ import 'widgets/quiz_icon_button.dart';
 const kQuizLoadingConfig = GenerationLoadingConfig(
   sentence: 'Preparing your quiz...',
   tip: 'Try to answer before you look at the options.',
-  longWaitMessage:
-      "Thanks for your patience. We're still putting it together.",
+  longWaitMessage: "Thanks for your patience. We're still putting it together.",
 );
 
 /// Retake's own wording for the Quiz generating overlay — same tip and
@@ -27,8 +27,7 @@ const kQuizLoadingConfig = GenerationLoadingConfig(
 const kQuizRetakeLoadingConfig = GenerationLoadingConfig(
   sentence: 'Creating new questions for you...',
   tip: 'Try to answer before you look at the options.',
-  longWaitMessage:
-      "Thanks for your patience. We're still putting it together.",
+  longWaitMessage: "Thanks for your patience. We're still putting it together.",
 );
 
 /// Materials (multi-select), difficulty (multi-select), question-count
@@ -158,8 +157,7 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
       if (!mounted) return;
       setState(() {
         _generating = false;
-        _errorMessage = e.note ??
-            "Your material couldn't support any questions. Try adding another material.";
+        _errorMessage = e.note ?? "Your material couldn't support any questions. Try adding another material.";
       });
     } on GenerationFailure catch (e) {
       if (!mounted) return;
@@ -176,7 +174,10 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
     }
   }
 
-  Future<bool?> _showLimitDialog({required int actual, required int requested}) {
+  Future<bool?> _showLimitDialog({
+    required int actual,
+    required int requested,
+  }) {
     return showDialog<bool>(
       context: context,
       builder: (context) => Dialog(
@@ -194,10 +195,17 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                   color: AppColors.warningBackground,
                   borderRadius: BorderRadius.circular(17),
                 ),
-                child: const Icon(Icons.warning_amber_rounded, color: AppColors.warningText),
+                child: const Icon(
+                  Icons.warning_amber_rounded,
+                  color: AppColors.warningText,
+                ),
               ),
               const SizedBox(height: 13),
-              Text('Fewer questions than asked', style: AppTypography.quizDialogTitle, textAlign: TextAlign.center),
+              Text(
+                'Fewer questions than asked',
+                style: AppTypography.quizDialogTitle,
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 8),
               Text(
                 'Your material supported $actual solid questions out of the $requested you aimed for. '
@@ -228,109 +236,133 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
-                  decoration: const BoxDecoration(
-                    color: AppColors.navy,
-                    borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
-                  ),
-                  child: Row(
-                    children: [
-                      QuizIconButton(
-                        icon: Icons.arrow_back,
-                        semanticLabel: 'Back',
-                        onTap: () => Navigator.of(context).maybePop(),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.navy),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          top: false,
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
+                    decoration: const BoxDecoration(
+                      color: AppColors.navy,
+                      borderRadius: BorderRadius.vertical(
+                        bottom: Radius.circular(28),
                       ),
-                      const SizedBox(width: 13),
-                      Text('Quiz setup', style: AppTypography.quizHeaderTitle),
-                    ],
+                    ),
+                    child: SafeArea(
+                      bottom: false,
+                      child: Row(
+                        children: [
+                          QuizIconButton(
+                            icon: Icons.arrow_back,
+                            semanticLabel: 'Back',
+                            onTap: () => Navigator.of(context).maybePop(),
+                          ),
+                          const SizedBox(width: 13),
+                          Text(
+                            'Quiz setup',
+                            style: AppTypography.quizHeaderTitle,
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: FutureBuilder<List<StudyMaterial>>(
-                    future: _materialsFuture,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState != ConnectionState.done) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      final materials = snapshot.data ?? const [];
-                      return SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(22, 4, 22, 16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (_errorMessage != null) ...[
-                              _ErrorBanner(message: _errorMessage!),
-                              const SizedBox(height: 16),
+                  Expanded(
+                    child: FutureBuilder<List<StudyMaterial>>(
+                      future: _materialsFuture,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState != ConnectionState.done) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+                        final materials = snapshot.data ?? const [];
+                        return SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(22, 4, 22, 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (_errorMessage != null) ...[
+                                _ErrorBanner(message: _errorMessage!),
+                                const SizedBox(height: 16),
+                              ],
+                              _buildMaterialsSection(materials),
+                              const SizedBox(height: 22),
+                              _buildDifficultySection(),
+                              const SizedBox(height: 22),
+                              _buildCountSection(),
+                              const SizedBox(height: 22),
+                              _buildModeSection(),
+                              const SizedBox(height: 22),
+                              _buildExtraInstructionsSection(),
                             ],
-                            _buildMaterialsSection(materials),
-                            const SizedBox(height: 22),
-                            _buildDifficultySection(),
-                            const SizedBox(height: 22),
-                            _buildCountSection(),
-                            const SizedBox(height: 22),
-                            _buildModeSection(),
-                            const SizedBox(height: 22),
-                            _buildExtraInstructionsSection(),
-                          ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(22, 14, 22, 26),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(26),
+                      ),
+                      // Matches flashcard_setup_screen.dart's _Footer exactly
+                      // (same faint upward shadow, same button shadow/fill
+                      // logic) — Quiz setup is the look-and-feel reference
+                      // everywhere else on this screen; the footer is the one
+                      // place Flashcards was already right and Quiz wasn't.
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.navy.withValues(alpha: 0.05),
+                          offset: const Offset(0, -3),
                         ),
-                      );
-                    },
+                      ],
+                    ),
+                    child: FutureBuilder<List<StudyMaterial>>(
+                      future: _materialsFuture,
+                      builder: (context, snapshot) {
+                        final materials = snapshot.data ?? const [];
+                        final canGenerate =
+                            !_generating &&
+                            _selectedMaterialIds.isNotEmpty &&
+                            _selectedDifficulties.isNotEmpty &&
+                            snapshot.connectionState == ConnectionState.done;
+                        return AppButton(
+                          label: 'Generate quiz',
+                          variant: AppButtonVariant.accent,
+                          height: 56,
+                          borderRadius: 18,
+                          shadowColor: canGenerate
+                              ? AppColors.redShadow.withValues(alpha: 0.6)
+                              : Colors.transparent,
+                          disabledBackgroundColor: AppColors.disabledRedFill,
+                          onPressed: canGenerate
+                              ? () => _generate(materials)
+                              : null,
+                        );
+                      },
+                    ),
                   ),
-                ),
-                Container(
-                  padding: const EdgeInsets.fromLTRB(22, 14, 22, 26),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
-                    // Matches flashcard_setup_screen.dart's _Footer exactly
-                    // (same faint upward shadow, same button shadow/fill
-                    // logic) — Quiz setup is the look-and-feel reference
-                    // everywhere else on this screen; the footer is the one
-                    // place Flashcards was already right and Quiz wasn't.
-                    boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: 0.05), offset: const Offset(0, -3))],
-                  ),
-                  child: FutureBuilder<List<StudyMaterial>>(
-                    future: _materialsFuture,
-                    builder: (context, snapshot) {
-                      final materials = snapshot.data ?? const [];
-                      final canGenerate = !_generating &&
-                          _selectedMaterialIds.isNotEmpty &&
-                          _selectedDifficulties.isNotEmpty &&
-                          snapshot.connectionState == ConnectionState.done;
-                      return AppButton(
-                        label: 'Generate quiz',
-                        variant: AppButtonVariant.accent,
-                        height: 56,
-                        borderRadius: 18,
-                        shadowColor: canGenerate
-                            ? AppColors.redShadow.withValues(alpha: 0.6)
-                            : Colors.transparent,
-                        disabledBackgroundColor: AppColors.disabledRedFill,
-                        onPressed: canGenerate ? () => _generate(materials) : null,
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-            if (_generating)
-              GenerationLoadingOverlay(
-                config: kQuizLoadingConfig,
-                fixedLine: buildGenerationFixedLine(
-                  count: _count,
-                  noun: 'questions',
-                  difficulties: _selectedDifficulties,
-                ),
+                ],
               ),
-          ],
+              if (_generating)
+                GenerationLoadingOverlay(
+                  config: kQuizLoadingConfig,
+                  fixedLine: buildGenerationFixedLine(
+                    count: _count,
+                    noun: 'questions',
+                    difficulties: _selectedDifficulties,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -340,15 +372,22 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
     final summary = _selectedMaterialIds.isEmpty
         ? 'Select materials'
         : (_selectedMaterialIds.length == 1
-            ? materials
-                .firstWhere(
-                  (m) => m.materialId == _selectedMaterialIds.first,
-                  orElse: () => materials.isEmpty
-                      ? StudyMaterial(materialId: '', title: '', type: '', document: '', courseId: '', extractedText: '')
-                      : materials.first,
-                )
-                .title
-            : '${_selectedMaterialIds.length} materials selected');
+              ? materials
+                    .firstWhere(
+                      (m) => m.materialId == _selectedMaterialIds.first,
+                      orElse: () => materials.isEmpty
+                          ? StudyMaterial(
+                              materialId: '',
+                              title: '',
+                              type: '',
+                              document: '',
+                              courseId: '',
+                              extractedText: '',
+                            )
+                          : materials.first,
+                    )
+                    .title
+              : '${_selectedMaterialIds.length} materials selected');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -377,7 +416,11 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                     color: AppColors.cardTint,
                     borderRadius: BorderRadius.circular(11),
                   ),
-                  child: const Icon(Icons.menu_book_outlined, size: 17, color: AppColors.navy),
+                  child: const Icon(
+                    Icons.menu_book_outlined,
+                    size: 17,
+                    color: AppColors.navy,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -385,12 +428,16 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                     summary,
                     style: AppTypography.quizOption(
                       FontWeight.w900,
-                      color: _selectedMaterialIds.isEmpty ? AppColors.placeholder : AppColors.navy,
+                      color: _selectedMaterialIds.isEmpty
+                          ? AppColors.placeholder
+                          : AppColors.navy,
                     ),
                   ),
                 ),
                 Icon(
-                  _materialsOpen ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                  _materialsOpen
+                      ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down,
                   color: AppColors.textSecondary,
                 ),
               ],
@@ -464,7 +511,10 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                     decoration: BoxDecoration(
                       color: on ? AppColors.navy : Colors.white,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: on ? AppColors.navy : AppColors.borderDefault, width: 2),
+                      border: Border.all(
+                        color: on ? AppColors.navy : AppColors.borderDefault,
+                        width: 2,
+                      ),
                       // A subtle soft shadow on the selected button only —
                       // unselected stays flat with just its border. KEEP
                       // THESE EXACT VALUES IN SYNC with
@@ -553,7 +603,12 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
         Row(
           children: [
             Text('EXTRA INSTRUCTIONS ', style: AppTypography.quizEyebrow),
-            Text('· OPTIONAL', style: AppTypography.quizEyebrow.copyWith(color: AppColors.textOnDisabled)),
+            Text(
+              '· OPTIONAL',
+              style: AppTypography.quizEyebrow.copyWith(
+                color: AppColors.textOnDisabled,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 9),
@@ -565,15 +620,26 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
               onTap: () {
                 final next = chip.length > 300 ? chip.substring(0, 300) : chip;
                 _promptController.text = next;
-                _promptController.selection = TextSelection.collapsed(offset: next.length);
+                _promptController.selection = TextSelection.collapsed(
+                  offset: next.length,
+                );
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(color: AppColors.borderDefault, width: 2),
                 ),
-                child: Text(chip, style: AppTypography.quizOption(FontWeight.w900, color: AppColors.disabledMuted).copyWith(fontSize: 12)),
+                child: Text(
+                  chip,
+                  style: AppTypography.quizOption(
+                    FontWeight.w900,
+                    color: AppColors.disabledMuted,
+                  ).copyWith(fontSize: 12),
+                ),
               ),
             );
           }).toList(),
@@ -583,10 +649,18 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
           controller: _promptController,
           maxLength: 300,
           maxLines: 3,
-          buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+          buildCounter: (
+            _, {
+            required currentLength,
+            required isFocused,
+            maxLength,
+          }) => null,
           decoration: InputDecoration(
             hintText: 'e.g. include an example with each question',
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 13,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
               borderSide: BorderSide(color: edgeColor, width: 2),
@@ -607,10 +681,18 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              atLimit ? 'Character limit reached' : (approaching ? 'Approaching the limit' : ''),
-              style: AppTypography.quizEmptyBody.copyWith(color: counterColor, fontSize: 11),
+              atLimit
+                  ? 'Character limit reached'
+                  : (approaching ? 'Approaching the limit' : ''),
+              style: AppTypography.quizEmptyBody.copyWith(
+                color: counterColor,
+                fontSize: 11,
+              ),
             ),
-            Text('$length/300', style: AppTypography.quizBadge.copyWith(color: counterColor)),
+            Text(
+              '$length/300',
+              style: AppTypography.quizBadge.copyWith(color: counterColor),
+            ),
           ],
         ),
       ],
@@ -630,7 +712,11 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
 }
 
 class _MaterialRow extends StatelessWidget {
-  const _MaterialRow({required this.material, required this.selected, required this.onTap});
+  const _MaterialRow({
+    required this.material,
+    required this.selected,
+    required this.onTap,
+  });
 
   final StudyMaterial material;
   final bool selected;
@@ -656,15 +742,28 @@ class _MaterialRow extends StatelessWidget {
               decoration: BoxDecoration(
                 color: selected ? AppColors.navy : Colors.white,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: selected ? AppColors.navy : AppColors.borderLight, width: 2),
+                border: Border.all(
+                  color: selected ? AppColors.navy : AppColors.borderLight,
+                  width: 2,
+                ),
               ),
-              child: selected ? const Icon(Icons.check, size: 14, color: Colors.white) : null,
+              child: selected
+                  ? const Icon(Icons.check, size: 14, color: Colors.white)
+                  : null,
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(material.title, style: AppTypography.quizOption(FontWeight.w900)),
+              child: Text(
+                material.title,
+                style: AppTypography.quizOption(FontWeight.w900),
+              ),
             ),
-            Text(material.type.toUpperCase(), style: AppTypography.quizBadge.copyWith(color: AppColors.placeholder)),
+            Text(
+              material.type.toUpperCase(),
+              style: AppTypography.quizBadge.copyWith(
+                color: AppColors.placeholder,
+              ),
+            ),
           ],
         ),
       ),
@@ -673,7 +772,11 @@ class _MaterialRow extends StatelessWidget {
 }
 
 class _StepperButton extends StatelessWidget {
-  const _StepperButton({required this.icon, required this.enabled, required this.onTap});
+  const _StepperButton({
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
 
   final IconData icon;
   final bool enabled;
@@ -691,7 +794,10 @@ class _StepperButton extends StatelessWidget {
           color: enabled ? AppColors.navy : AppColors.cardTint,
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: enabled ? Colors.white : AppColors.textOnDisabled),
+        child: Icon(
+          icon,
+          color: enabled ? Colors.white : AppColors.textOnDisabled,
+        ),
       ),
     );
   }
@@ -781,8 +887,12 @@ class _CountStepperState extends State<_CountStepper> {
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             onSubmitted: (_) => _focusNode.unfocus(),
-            style: AppTypography.quizOption(FontWeight.w900).copyWith(fontSize: 30),
-            decoration: const InputDecoration(border: InputBorder.none, isDense: true),
+            style: AppTypography.quizOption(FontWeight.w900)
+                .copyWith(fontSize: 30),
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+            ),
           ),
         ),
         const SizedBox(width: 14),
@@ -820,7 +930,10 @@ class _ModeCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: selected ? AppColors.navy : Colors.white,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: selected ? AppColors.navy : AppColors.borderDefault, width: 2),
+          border: Border.all(
+            color: selected ? AppColors.navy : AppColors.borderDefault,
+            width: 2,
+          ),
         ),
         child: Row(
           children: [
@@ -829,22 +942,36 @@ class _ModeCard extends StatelessWidget {
               height: 38,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: selected ? Colors.white.withValues(alpha: 0.18) : AppColors.cardTint,
+                color: selected
+                    ? Colors.white.withValues(alpha: 0.18)
+                    : AppColors.cardTint,
                 borderRadius: BorderRadius.circular(13),
               ),
-              child: Icon(icon, size: 19, color: selected ? Colors.white : AppColors.navy),
+              child: Icon(
+                icon,
+                size: 19,
+                color: selected ? Colors.white : AppColors.navy,
+              ),
             ),
             const SizedBox(width: 13),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: AppTypography.quizOption(FontWeight.w900, color: selected ? Colors.white : AppColors.navy)),
+                  Text(
+                    title,
+                    style: AppTypography.quizOption(
+                      FontWeight.w900,
+                      color: selected ? Colors.white : AppColors.navy,
+                    ),
+                  ),
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
                     style: AppTypography.quizEmptyBody.copyWith(
-                      color: selected ? Colors.white.withValues(alpha: 0.7) : AppColors.textSecondary,
+                      color: selected
+                          ? Colors.white.withValues(alpha: 0.7)
+                          : AppColors.textSecondary,
                       fontSize: 12,
                     ),
                   ),

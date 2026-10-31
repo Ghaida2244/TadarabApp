@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
@@ -10,8 +11,12 @@ import 'package:tadarab_app/screens/calendar/add_event_screen.dart';
 import 'package:tadarab_app/screens/calendar/calendar_styles.dart';
 import 'package:tadarab_app/screens/calendar/widgets/reminder_card.dart';
 import 'package:tadarab_app/services/calendar_service.dart';
+import 'package:tadarab_app/services/courses_service.dart' show kCoursePresetColors;
 import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
+import 'package:tadarab_app/widgets/color_picker_dialog.dart';
+import 'package:tadarab_app/widgets/color_swatch_tile.dart';
+import 'package:tadarab_app/widgets/screen_header.dart';
 
 import '../../helpers/fake_calendar_service.dart';
 import '../../helpers/fake_reminder_scheduler.dart';
@@ -19,7 +24,7 @@ import '../../helpers/fake_reminder_scheduler.dart';
 void main() {
   // "Now" is 9:00 AM on Sunday 3 May 2026, so every reminder assertion is
   // deterministic. The date picker opens on May 2026.
-  final now = DateTime(2026, 5, 3, 9, 0);
+  final mainNow = DateTime(2026, 5, 3, 9, 0);
 
   final aCourse = Course(
     courseId: 'c1',
@@ -37,8 +42,17 @@ void main() {
     List<Course> courses = const [],
     FakeCalendarService? service,
     FakeReminderScheduler? reminderScheduler,
+    DateTime? now,
+    List<String> savedColors = const [],
+    CalendarFailure? savedColorsError,
+    Random? random,
   }) async {
-    calendarService = service ?? FakeCalendarService();
+    calendarService =
+        service ??
+        FakeCalendarService(
+          savedColors: savedColors,
+          savedColorsError: savedColorsError,
+        );
     scheduler = reminderScheduler ?? FakeReminderScheduler();
     poppedResult = null;
 
@@ -61,8 +75,8 @@ void main() {
                       calendarService: calendarService,
                       courses: courses,
                       reminderScheduler: scheduler,
-                      initialDate: DateTime(2026, 5, 1),
-                      now: now,
+                      now: now ?? mainNow,
+                      random: random,
                     ),
                   ),
                 );
@@ -75,6 +89,18 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
+  }
+
+  /// The hex of whichever colour tile is currently marked selected, or
+  /// null if none is (only possible for the brief window before the
+  /// screen's one-time default has resolved).
+  String? selectedColorHex(WidgetTester tester) {
+    for (final tile in tester.widgetList<ColorSwatchTile>(
+      find.byType(ColorSwatchTile),
+    )) {
+      if (tile.selected) return tile.hex;
+    }
+    return null;
   }
 
   Future<void> tapVisible(WidgetTester tester, Finder finder) async {
@@ -108,9 +134,11 @@ void main() {
     await tapVisible(tester, find.text('OK'));
   }
 
-  /// Accepts the time picker's default (9:00 AM, from `pickEventTime`).
-  /// The dial itself isn't driven — every assertion here only needs *a*
-  /// time, and the wrapper's default keeps that deterministic.
+  /// Accepts the time picker's own default — `now`'s hour and minute
+  /// (9:00 AM here, since that's `now`'s own time above) when the field
+  /// is still empty, per `pickEventTime`. The dial itself isn't driven —
+  /// every assertion here only needs *a* time, and the wrapper's default
+  /// keeps that deterministic.
   Future<void> pickDefaultTime(WidgetTester tester) async {
     await tapVisible(tester, find.byKey(const ValueKey('event-time')));
     await tapVisible(tester, find.text('OK'));
@@ -301,34 +329,372 @@ void main() {
     });
   });
 
-  group('colour swatches', () {
-    testWidgets('excludes hues the student\'s courses already use', (
+  group('colour row', () {
+    testWidgets(
+      'the default is a seeded-random pool colour, preselected, when '
+      'nothing is taken',
+      (tester) async {
+        final expected = randomEventColor(
+          courseColors: const [],
+          standaloneColors: const [],
+          random: Random(1),
+        );
+
+        await pumpAddEvent(tester, random: Random(1));
+        await fillValidForm(tester);
+        await tapVisible(tester, find.text('Save Event'));
+
+        expect(calendarService.addedEvents.single.color, expected);
+      },
+    );
+
+    testWidgets('the default is never one of the five presets', (
       tester,
     ) async {
-      // IS230 is #16A34A, the first entry in the pool.
-      await pumpAddEvent(tester, courses: [aCourse]);
+      for (var seed = 0; seed < 10; seed++) {
+        await pumpAddEvent(tester, random: Random(seed));
+        await fillValidForm(tester);
+        await tapVisible(tester, find.text('Save Event'));
 
-      expect(find.bySemanticsLabel('Event color #16A34A'), findsNothing);
-      expect(find.bySemanticsLabel('Event color #2563EB'), findsOneWidget);
+        expect(kCoursePresetColors, isNot(contains(calendarService.addedEvents.last.color)));
+      }
     });
 
-    testWidgets('offers the head of the pool when no courses exist', (
+    testWidgets('the default excludes every colour a course uses', (
       tester,
     ) async {
-      await pumpAddEvent(tester);
+      final green = Course(
+        courseId: 'c1',
+        courseName: 'Green course',
+        color: '#16A34A',
+        email: 'e@x.com',
+      );
+      final expected = randomEventColor(
+        courseColors: const ['#16A34A'],
+        standaloneColors: const [],
+        random: Random(1),
+      );
 
-      expect(find.bySemanticsLabel('Event color #16A34A'), findsOneWidget);
-      expect(find.bySemanticsLabel('Event color #2563EB'), findsOneWidget);
+      await pumpAddEvent(tester, courses: [green], random: Random(1));
+      await fillValidForm(tester);
+      await tapVisible(tester, find.text('Save Event'));
+
+      expect(calendarService.addedEvents.single.color, expected);
+      expect(calendarService.addedEvents.single.color, isNot('#16A34A'));
     });
 
-    testWidgets('saves the picked swatch as the event colour', (tester) async {
-      await pumpAddEvent(tester);
-      await tapVisible(tester, find.bySemanticsLabel('Event color #2563EB'));
+    testWidgets(
+      'the default excludes every saved (standalone-event) colour too',
+      (tester) async {
+        final expected = randomEventColor(
+          courseColors: const [],
+          standaloneColors: const ['#2563EB'],
+          random: Random(1),
+        );
+
+        await pumpAddEvent(
+          tester,
+          savedColors: const ['#2563EB'],
+          random: Random(1),
+        );
+        await fillValidForm(tester);
+        await tapVisible(tester, find.text('Save Event'));
+
+        expect(calendarService.addedEvents.single.color, expected);
+        expect(calendarService.addedEvents.single.color, isNot('#2563EB'));
+      },
+    );
+
+    testWidgets(
+      'fallback: once courses cover every non-preset pool colour, the '
+      'default is allowed to be a preset',
+      (tester) async {
+        // Every kEventSwatchPool entry outside the 5 presets.
+        const nonPresetPool = [
+          '#0D9488',
+          '#DB2777',
+          '#EA580C',
+          '#0EA5E9',
+          '#65A30D',
+          '#C026D3',
+          '#B45309',
+          '#4F46E5',
+          '#BE123C',
+          '#0F766E',
+          '#0B0F5B',
+          '#0891B2',
+        ];
+        final courses = [
+          for (final hex in nonPresetPool)
+            Course(courseId: hex, courseName: hex, color: hex, email: 'e')
+        ];
+        final expected = randomEventColor(
+          courseColors: nonPresetPool,
+          standaloneColors: const [],
+          random: Random(1),
+        );
+
+        await pumpAddEvent(tester, courses: courses, random: Random(1));
+        await fillValidForm(tester);
+        await tapVisible(tester, find.text('Save Event'));
+
+        expect(calendarService.addedEvents.single.color, expected);
+        expect(kCoursePresetColors, contains(expected));
+      },
+    );
+
+    testWidgets(
+      'a seeded Random gives the screen the exact pick randomEventColor '
+      'itself would, for that same seed',
+      (tester) async {
+        final expected = randomEventColor(
+          courseColors: const [],
+          standaloneColors: const [],
+          random: Random(7),
+        );
+
+        await pumpAddEvent(tester, random: Random(7));
+
+        expect(selectedColorHex(tester), expected);
+      },
+    );
+
+    testWidgets(
+      'the pick stays fixed across unrelated rebuilds, such as typing the '
+      'event name',
+      (tester) async {
+        await pumpAddEvent(tester, random: Random(1));
+        final before = selectedColorHex(tester);
+
+        await enterName(tester);
+
+        expect(selectedColorHex(tester), before);
+      },
+    );
+
+    testWidgets(
+      'a colour the student selects before the one-time load resolves is '
+      'never replaced by the random default',
+      (tester) async {
+        final service = _SlowSavedColorsService();
+        await pumpAddEvent(tester, service: service, random: Random(1));
+
+        // The load is still pending — pick a colour right now.
+        await tapVisible(tester, find.byKey(const ValueKey('custom-color')));
+        await tester.enterText(
+          find.descendant(
+            of: find.byType(ColorPickerDialog),
+            matching: find.byType(TextField),
+          ),
+          '#FF00A8',
+        );
+        await tester.pumpAndSettle();
+        await tapVisible(tester, find.text('Use this color'));
+
+        expect(selectedColorHex(tester), '#FF00A8');
+
+        // Now let the load resolve.
+        service.gate.complete(const []);
+        await tester.pumpAndSettle();
+
+        expect(selectedColorHex(tester), '#FF00A8');
+        await fillValidForm(tester);
+        await tapVisible(tester, find.text('Save Event'));
+        expect(calendarService.addedEvents.single.color, '#FF00A8');
+      },
+    );
+
+    testWidgets(
+      'a colour used by any course never appears among the saved tiles',
+      (tester) async {
+        await pumpAddEvent(
+          tester,
+          courses: [aCourse], // #16A34A (green)
+          savedColors: const ['#16A34A'],
+        );
+
+        expect(find.bySemanticsLabel('Remove color #16A34A'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'shows the student\'s saved colours once the read resolves, each '
+      'removable',
+      (tester) async {
+        await pumpAddEvent(
+          tester,
+          savedColors: const ['#2563EB', '#7C3AED'],
+        );
+
+        expect(find.bySemanticsLabel('Color #2563EB'), findsOneWidget);
+        expect(find.bySemanticsLabel('Color #7C3AED'), findsOneWidget);
+        expect(find.bySemanticsLabel('Remove color #2563EB'), findsOneWidget);
+        expect(find.bySemanticsLabel('Remove color #7C3AED'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'the default appears as its own extra, non-removable tile next to '
+      'the recents',
+      (tester) async {
+        final expected = randomEventColor(
+          courseColors: const [],
+          standaloneColors: const ['#2563EB'],
+          random: Random(1),
+        );
+
+        await pumpAddEvent(
+          tester,
+          savedColors: const ['#2563EB'],
+          random: Random(1),
+        );
+
+        expect(find.bySemanticsLabel('Color #2563EB'), findsOneWidget);
+        expect(find.bySemanticsLabel('Remove color #2563EB'), findsOneWidget);
+        expect(find.bySemanticsLabel('Color $expected'), findsOneWidget);
+        expect(find.bySemanticsLabel('Remove color $expected'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'the default tile (shown alone, with no saved colours) has no '
+      'remove badge',
+      (tester) async {
+        final expected = randomEventColor(
+          courseColors: const [],
+          standaloneColors: const [],
+          random: Random(1),
+        );
+
+        await pumpAddEvent(tester, random: Random(1));
+
+        expect(find.bySemanticsLabel('Color $expected'), findsOneWidget);
+        expect(find.bySemanticsLabel('Remove color $expected'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a failed saved-colours read leaves just the default tile and "+", '
+      'never blocking the form',
+      (tester) async {
+        final expected = randomEventColor(
+          courseColors: const [],
+          standaloneColors: const [],
+          random: Random(1),
+        );
+
+        await pumpAddEvent(
+          tester,
+          savedColorsError: CalendarFailure('nope'),
+          random: Random(1),
+        );
+
+        expect(find.bySemanticsLabel('Color $expected'), findsOneWidget);
+        expect(find.byKey(const ValueKey('custom-color')), findsOneWidget);
+
+        await fillValidForm(tester);
+        await tapVisible(tester, find.text('Save Event'));
+        expect(calendarService.addedEvents.single.color, expected);
+      },
+    );
+
+    testWidgets('saves the picked tile as the event colour', (tester) async {
+      await pumpAddEvent(tester, savedColors: const ['#2563EB']);
+      await tapVisible(tester, find.bySemanticsLabel('Color #2563EB'));
       await fillValidForm(tester);
       await tapVisible(tester, find.text('Save Event'));
 
       expect(calendarService.addedEvents.single.color, '#2563EB');
     });
+
+    testWidgets(
+      'removing the saved tile currently selected falls back to the fixed '
+      'one-time default',
+      (tester) async {
+        await pumpAddEvent(
+          tester,
+          savedColors: const ['#2563EB'],
+          random: Random(1),
+        );
+        final default_ = selectedColorHex(tester); // the random default
+
+        // Explicitly select the saved tile first.
+        await tapVisible(tester, find.bySemanticsLabel('Color #2563EB'));
+        expect(selectedColorHex(tester), '#2563EB');
+
+        await tester.tap(find.bySemanticsLabel('Remove color #2563EB'));
+        await tester.pump();
+
+        expect(find.bySemanticsLabel('Color #2563EB'), findsNothing);
+        expect(selectedColorHex(tester), default_);
+
+        await fillValidForm(tester);
+        await tapVisible(tester, find.text('Save Event'));
+        expect(calendarService.addedEvents.single.color, default_);
+      },
+    );
+
+    testWidgets(
+      'removing a saved tile that is not selected leaves the selection '
+      'alone',
+      (tester) async {
+        await pumpAddEvent(
+          tester,
+          savedColors: const ['#2563EB', '#7C3AED'],
+        );
+        await tapVisible(tester, find.bySemanticsLabel('Color #2563EB'));
+
+        await tester.tap(find.bySemanticsLabel('Remove color #7C3AED'));
+        await tester.pump();
+
+        expect(find.bySemanticsLabel('Color #7C3AED'), findsNothing);
+        expect(selectedColorHex(tester), '#2563EB');
+
+        await fillValidForm(tester);
+        await tapVisible(tester, find.text('Save Event'));
+        expect(calendarService.addedEvents.single.color, '#2563EB');
+      },
+    );
+
+    testWidgets(
+      'removing a tile calls CalendarService.removeSavedEventColor',
+      (tester) async {
+        await pumpAddEvent(tester, savedColors: const ['#2563EB']);
+        await tester.tap(find.bySemanticsLabel('Remove color #2563EB'));
+        await tester.pump();
+
+        expect(calendarService.removedColors, ['#2563EB']);
+      },
+    );
+
+    testWidgets(
+      'saving a standalone event records its colour',
+      (tester) async {
+        await pumpAddEvent(tester, savedColors: const ['#2563EB']);
+        await tapVisible(tester, find.bySemanticsLabel('Color #2563EB'));
+        await fillValidForm(tester);
+        await tapVisible(tester, find.text('Save Event'));
+
+        expect(calendarService.recordedColors, ['#2563EB']);
+      },
+    );
+
+    testWidgets(
+      'saving a course-linked event never records a colour — the course '
+      'colour is not a pick of its own',
+      (tester) async {
+        await pumpAddEvent(tester, courses: [aCourse]);
+        await tapVisible(tester, find.byKey(const ValueKey('course-field')));
+        await tapVisible(
+          tester,
+          find.byKey(const ValueKey('course-option-IS230')),
+        );
+        await fillValidForm(tester);
+        await tapVisible(tester, find.text('Save Event'));
+
+        expect(calendarService.recordedColors, isEmpty);
+      },
+    );
 
     testWidgets('the custom "+" opens the full colour picker', (tester) async {
       await pumpAddEvent(tester);
@@ -340,6 +706,21 @@ void main() {
       expect(find.text('Use this color'), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);
     });
+
+    /// Types [hex] into the open picker dialog's hex field, which updates
+    /// its colour live (`flutter_colorpicker`'s own `onChanged`) — lets a
+    /// test land on a specific colour without driving its gesture-based
+    /// saturation area or hue ring.
+    Future<void> typeDialogHex(WidgetTester tester, String hex) async {
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(ColorPickerDialog),
+          matching: find.byType(TextField),
+        ),
+        hex,
+      );
+      await tester.pumpAndSettle();
+    }
 
     testWidgets('confirming the picker stores a 6-digit hex', (tester) async {
       await pumpAddEvent(tester);
@@ -354,11 +735,63 @@ void main() {
       expect(saved.length, 7);
     });
 
+    testWidgets(
+      'picking a colour distinct from the recents adds an extra selected '
+      'tile for it, alongside the recents',
+      (tester) async {
+        await pumpAddEvent(tester, savedColors: const ['#2563EB']);
+
+        await tapVisible(tester, find.byKey(const ValueKey('custom-color')));
+        await typeDialogHex(tester, '#FF00A8');
+        await tapVisible(tester, find.text('Use this color'));
+
+        expect(find.bySemanticsLabel('Color #FF00A8'), findsOneWidget);
+        expect(find.bySemanticsLabel('Color #2563EB'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'picking another dialog colour replaces the extra tile rather than '
+      'adding a second one',
+      (tester) async {
+        await pumpAddEvent(tester);
+
+        await tapVisible(tester, find.byKey(const ValueKey('custom-color')));
+        await typeDialogHex(tester, '#FF00A8');
+        await tapVisible(tester, find.text('Use this color'));
+        expect(find.bySemanticsLabel('Color #FF00A8'), findsOneWidget);
+
+        await tapVisible(tester, find.byKey(const ValueKey('custom-color')));
+        await typeDialogHex(tester, '#AABBCC');
+        await tapVisible(tester, find.text('Use this color'));
+
+        expect(find.bySemanticsLabel('Color #FF00A8'), findsNothing);
+        expect(find.bySemanticsLabel('Color #AABBCC'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'selecting a different tile makes the extra dialog-colour tile '
+      'disappear',
+      (tester) async {
+        await pumpAddEvent(tester, savedColors: const ['#2563EB']);
+
+        await tapVisible(tester, find.byKey(const ValueKey('custom-color')));
+        await typeDialogHex(tester, '#FF00A8');
+        await tapVisible(tester, find.text('Use this color'));
+        expect(find.bySemanticsLabel('Color #FF00A8'), findsOneWidget);
+
+        await tapVisible(tester, find.bySemanticsLabel('Color #2563EB'));
+
+        expect(find.bySemanticsLabel('Color #FF00A8'), findsNothing);
+      },
+    );
+
     testWidgets('cancelling the picker leaves the colour alone', (
       tester,
     ) async {
-      await pumpAddEvent(tester);
-      await tapVisible(tester, find.bySemanticsLabel('Event color #2563EB'));
+      await pumpAddEvent(tester, savedColors: const ['#2563EB']);
+      await tapVisible(tester, find.bySemanticsLabel('Color #2563EB'));
 
       await tapVisible(tester, find.byKey(const ValueKey('custom-color')));
       await tapVisible(tester, find.text('Cancel'));
@@ -367,6 +800,151 @@ void main() {
 
       expect(calendarService.addedEvents.single.color, '#2563EB');
     });
+  });
+
+  group('colour row spacing', () {
+    // Measured against the actual tile widgets, not `find.byType(GridView)`
+    // — a GridView with no explicit padding silently grows a padded
+    // SliverPadding *inside* its own bounding box (to avoid the status
+    // bar/nav bar) when nothing upstream has already consumed that
+    // MediaQuery padding, so the GridView's own rect can look unchanged
+    // while the tiles inside it have shifted. See
+    // `_firstColourTileTop`/`_lastColourTileBottom` below.
+    double firstColourTileTop(WidgetTester tester) => tester
+        .getTopLeft(
+          find
+              .byWidgetPredicate(
+                (w) => w is ColorSwatchTile || w is CustomColorSwatchTile,
+              )
+              .first,
+        )
+        .dy;
+
+    double lastColourTileBottom(WidgetTester tester) {
+      final finder = find.byWidgetPredicate(
+        (w) => w is ColorSwatchTile || w is CustomColorSwatchTile,
+      );
+      var bottom = 0.0;
+      for (final element in tester.elementList(finder)) {
+        final box = element.renderObject! as RenderBox;
+        final y = box.localToGlobal(Offset.zero).dy + box.size.height;
+        if (y > bottom) bottom = y;
+      }
+      return bottom;
+    }
+
+    // Both gaps are plain fixed `SizedBox`es, unaffected by how many rows
+    // the colour grid itself needs — this guards against either one ever
+    // regressing to something larger than the rest of the screen's own
+    // label-to-field (8-10px) and between-section (24px) rhythm, however
+    // many tiles the grid ends up showing.
+    testWidgets(
+      'the label-to-grid and grid-to-DATE gaps match the rest of the '
+      'screen\'s rhythm, even with a full, two-row grid, with no safe-area '
+      'insets',
+      (tester) async {
+        await pumpAddEvent(
+          tester,
+          savedColors: const [
+            '#2563EB',
+            '#F5A524',
+            '#E31B23',
+            '#7C3AED',
+            '#0D9488',
+          ],
+        );
+
+        final labelRect = tester.getRect(find.text('EVENT COLOR'));
+        final dateLabelRect = tester.getRect(find.text('DATE'));
+
+        expect(firstColourTileTop(tester) - labelRect.bottom, 10);
+        expect(dateLabelRect.top - lastColourTileBottom(tester), 24);
+      },
+    );
+
+    testWidgets(
+      'the gaps stay exactly 10dp and 24dp under real safe-area insets '
+      'too — a GridView with no explicit padding otherwise inherits the '
+      'status-bar/nav-bar padding from MediaQuery, which a widget test\'s '
+      'all-zero default MediaQuery would never catch',
+      (tester) async {
+        const insets = EdgeInsets.only(top: 48, bottom: 34);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: const MediaQueryData(
+                padding: insets,
+                viewPadding: insets,
+              ),
+              child: Scaffold(
+                body: AddEventScreen(
+                  uid: 'uid-1',
+                  calendarService: FakeCalendarService(
+                    savedColors: const [
+                      '#2563EB',
+                      '#F5A524',
+                      '#E31B23',
+                      '#7C3AED',
+                      '#0D9488',
+                    ],
+                  ),
+                  courses: const [],
+                  reminderScheduler: FakeReminderScheduler(),
+                  now: mainNow,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final labelRect = tester.getRect(find.text('EVENT COLOR'));
+        final dateLabelRect = tester.getRect(find.text('DATE'));
+
+        expect(firstColourTileTop(tester) - labelRect.bottom, 10);
+        expect(
+          dateLabelRect.top - lastColourTileBottom(tester),
+          closeTo(24, 0.01),
+        );
+      },
+    );
+
+    testWidgets(
+      'nothing overflows at 1.5x text scale with a full, two-row grid '
+      'and a course picked',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(412, 1600));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: const MediaQueryData(textScaler: TextScaler.linear(1.5)),
+              child: Scaffold(
+                body: AddEventScreen(
+                  uid: 'uid-1',
+                  calendarService: FakeCalendarService(
+                    savedColors: const [
+                      '#2563EB',
+                      '#F5A524',
+                      '#E31B23',
+                      '#7C3AED',
+                      '#0D9488',
+                    ],
+                  ),
+                  courses: [aCourse],
+                  reminderScheduler: FakeReminderScheduler(),
+                  now: mainNow,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+      },
+    );
   });
 
   group('date and time pickers', () {
@@ -388,6 +966,22 @@ void main() {
       expect(find.text('May 1, 2026'), findsOneWidget);
     });
 
+    testWidgets(
+      'with no date picked yet, the date picker opens on today (from '
+      '`now`), not the 1st of whatever month is passed in',
+      (tester) async {
+        await pumpAddEvent(tester);
+
+        // Accept the picker's own pre-highlighted day without tapping any
+        // date — reveals what it opened on.
+        await tapVisible(tester, find.byKey(const ValueKey('event-date')));
+        await tapVisible(tester, find.text('OK'));
+
+        // `mainNow` is May 3, 2026 — not the 1st.
+        expect(find.text('May 3, 2026'), findsOneWidget);
+      },
+    );
+
     testWidgets('the time picker fills the field in 12-hour form', (
       tester,
     ) async {
@@ -397,6 +991,19 @@ void main() {
       expect(find.text('9:00 AM'), findsOneWidget);
       expect(find.text('Select a time'), findsNothing);
     });
+
+    testWidgets(
+      'with no time picked yet, the time picker opens on the current '
+      'time, not a fixed fallback',
+      (tester) async {
+        // Distinct from the file-wide `mainNow` (9:00 AM), so accepting
+        // the picker's own default genuinely proves it opened on `now`.
+        await pumpAddEvent(tester, now: DateTime(2026, 5, 3, 14, 37));
+        await pickDefaultTime(tester);
+
+        expect(find.text('2:37 PM'), findsOneWidget);
+      },
+    );
 
     testWidgets('cancelling a picker leaves the field untouched', (
       tester,
@@ -846,32 +1453,101 @@ void main() {
     });
   });
 
-  group('swatch selection logic', () {
-    test('excludes every colour a course already uses', () {
-      final swatches = eventSwatchesFor(['#16A34A', '#2563EB']);
+  group('header (matches Add course\'s)', () {
+    testWidgets(
+      'shows a close "X" on the right, no back arrow, the title and the '
+      'subtitle',
+      (tester) async {
+        await pumpAddEvent(tester);
 
-      expect(swatches, hasLength(kEventSwatchCount));
-      expect(swatches, isNot(contains('#16A34A')));
-      expect(swatches, isNot(contains('#2563EB')));
+        expect(find.text('Add Event'), findsOneWidget);
+        expect(find.text('Add an event to your calendar'), findsOneWidget);
+        expect(find.byIcon(Icons.close), findsOneWidget);
+        expect(find.byIcon(Icons.arrow_back), findsNothing);
+        expect(find.byIcon(Icons.chevron_left), findsNothing);
+
+        // Title left-aligned, close button to its right.
+        final titleRect = tester.getRect(find.text('Add Event'));
+        final closeRect = tester.getRect(find.byIcon(Icons.close));
+        expect(closeRect.left, greaterThan(titleRect.right));
+      },
+    );
+
+    testWidgets('has a "Close" accessibility label', (tester) async {
+      await pumpAddEvent(tester);
+      expect(find.bySemanticsLabel('Close'), findsOneWidget);
     });
 
-    test('matches course colours case-insensitively', () {
-      final swatches = eventSwatchesFor(['#16a34a']);
+    testWidgets(
+      'tapping the close button pops the screen, exactly like the old '
+      'back arrow did',
+      (tester) async {
+        await pumpAddEvent(tester);
 
-      expect(swatches, isNot(contains('#16A34A')));
-    });
+        await tester.tap(find.byIcon(Icons.close));
+        await tester.pumpAndSettle();
 
-    test('falls back to the head of the pool when too few remain', () {
-      // Every pool colour is taken, so there is nothing free to offer.
-      final swatches = eventSwatchesFor(kEventSwatchPool);
+        expect(poppedResult, isNull);
+        expect(find.text('Add Event'), findsNothing);
+        expect(find.text('open'), findsOneWidget);
+      },
+    );
 
-      expect(swatches, hasLength(kEventSwatchCount));
-      expect(swatches, kEventSwatchPool.take(kEventSwatchCount));
-    });
+    testWidgets(
+      'the close button is disabled (dimmed, non-interactive) while '
+      'saving — same as the old back arrow',
+      (tester) async {
+        await pumpAddEvent(tester, service: _SlowCalendarService());
+        await fillValidForm(tester);
+        await tester.tap(find.text('Save Event'));
+        await tester.pump();
 
-    test('offers the pool head when no course has a colour', () {
-      expect(eventSwatchesFor(const []), kEventSwatchPool.take(4));
-    });
+        final icon = tester.widget<Icon>(find.byIcon(Icons.close));
+        expect((icon.color as Color).a, closeTo(0.4, 0.01));
+
+        await tester.tap(find.byIcon(Icons.close));
+        await tester.pump();
+        expect(find.text('Add Event'), findsOneWidget);
+      },
+    );
+  });
+
+  group('status bar / safe area', () {
+    testWidgets(
+      'the header background reaches the top of the screen under a real '
+      'top inset (no white strip above it), and the title sits below the '
+      'status-bar inset',
+      (tester) async {
+        const insets = EdgeInsets.only(top: 48);
+        await tester.binding.setSurfaceSize(const Size(600, 1600));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: const MediaQueryData(
+                padding: insets,
+                viewPadding: insets,
+              ),
+              child: AddEventScreen(
+                uid: 'uid-1',
+                calendarService: FakeCalendarService(),
+                courses: const [],
+                reminderScheduler: FakeReminderScheduler(),
+                now: mainNow,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final headerRect = tester.getRect(find.byType(ScreenHeader));
+        expect(headerRect.top, 0);
+
+        final titleRect = tester.getRect(find.text('Add Event'));
+        expect(titleRect.top, greaterThan(48));
+      },
+    );
   });
 }
 
@@ -884,4 +1560,15 @@ class _SlowCalendarService extends FakeCalendarService {
 
   @override
   Future<String> addEvent(String uid, CalendarEvent event) => _never.future;
+}
+
+/// Lets a test hold [loadSavedEventColors] open deliberately, to create a
+/// real window in which the student can pick a colour before the screen's
+/// one-time random default has resolved — same reasoning as
+/// [_SlowCalendarService] re: Completer vs. Future.delayed.
+class _SlowSavedColorsService extends FakeCalendarService {
+  final Completer<List<String>> gate = Completer<List<String>>();
+
+  @override
+  Future<List<String>> loadSavedEventColors(String uid) => gate.future;
 }

@@ -60,7 +60,8 @@ class _DeleteCourseDialog extends StatelessWidget {
             const SizedBox(height: 10),
             const Text(
               'Deleting this course will also delete all its materials, '
-              "quizzes, and flashcard sessions. This can't be undone.",
+              'quizzes, flashcard sessions, and calendar events with their '
+              "reminders. This can't be undone.",
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,

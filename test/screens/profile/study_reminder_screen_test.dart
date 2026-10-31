@@ -8,6 +8,12 @@ import '../../helpers/fake_profile_service.dart';
 import '../../helpers/fake_reminder_scheduler.dart';
 
 void main() {
+  // Fixed so every pre-existing test below (none of which pass `now`
+  // explicitly) deterministically opens the time picker's "no saved time
+  // yet" fallback on 9:00 AM, as they all already assume, rather than on
+  // whatever the real wall-clock time happens to be when the suite runs.
+  final defaultNow = DateTime(2026, 5, 3, 9, 0);
+
   late FakeProfileService service;
   late FakeReminderScheduler scheduler;
 
@@ -15,6 +21,7 @@ void main() {
     WidgetTester tester, {
     bool enabled = false,
     TimeOfDay? time,
+    DateTime? now,
     FakeProfileService? profileService,
     FakeReminderScheduler? reminderScheduler,
   }) async {
@@ -38,6 +45,7 @@ void main() {
                     time: time,
                     profileService: service,
                     reminderScheduler: scheduler,
+                    now: now ?? defaultNow,
                   ),
                 ),
               ),
@@ -145,6 +153,44 @@ void main() {
         '--:-- --',
       );
     });
+
+    testWidgets(
+      'with no saved time, the picker opens on the injected current time',
+      (tester) async {
+        // A `now` distinct from the file-wide default (9:00 AM), so this
+        // genuinely proves it opened on `now` rather than coincidentally
+        // matching some other fallback.
+        await pumpReminder(tester, now: DateTime(2026, 5, 3, 14, 37));
+        await toggle(tester);
+        await pickDefaultTime(tester);
+
+        expect(
+          tester.widget<Text>(find.byKey(const ValueKey('reminder-time'))).data,
+          '2:37 PM',
+        );
+      },
+    );
+
+    testWidgets(
+      'with a saved time, the picker opens on that saved time, not the '
+      'current time',
+      (tester) async {
+        await pumpReminder(
+          tester,
+          enabled: true,
+          time: const TimeOfDay(hour: 16, minute: 0),
+          // Deliberately different from the saved 4:00 PM, so a picker
+          // that opened on `now` instead would be caught by this test.
+          now: DateTime(2026, 5, 3, 9, 0),
+        );
+        await pickDefaultTime(tester);
+
+        expect(
+          tester.widget<Text>(find.byKey(const ValueKey('reminder-time'))).data,
+          '4:00 PM',
+        );
+      },
+    );
   });
 
   group('saving', () {

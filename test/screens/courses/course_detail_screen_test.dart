@@ -708,7 +708,8 @@ void main() {
       expect(
         find.text(
           'Deleting this course will also delete all its materials, '
-          "quizzes, and flashcard sessions. This can't be undone.",
+          'quizzes, flashcard sessions, and calendar events with their '
+          "reminders. This can't be undone.",
         ),
         findsOneWidget,
       );
@@ -874,6 +875,44 @@ void main() {
           findsOneWidget,
         );
         expect(find.text('Add your first material'), findsOneWidget);
+      },
+    );
+  });
+
+  group('status bar / safe area', () {
+    testWidgets(
+      'the header background (course colour) reaches the top of the '
+      'screen under a real top inset (no white strip above it), and the '
+      'title sits below the status-bar inset',
+      (tester) async {
+        const insets = EdgeInsets.only(top: 48);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: const MediaQueryData(
+                padding: insets,
+                viewPadding: insets,
+              ),
+              child: CourseDetailScreen(
+                uid: 'uid-1',
+                course: course,
+                coursesService: FakeCoursesService(),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final courseColor = parseHexColor(course.color);
+        final headerFinder = find.byWidgetPredicate((w) {
+          if (w is! Container) return false;
+          final decoration = w.decoration;
+          return decoration is BoxDecoration && decoration.color == courseColor;
+        });
+        expect(tester.getRect(headerFinder.first).top, 0);
+
+        final titleRect = tester.getRect(find.text('IS230'));
+        expect(titleRect.top, greaterThan(48));
       },
     );
   });

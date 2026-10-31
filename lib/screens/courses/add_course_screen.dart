@@ -1,10 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/course.dart';
+import '../../services/calendar_service.dart';
 import '../../services/courses_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
+import '../../widgets/color_picker_dialog.dart';
+import '../../widgets/color_swatch_tile.dart';
+import '../../widgets/screen_header.dart';
+import '../../widgets/status_bar_style.dart';
+import '../calendar/calendar_styles.dart'
+    show defaultEventColor, hexFromColor;
 import 'widgets/course_icon.dart';
+
+/// No real cap — just a sanity bound so a pathological account can't make
+/// this return an unbounded list. There are only [kCoursePresetColors.length]
+/// presets to check against, so this only ever needs to comfortably exceed
+/// that.
+const _kAllStandaloneColorsLimit = 500;
 
 /// Create-a-course screen, opened from the `+` header button or the
 /// empty-state CTA on the courses list. Full-screen (navy header, X close)
@@ -19,6 +33,7 @@ class AddCourseScreen extends StatefulWidget {
     required this.uid,
     required this.coursesService,
     required this.existingCourses,
+    this.calendarService,
   });
 
   final String uid;
@@ -29,13 +44,35 @@ class AddCourseScreen extends StatefulWidget {
   /// screen doesn't need its own round trip before it can render.
   final List<Course> existingCourses;
 
+  /// Overridable for tests; defaults to the real Firebase-backed service.
+  /// Used once, on open, to find which presets a standalone (course-less)
+  /// calendar event already uses, so those are locked too.
+  final CalendarService? calendarService;
+
   @override
   State<AddCourseScreen> createState() => _AddCourseScreenState();
 }
 
 class _AddCourseScreenState extends State<AddCourseScreen> {
   final _nameController = TextEditingController();
+  late final CalendarService _calendarService =
+      widget.calendarService ?? CalendarService();
+
   String? _selectedColor;
+
+  /// True once the student has explicitly picked a tile or a dialog colour
+  /// — after that, [_loadStandaloneTakenColors] must never override her
+  /// choice, even if it resolves later, and even if that colour turns out
+  /// to be taken.
+  bool _colorPickedByUser = false;
+
+  /// Distinct colours (upper-case) of the student's own standalone
+  /// (course-less) events, loaded once on open — a colour any of these
+  /// already uses is locked the same way a course's own colour is. Starts
+  /// empty, which is exactly the correct fallback if the load fails or
+  /// hasn't resolved yet: lock based on course colours only until then.
+  Set<String> _standaloneTakenColors = {};
+
   bool _saving = false;
   String? _errorMessage;
 
@@ -56,9 +93,68 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
   bool _measurementScheduled = false;
 
   @override
+  void initState() {
+    super.initState();
+    _loadStandaloneTakenColors();
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
     super.dispose();
+  }
+
+  /// True if [hex] is already claimed — by another of the student's
+  /// courses, or by one of her standalone (course-less) calendar events —
+  /// compared case-insensitively. The sole rule for whether a preset is
+  /// locked, and for whether a dialog-picked colour is accepted.
+  bool _isTaken(String hex) =>
+      isColorTaken(hex, widget.existingCourses) ||
+      _standaloneTakenColors.contains(hex.toUpperCase());
+
+  /// The default preselection: [kDefaultCourseColor] (green) if free,
+  /// else the amber preset if free, else the first preset in
+  /// [kCoursePresetColors]' own order that's free — the same priority
+  /// order Add Event's own colour row uses (`defaultEventColor`), kept to
+  /// whichever of those is actually a free preset here. If every preset
+  /// is taken, there's nothing to preselect — the student must use "+"
+  /// herself.
+  String? get _defaultPreselection {
+    final taken = {
+      for (final course in widget.existingCourses) course.color.toUpperCase(),
+      ..._standaloneTakenColors,
+    };
+    final pick = defaultEventColor(taken);
+    final isFreePreset =
+        kCoursePresetColors.any((p) => p.toUpperCase() == pick.toUpperCase()) &&
+        !_isTaken(pick);
+    return isFreePreset ? pick : null;
+  }
+
+  /// Loads which colours a standalone event already uses. Best-effort: a
+  /// failed read falls back to locking based on course colours only — it
+  /// never blocks the screen or shows an error, and that's also exactly
+  /// the state before this resolves.
+  Future<void> _loadStandaloneTakenColors() async {
+    var standalone = const <String>[];
+    try {
+      standalone = await _calendarService.standaloneEventColorsMostRecentFirst(
+        widget.uid,
+        limit: _kAllStandaloneColorsLimit,
+        fetchCap: null,
+      );
+    } catch (_) {
+      // Falls back to the course-only lock above.
+    }
+    if (!mounted) return;
+    setState(() {
+      _standaloneTakenColors = standalone.map((h) => h.toUpperCase()).toSet();
+      // Only preselect once the real lock set is known, and only if the
+      // student hasn't already picked something herself in the meantime —
+      // and never override an already-picked colour even if it turns out
+      // to be taken.
+      if (!_colorPickedByUser) _selectedColor = _defaultPreselection;
+    });
   }
 
   /// How big to make each of the two inter-section gaps, given the real
@@ -107,18 +203,20 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
   void _pickColor(String color) {
     setState(() {
       _selectedColor = color;
+      _colorPickedByUser = true;
       _errorMessage = null;
     });
   }
 
   Future<void> _pickCustomColor() async {
-    final color = await showDialog<Color>(
-      context: context,
-      builder: (context) => _CustomColorDialog(initial: Colors.blue),
-    );
-    if (color == null) return;
-    final hex =
-        '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
+    final initial = parseHexColor(_selectedColor ?? kDefaultCourseColor);
+    final picked = await showColorPicker(context: context, initial: initial);
+    if (picked == null) return;
+    final hex = hexFromColor(picked);
+    // The same lock that keeps a preset untappable also blocks a
+    // dialog-picked colour that happens to match a taken one — silently
+    // ignored, same as tapping a locked preset tile.
+    if (_isTaken(hex)) return;
     _pickColor(hex);
   }
 
@@ -146,11 +244,19 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.navy),
+      child: Scaffold(
       body: SafeArea(
+        top: false,
         child: Column(
           children: [
-            _Header(onClose: () => Navigator.of(context).pop(false)),
+            ScreenHeader(
+              title: 'Add course',
+              subtitle: 'Create a course to organize your studies',
+              backgroundColor: AppColors.navy,
+              onClose: () => Navigator.of(context).pop(false),
+            ),
             Expanded(
               // LayoutBuilder sits outside the SingleChildScrollView so
               // `constraints.maxHeight` is the real, bounded viewport
@@ -221,13 +327,13 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
                         const SizedBox(height: 10),
                         _ColorGrid(
                           selectedColor: _selectedColor,
-                          existingCourses: widget.existingCourses,
+                          isTaken: _isTaken,
                           onPick: _pickColor,
                           onPickCustom: _pickCustomColor,
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          'Colors already used by another course are locked.',
+                          'Colors already in use are locked.',
                           style: AppTypography.subtitle.copyWith(fontSize: 12),
                         ),
                         SizedBox(
@@ -273,65 +379,6 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _Header extends StatelessWidget {
-  const _Header({required this.onClose});
-
-  final VoidCallback onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-      decoration: const BoxDecoration(
-        color: AppColors.navy,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Add course',
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.02 * 26,
-                    color: Colors.white,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Create a course to organize your studies',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xB3FFFFFF),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          GestureDetector(
-            onTap: onClose,
-            child: Container(
-              width: 38,
-              height: 38,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: Color(0x29FFFFFF),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.close, size: 18, color: Colors.white),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -397,16 +444,27 @@ class _NameField extends StatelessWidget {
   }
 }
 
+/// All five [kCoursePresetColors], always shown in the pool's own order,
+/// plus the rainbow "+" tile — the original layout, restored exactly:
+/// a preset [isTaken] is locked (dimmed, an "x", untappable) rather than
+/// hidden, and the "+" tile itself shows as selected once the current
+/// colour is a custom pick rather than getting a separate extra swatch.
+///
+/// Uses the shared [ColorSwatchTile]/[CustomColorSwatchTile] rather than
+/// private copies: their rendering (fill, border, opacity, boxShadow, the
+/// check/"x" icon) is pixel-identical to the original screen's own
+/// `_Swatch`/`_CustomSwatch` — confirmed by diffing the two — so reusing
+/// them changes nothing about how this grid looks.
 class _ColorGrid extends StatelessWidget {
   const _ColorGrid({
     required this.selectedColor,
-    required this.existingCourses,
+    required this.isTaken,
     required this.onPick,
     required this.onPickCustom,
   });
 
   final String? selectedColor;
-  final List<Course> existingCourses;
+  final bool Function(String hex) isTaken;
   final ValueChanged<String> onPick;
   final VoidCallback onPickCustom;
 
@@ -426,119 +484,32 @@ class _ColorGrid extends StatelessWidget {
       crossAxisCount: 5,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
+      // Not currently visible here — this screen's whole body is already
+      // wrapped in a SafeArea, which consumes the ambient MediaQuery
+      // padding before it reaches this grid — but set explicitly anyway so
+      // this grid can never pick up the same inherited safe-area padding
+      // Add Event's did, should that SafeArea ever move or narrow. See
+      // add_event_screen.dart's identical grid for the full explanation.
+      padding: EdgeInsets.zero,
       mainAxisSpacing: 10,
       crossAxisSpacing: 10,
       childAspectRatio: 1,
       children: [
         for (final preset in kCoursePresetColors)
-          _Swatch(
+          ColorSwatchTile(
             key: ValueKey(preset),
             color: parseHexColor(preset),
-            locked: isColorTaken(preset, existingCourses),
+            hex: preset,
+            locked: isTaken(preset),
             selected: _isPresetSelected(preset),
             onTap: () => onPick(preset),
           ),
-        _CustomSwatch(selected: _isCustomSelected(), onTap: onPickCustom),
+        CustomColorSwatchTile(
+          key: const ValueKey('custom-color'),
+          selected: _isCustomSelected(),
+          onTap: onPickCustom,
+        ),
       ],
-    );
-  }
-}
-
-class _Swatch extends StatelessWidget {
-  const _Swatch({
-    super.key,
-    required this.color,
-    required this.locked,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final Color color;
-  final bool locked;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: locked ? null : onTap,
-      child: Opacity(
-        opacity: locked ? 0.3 : 1,
-        child: Container(
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: selected ? AppColors.navy : Colors.transparent,
-              width: 3,
-            ),
-            boxShadow: locked
-                ? null
-                : [
-                    BoxShadow(
-                      color: AppColors.navy.withValues(alpha: 0.15),
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-          ),
-          child: Icon(
-            selected
-                ? Icons.check
-                : locked
-                ? Icons.close
-                : null,
-            size: 18,
-            color: Colors.white,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CustomSwatch extends StatelessWidget {
-  const _CustomSwatch({required this.selected, required this.onTap});
-
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: selected ? AppColors.navy : Colors.transparent,
-            width: 3,
-          ),
-          gradient: const SweepGradient(
-            colors: [
-              Color(0xFFFF0000),
-              Color(0xFFFFD400),
-              Color(0xFF38D200),
-              Color(0xFF00D4C8),
-              Color(0xFF0066FF),
-              Color(0xFF8A00E6),
-              Color(0xFFFF00A8),
-              Color(0xFFFF0000),
-            ],
-          ),
-        ),
-        child: Container(
-          width: 26,
-          height: 26,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.92),
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(Icons.add, size: 16, color: AppColors.navy),
-        ),
-      ),
     );
   }
 }
@@ -595,59 +566,6 @@ class _PreviewCard extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _CustomColorDialog extends StatefulWidget {
-  const _CustomColorDialog({required this.initial});
-
-  final Color initial;
-
-  @override
-  State<_CustomColorDialog> createState() => _CustomColorDialogState();
-}
-
-class _CustomColorDialogState extends State<_CustomColorDialog> {
-  late double _hue = HSVColor.fromColor(widget.initial).hue;
-
-  Color get _color => HSVColor.fromAHSV(1, _hue, 1, 1).toColor();
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Pick a color'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: _color,
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Slider(
-            value: _hue,
-            min: 0,
-            max: 360,
-            activeColor: _color,
-            onChanged: (v) => setState(() => _hue = v),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(_color),
-          child: const Text('Use this color'),
-        ),
-      ],
     );
   }
 }

@@ -7,7 +7,11 @@ import 'package:firebase_storage/firebase_storage.dart';
 
 import '../models/course.dart';
 import '../models/study_material.dart';
+import '../utils/default_colors.dart';
+import 'calendar_service.dart';
 import 'text_extraction_service.dart';
+
+export '../utils/default_colors.dart' show kDefaultCourseColor;
 
 /// A user-facing Courses/Materials failure. [message] is always safe to
 /// show directly, per the NFR that every network/API call surfaces a clear,
@@ -41,7 +45,7 @@ const _uploadTimeout = Duration(seconds: 60);
 /// lifted from the design handoff's `PALETTE` (its first 5 entries — the
 /// same ones the mockup's own "quick palette" surfaces).
 const kCoursePresetColors = <String>[
-  '#16A34A', // green
+  kDefaultCourseColor, // green
   '#2563EB', // blue
   '#F5A524', // amber
   '#E31B23', // red
@@ -71,12 +75,6 @@ bool isCourseNameTaken(String name, List<Course> existingCourses) {
   return existingCourses.any((c) => c.courseName == name);
 }
 
-/// Material-name uniqueness is case-sensitive and scoped to *this course
-/// only* — the same name is fine in a different course.
-bool isMaterialNameTaken(String title, List<StudyMaterial> existingInCourse) {
-  return existingInCourse.any((m) => m.title == title);
-}
-
 /// A preset swatch is locked once another of the student's courses already
 /// uses it; [excludingCourseId] lets an edit flow (not used yet — only
 /// create exists today) exclude the course being edited from the check.
@@ -88,8 +86,15 @@ bool isColorTaken(
 }) {
   final normalized = colorHex.toUpperCase();
   return existingCourses.any(
-    (c) => c.courseId != excludingCourseId && c.color.toUpperCase() == normalized,
+    (c) =>
+        c.courseId != excludingCourseId && c.color.toUpperCase() == normalized,
   );
+}
+
+/// Material-name uniqueness is case-sensitive and scoped to *this course
+/// only* — the same name is fine in a different course.
+bool isMaterialNameTaken(String title, List<StudyMaterial> existingInCourse) {
+  return existingInCourse.any((m) => m.title == title);
 }
 
 /// A course paired with its materials count, for the courses list row
@@ -109,18 +114,30 @@ class CoursesService {
     FirebaseFirestore? firestore,
     FirebaseStorage? storage,
     FirebaseAuth? auth,
+    CalendarService? calendarService,
   }) : _firestoreOverride = firestore,
        _storageOverride = storage,
-       _authOverride = auth;
+       _authOverride = auth,
+       _calendarServiceOverride = calendarService;
 
   final FirebaseFirestore? _firestoreOverride;
   final FirebaseStorage? _storageOverride;
   final FirebaseAuth? _authOverride;
+  final CalendarService? _calendarServiceOverride;
 
   FirebaseFirestore get _firestore =>
       _firestoreOverride ?? FirebaseFirestore.instance;
   FirebaseStorage get _storage => _storageOverride ?? FirebaseStorage.instance;
   FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
+
+  /// Used by [deleteCourse] to delete a course's calendar events and cancel
+  /// their reminders through the one mechanism that already does that
+  /// correctly ([CalendarService.deleteEventsForCourse]), rather than this
+  /// service re-implementing event deletion (and never cancelling
+  /// reminders, which it used to). No circular dependency: [CalendarService]
+  /// doesn't import anything from this file.
+  late final CalendarService _calendarService =
+      _calendarServiceOverride ?? CalendarService();
 
   String? get currentUid => _auth.currentUser?.uid;
 
@@ -173,7 +190,10 @@ class CoursesService {
     }
   }
 
-  Future<List<StudyMaterial>> fetchMaterials(String uid, String courseId) async {
+  Future<List<StudyMaterial>> fetchMaterials(
+    String uid,
+    String courseId,
+  ) async {
     try {
       final snap = await _materialsRef(
         uid,
@@ -212,30 +232,36 @@ class CoursesService {
     }
   }
 
-  /// Cascade-deletes a course: its materials (Firestore docs + Storage
-  /// files), its calendar events, then the course document itself. Quiz/
-  /// flashcard session documents aren't touched yet — those collections
-  /// have no way to be created until Phase C's Quiz/Flashcard generation
-  /// exists (courses_material_upload_spec.md §3).
+  /// Cascade-deletes a course: its calendar events (cancelling their
+  /// reminders) and its materials (Firestore docs + Storage files), then
+  /// the course document itself. Quiz/flashcard session documents aren't
+  /// touched yet — those collections have no way to be created until
+  /// Phase C's Quiz/Flashcard generation exists
+  /// (courses_material_upload_spec.md §3).
+  ///
+  /// Events are deleted *before* the course, through
+  /// [CalendarService.deleteEventsForCourse] — the same method, and the
+  /// same per-event reminder-cancel path, a standalone event delete
+  /// already uses, rather than this service re-deleting events itself. If
+  /// that fails, the course (and its materials) are left exactly as they
+  /// were: nothing here deletes the course without first confirming its
+  /// events are gone, so a course is never left with events dangling from
+  /// a half-finished delete.
   Future<void> deleteCourse(String uid, String courseId) async {
     try {
       final materialsSnap = await _materialsRef(
         uid,
         courseId,
       ).get().timeout(_networkTimeout);
-      final eventsSnap = await _firestore
-          .collection('users')
-          .doc(uid)
-          .collection('events')
-          .where('courseId', isEqualTo: courseId)
-          .get()
-          .timeout(_networkTimeout);
+
+      try {
+        await _calendarService.deleteEventsForCourse(uid, courseId);
+      } on CalendarFailure {
+        throw CoursesFailure(_networkFailureMessage);
+      }
 
       final batch = _firestore.batch();
       for (final doc in materialsSnap.docs) {
-        batch.delete(doc.reference);
-      }
-      for (final doc in eventsSnap.docs) {
         batch.delete(doc.reference);
       }
       batch.delete(_coursesRef(uid).doc(courseId));
@@ -246,9 +272,10 @@ class CoursesService {
       for (final doc in materialsSnap.docs) {
         final material = StudyMaterial.fromFirestore(doc);
         try {
-          await _storage.ref(material.document).delete().timeout(
-            _networkTimeout,
-          );
+          await _storage
+              .ref(material.document)
+              .delete()
+              .timeout(_networkTimeout);
         } catch (_) {
           // Orphaned file; nothing references it any more from Firestore.
         }
@@ -273,7 +300,8 @@ class CoursesService {
     void Function(double progress)? onProgress,
   }) async {
     final docRef = _materialsRef(uid, courseId).doc();
-    final storagePath = 'users/$uid/courses/$courseId/materials/${docRef.id}.$type';
+    final storagePath =
+        'users/$uid/courses/$courseId/materials/${docRef.id}.$type';
     final ref = _storage.ref(storagePath);
 
     try {
@@ -355,10 +383,10 @@ class CoursesService {
     StudyMaterial material,
   ) async {
     try {
-      await _materialsRef(uid, courseId)
-          .doc(material.materialId)
-          .delete()
-          .timeout(_networkTimeout);
+      await _materialsRef(
+        uid,
+        courseId,
+      ).doc(material.materialId).delete().timeout(_networkTimeout);
     } on FirebaseException {
       throw CoursesFailure(_networkFailureMessage);
     } on TimeoutException {

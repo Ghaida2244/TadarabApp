@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/student.dart';
 import '../../services/home_data_service.dart';
@@ -8,6 +9,7 @@ import '../../theme/app_theme.dart';
 import '../../utils/event_time.dart';
 import '../../utils/rank.dart';
 import '../../widgets/app_error_banner.dart';
+import '../../widgets/status_bar_style.dart';
 import 'about_document_screen.dart';
 import 'content/about_content.dart';
 import 'edit_profile_screen.dart';
@@ -103,7 +105,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _openDocument(AboutDocumentKind kind) {
+  /// [student] is already in hand from the Profile screen's own
+  /// `StreamBuilder` — never an extra read just to open the guide. Null
+  /// only while the student hasn't loaded yet, in which case the Learning
+  /// Guide falls back to its own "no progress" default rather than
+  /// crashing on a missing value.
+  void _openDocument(AboutDocumentKind kind, Student? student) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => switch (kind) {
@@ -116,7 +123,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           AboutDocumentKind.termsOfUse => const AboutDocumentScreen(
             document: kTermsOfUseDocument,
           ),
-          AboutDocumentKind.learningGuide => const LearningGuideScreen(),
+          AboutDocumentKind.learningGuide => LearningGuideScreen(
+            points: student?.totalPoints,
+          ),
         },
       ),
     );
@@ -130,65 +139,77 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white,
-      child: StreamBuilder<Student?>(
-        key: ValueKey('profile-$_retryToken'),
-        stream: _dataService.watchStudent(widget.uid),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return _ProfileError(onRetry: () => setState(() => _retryToken++));
-          }
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.navy),
+      child: Container(
+        color: Colors.white,
+        child: StreamBuilder<Student?>(
+          key: ValueKey('profile-$_retryToken'),
+          stream: _dataService.watchStudent(widget.uid),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return _ProfileError(
+                onRetry: () => setState(() => _retryToken++),
+              );
+            }
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          final student = snapshot.data;
-          if (student == null) {
-            return _ProfileError(onRetry: () => setState(() => _retryToken++));
-          }
+            final student = snapshot.data;
+            if (student == null) {
+              return _ProfileError(
+                onRetry: () => setState(() => _retryToken++),
+              );
+            }
 
-          return Column(
-            children: [
-              ProfileAvatarHeader(
-                name: student.name,
-                onEdit: () => _openEdit(student),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Student Summary', style: ProfileText.sectionTitle),
-                      const SizedBox(height: 11),
-                      _SummaryRow(points: student.totalPoints),
-                      const SizedBox(height: 11),
-                      RankProgressCard(
-                        points: student.totalPoints,
-                        onViewRanks: () => _openRanks(student),
-                      ),
-                      const SizedBox(height: 22),
-                      Text('Settings', style: ProfileText.sectionTitle),
-                      const SizedBox(height: 11),
-                      _SettingsRow(
-                        student: student,
-                        onTap: () => _openStudyReminder(student),
-                      ),
-                      const SizedBox(height: 22),
-                      Text('About', style: ProfileText.sectionTitle),
-                      const SizedBox(height: 11),
-                      _AboutRows(onOpen: _openDocument),
-                      const SizedBox(height: 22),
-                      _LogOutButton(onTap: _confirmLogOut),
-                      const SizedBox(height: 8),
-                    ],
+            return Column(
+              children: [
+                ProfileAvatarHeader(
+                  name: student.name,
+                  onEdit: () => _openEdit(student),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Student Summary',
+                          style: ProfileText.sectionTitle,
+                        ),
+                        const SizedBox(height: 11),
+                        _SummaryRow(points: student.totalPoints),
+                        const SizedBox(height: 11),
+                        RankProgressCard(
+                          points: student.totalPoints,
+                          onViewRanks: () => _openRanks(student),
+                        ),
+                        const SizedBox(height: 22),
+                        Text('Settings', style: ProfileText.sectionTitle),
+                        const SizedBox(height: 11),
+                        _SettingsRow(
+                          student: student,
+                          onTap: () => _openStudyReminder(student),
+                        ),
+                        const SizedBox(height: 22),
+                        Text('About', style: ProfileText.sectionTitle),
+                        const SizedBox(height: 11),
+                        _AboutRows(
+                          onOpen: (kind) => _openDocument(kind, student),
+                        ),
+                        const SizedBox(height: 22),
+                        _LogOutButton(onTap: _confirmLogOut),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }

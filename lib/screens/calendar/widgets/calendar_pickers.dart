@@ -238,13 +238,19 @@ Future<DateTime?> pickEventDate({
 
 /// Opens the restyled time picker, resolving to the chosen time or null if
 /// the student cancels.
+///
+/// Opens on [initialTime] when one is already set (the student already
+/// picked a time, or a saved value exists); otherwise opens on [now]'s own
+/// hour and minute, not a fixed fallback. [now] defaults to [DateTime.now]
+/// so callers only need to pass it explicitly in tests.
 Future<TimeOfDay?> pickEventTime({
   required BuildContext context,
   required TimeOfDay? initialTime,
+  DateTime? now,
 }) {
   return showTimePicker(
     context: context,
-    initialTime: initialTime ?? const TimeOfDay(hour: 9, minute: 0),
+    initialTime: initialTime ?? TimeOfDay.fromDateTime(now ?? DateTime.now()),
     builder: (context, child) =>
         Theme(data: _pickerTheme(context), child: child!),
   );

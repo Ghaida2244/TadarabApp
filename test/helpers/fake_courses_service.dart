@@ -42,6 +42,7 @@ class FakeCoursesService extends CoursesService {
   int deleteMaterialCalls = 0;
   int uploadMaterialCalls = 0;
   int fetchCoursesWithMaterialCountsCalls = 0;
+  int fetchCoursesCalls = 0;
 
   /// When set, [fetchCourses] throws it — lets a test drive the Calendar's
   /// "course names couldn't be loaded" degradation.
@@ -49,6 +50,7 @@ class FakeCoursesService extends CoursesService {
 
   @override
   Future<List<Course>> fetchCourses(String uid) async {
+    fetchCoursesCalls++;
     if (fetchCoursesError != null) throw fetchCoursesError!;
     return courses;
   }

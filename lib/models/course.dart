@@ -1,12 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../utils/default_colors.dart';
+
 /// A course a student organizes their study materials under.
 /// Stored at users/{uid}/courses/{courseId}.
 class Course {
   Course({
     required this.courseId,
     required this.courseName,
-    this.color = '#10B981',
+    this.color = kDefaultCourseColor,
     required this.email,
   });
 
@@ -24,10 +26,13 @@ class Course {
 
   factory Course.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data()!;
+    final storedColor = data['color'] as String?;
     return Course(
       courseId: doc.id,
       courseName: data['courseName'] as String,
-      color: data['color'] as String? ?? '#10B981',
+      color: storedColor == null || storedColor.isEmpty
+          ? kDefaultCourseColor
+          : storedColor,
       email: data['email'] as String,
     );
   }

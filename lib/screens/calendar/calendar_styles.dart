@@ -1,5 +1,9 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
+import '../../services/courses_service.dart'
+    show kCoursePresetColors, kDefaultCourseColor;
 import '../../theme/app_theme.dart';
 
 /// Text styles and the two palette values used only by the Calendar
@@ -112,6 +116,15 @@ class CalendarText {
   /// "12:00 PM · reminder 1 day before" — 12px.
   static TextStyle get eventMeta =>
       _nunito(12, FontWeight.w800, color: AppColors.textSecondary);
+
+  /// "Finished" — the small grey divider label between today's not-yet-
+  /// started and already-started events.
+  static TextStyle get sheetSectionLabel => _nunito(
+    11,
+    FontWeight.w800,
+    color: AppColors.textSecondary,
+    letterSpacing: 0.3,
+  );
 
   /// "No events on this day" heading in the sheet's dashed empty state.
   static TextStyle get sheetEmptyTitle => _nunito(15, FontWeight.w900);
@@ -257,6 +270,7 @@ const List<String> kEventSwatchPool = [
   '#BE123C',
   '#0F766E',
   '#0B0F5B',
+  '#0891B2', // cyan — appended; the rest of the pool keeps its order.
 ];
 
 /// Formats [color] as the `"#RRGGBB"` string events are stored with.
@@ -270,20 +284,130 @@ String hexFromColor(Color color) {
   return '#${rgb.toRadixString(16).padLeft(6, '0').toUpperCase()}';
 }
 
-/// How many swatches the colour row shows, per the handoff's `.slice(0, 4)`.
-const int kEventSwatchCount = 4;
-
-/// The swatches to offer given the colours [courseColors] already uses.
-/// Falls back to the head of the pool if courses have somehow claimed so
-/// many hues that fewer than [kEventSwatchCount] remain, so the row is
-/// never empty.
-List<String> eventSwatchesFor(Iterable<String> courseColors) {
+/// The colour Add Event preselects when it opens: [kDefaultCourseColor]
+/// (green), unless a course already uses it, then the medium amber, then
+/// the next free colour in [kEventSwatchPool]'s own order; if every pool
+/// colour is somehow already claimed by a course, the pool's first colour
+/// anyway — the row is never actually left with no selection.
+String defaultEventColor(Iterable<String> courseColors) {
+  const green = kDefaultCourseColor;
+  const amber = '#F5A524';
   final taken = courseColors.map((c) => c.toUpperCase()).toSet();
-  final free = kEventSwatchPool
-      .where((hex) => !taken.contains(hex.toUpperCase()))
-      .toList();
-  if (free.length >= kEventSwatchCount) {
-    return free.take(kEventSwatchCount).toList();
+  if (!taken.contains(green)) return green;
+  if (!taken.contains(amber)) return amber;
+  for (final hex in kEventSwatchPool) {
+    if (!taken.contains(hex.toUpperCase())) return hex;
   }
-  return kEventSwatchPool.take(kEventSwatchCount).toList();
+  return kEventSwatchPool.first;
+}
+
+/// The colour Add Event preselects when it opens: one entry from
+/// [kEventSwatchPool], chosen at random, that is none of:
+/// [kCoursePresetColors] (Add course's own 5 presets — a standalone event
+/// should never look like it's secretly a course), [courseColors] (any of
+/// the student's own courses), or [standaloneColors] (the student's saved
+/// quick-colours, which are by definition colours already used by one of
+/// her standalone events).
+///
+/// Unrelated to [defaultEventColor] — that one stays exactly as-is for Add
+/// course, which still wants its own green→amber→first-free-preset order,
+/// not a random pick, and never touches [kEventSwatchPool] beyond its own
+/// fallback walk.
+///
+/// If every pool colour is excluded, the exclusions are relaxed one at a
+/// time rather than giving up: first allowing a colour already used by a
+/// standalone event, then also allowing a preset, and if that's still
+/// somehow empty, [kEventSwatchPool]'s first colour regardless.
+///
+/// [random] is injectable so a test can pass a seeded [Random] for a
+/// deterministic pick; defaults to a fresh [Random] otherwise.
+String randomEventColor({
+  required Iterable<String> courseColors,
+  required Iterable<String> standaloneColors,
+  Random? random,
+}) {
+  final presets = kCoursePresetColors.map((c) => c.toUpperCase()).toSet();
+  final courseTaken = courseColors.map((c) => c.toUpperCase()).toSet();
+  final standaloneTaken = standaloneColors.map((c) => c.toUpperCase()).toSet();
+
+  List<String> freeFrom(Set<String> excluded) => [
+    for (final hex in kEventSwatchPool)
+      if (!excluded.contains(hex.toUpperCase())) hex,
+  ];
+
+  var candidates = freeFrom({...presets, ...courseTaken, ...standaloneTaken});
+  if (candidates.isEmpty) candidates = freeFrom({...presets, ...courseTaken});
+  if (candidates.isEmpty) candidates = freeFrom(courseTaken);
+  if (candidates.isEmpty) return kEventSwatchPool.first;
+
+  final rng = random ?? Random();
+  return candidates[rng.nextInt(candidates.length)];
+}
+
+/// One tile in Add Event's colour row.
+class EventColorTile {
+  const EventColorTile(this.hex, {this.removable = false});
+
+  final String hex;
+
+  /// True only for a tile drawn from the student's saved list — never the
+  /// default-when-empty tile or the extra selected-colour tile, and never
+  /// the "+" tile (which isn't represented here at all; the caller adds it
+  /// separately). Only a removable tile shows the "×" badge.
+  final bool removable;
+
+  @override
+  bool operator ==(Object other) =>
+      other is EventColorTile && other.hex == hex && other.removable == removable;
+
+  @override
+  int get hashCode => Object.hash(hex, removable);
+
+  @override
+  String toString() => 'EventColorTile($hex, removable: $removable)';
+}
+
+/// The colour tiles Add Event's colour row offers, in display order — the
+/// dashed/rainbow "+" tile is added separately by the caller, after these:
+///
+/// 1. [savedColors] (already capped at 5 and ordered most-recent-first by
+///    the caller), each marked [EventColorTile.removable] so its tile shows
+///    the "×" badge.
+/// 2. One extra, non-removable tile for [selectedColor] — the screen's
+///    current selection, whether that's the one-time random default
+///    ([randomEventColor]), a saved colour already covered by 1 (a no-op
+///    here, since it's already in the list), or a fresh pick from the full
+///    colour-picker dialog. This is also what makes the row never just the
+///    "+" with nothing selected: [selectedColor] is only null for the
+///    brief window before the screen's one-time load resolves.
+///
+/// A colour any of [courseColors] currently uses is dropped from
+/// [savedColors] — the student already gets that colour by picking the
+/// course itself — but never from [selectedColor]: the random default
+/// already excludes course colours by construction, and a colour picked
+/// from the dialog is never filtered, same as before. Dropping a saved
+/// colour this way never changes the saved list itself — the filter only
+/// applies to what's displayed.
+List<EventColorTile> eventColorTiles({
+  required List<String> savedColors,
+  required Iterable<String> courseColors,
+  String? selectedColor,
+}) {
+  final takenByCourse = courseColors.map((c) => c.toUpperCase()).toSet();
+  final tiles = <EventColorTile>[];
+  final seen = <String>{};
+
+  void addTile(String hex, {bool removable = false}) {
+    if (seen.add(hex.toUpperCase())) {
+      tiles.add(EventColorTile(hex, removable: removable));
+    }
+  }
+
+  for (final hex in savedColors) {
+    if (!takenByCourse.contains(hex.toUpperCase())) addTile(hex, removable: true);
+  }
+
+  if (selectedColor != null) addTile(selectedColor);
+
+  return tiles;
 }

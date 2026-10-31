@@ -2,10 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../../../models/calendar_event.dart';
 import '../../../models/course.dart';
+import '../../../services/streak_service.dart' show dateOnly;
 import '../../../theme/app_theme.dart';
 import '../../../utils/event_time.dart';
 import '../../../widgets/dashed_border.dart';
 import '../calendar_styles.dart';
+
+/// Opacity applied to an already-finished event's colour bar and text (not
+/// its delete button, which stays fully opaque and usable) — light enough
+/// to read as "done" but still clearly legible.
+const _kFinishedOpacity = 0.5;
 
 /// The bottom sheet listing one day's events, opened by tapping a day that
 /// has events on the month grid.
@@ -20,12 +26,14 @@ class DayEventsSheet extends StatelessWidget {
     required this.events,
     required this.coursesById,
     required this.onDeleteRequested,
+    this.now,
   });
 
   final DateTime day;
 
-  /// The day's events. Sorted by time here rather than by the caller, so
-  /// every entry point gets the handoff's chronological order.
+  /// The day's events. Grouped/sorted here rather than by the caller, so
+  /// every entry point gets the same rule — see [build]'s own doc comment
+  /// on the grouping itself.
   final List<CalendarEvent> events;
 
   /// Course lookup for the name shown under an event.
@@ -37,10 +45,50 @@ class DayEventsSheet extends StatelessWidget {
 
   final ValueChanged<CalendarEvent> onDeleteRequested;
 
+  /// Defaults to [DateTime.now] so a test can inject a fixed clock —
+  /// matches the Calendar screen's own `widget.now ?? DateTime.now()`
+  /// pattern. Computed once, when the sheet is built: the grouping below
+  /// is a point-in-time snapshot, not a live timer.
+  final DateTime? now;
+
   @override
   Widget build(BuildContext context) {
-    final sorted = [...events]
-      ..sort((a, b) => a.eventTime.compareTo(b.eventTime));
+    final effectiveNow = now ?? DateTime.now();
+    final isToday = dateOnly(day) == dateOnly(effectiveNow);
+    final isPast = dateOnly(day).isBefore(dateOnly(effectiveNow));
+
+    List<CalendarEvent> byStart(Iterable<CalendarEvent> list) =>
+        [...list]..sort(
+          (a, b) => eventDateTime(a).compareTo(eventDateTime(b)),
+        );
+
+    // "Finished" means the event's full start (eventDate + eventTime) is
+    // at or before `now` — eventDateTime already treats an unparsable
+    // stored time as midnight. Today splits into two chronological
+    // groups with not-yet-started first; a past day is entirely
+    // "finished" (still plain chronological order); a future day has
+    // nothing finished yet.
+    final List<CalendarEvent> notStarted;
+    final List<CalendarEvent> finished;
+    if (isToday) {
+      notStarted = byStart(
+        events.where((e) => eventDateTime(e).isAfter(effectiveNow)),
+      );
+      finished = byStart(
+        events.where((e) => !eventDateTime(e).isAfter(effectiveNow)),
+      );
+    } else if (isPast) {
+      notStarted = const [];
+      finished = byStart(events);
+    } else {
+      notStarted = byStart(events);
+      finished = const [];
+    }
+    final total = notStarted.length + finished.length;
+    // Only today's split ever shows a divider — a past day's "finished"
+    // group is simply everything, and a future day's is simply nothing,
+    // so this same emptiness check naturally suppresses it there too.
+    final showDivider = notStarted.isNotEmpty && finished.isNotEmpty;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 26),
@@ -63,7 +111,7 @@ class DayEventsSheet extends StatelessWidget {
                       Text(formatLongDate(day), style: CalendarText.sheetDate),
                       const SizedBox(height: 2),
                       Text(
-                        formatEventCount(sorted.length),
+                        formatEventCount(total),
                         style: CalendarText.sheetCount,
                       ),
                     ],
@@ -78,14 +126,29 @@ class DayEventsSheet extends StatelessWidget {
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    if (sorted.isEmpty) const _SheetEmptyState(),
-                    for (final event in sorted) ...[
+                    if (total == 0) const _SheetEmptyState(),
+                    for (final event in notStarted) ...[
                       _EventRow(
                         event: event,
                         course: event.courseId == null
                             ? null
                             : coursesById[event.courseId],
                         onDelete: () => onDeleteRequested(event),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                    if (showDivider) ...[
+                      const _FinishedDivider(),
+                      const SizedBox(height: 10),
+                    ],
+                    for (final event in finished) ...[
+                      _EventRow(
+                        event: event,
+                        course: event.courseId == null
+                            ? null
+                            : coursesById[event.courseId],
+                        onDelete: () => onDeleteRequested(event),
+                        dimmed: true,
                       ),
                       const SizedBox(height: 10),
                     ],
@@ -125,6 +188,25 @@ class _CloseChip extends StatelessWidget {
           child: const Icon(Icons.close, size: 15, color: AppColors.navy),
         ),
       ),
+    );
+  }
+}
+
+/// The thin grey rule + "Finished" label separating today's not-yet-
+/// started events from its already-started ones.
+class _FinishedDivider extends StatelessWidget {
+  const _FinishedDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(child: Container(height: 1, color: AppColors.cardTint)),
+        const SizedBox(width: 8),
+        Text('Finished', style: CalendarText.sheetSectionLabel),
+        const SizedBox(width: 8),
+        Expanded(child: Container(height: 1, color: AppColors.cardTint)),
+      ],
     );
   }
 }
@@ -171,6 +253,7 @@ class _EventRow extends StatelessWidget {
     required this.event,
     required this.course,
     required this.onDelete,
+    this.dimmed = false,
   });
 
   final CalendarEvent event;
@@ -181,10 +264,17 @@ class _EventRow extends StatelessWidget {
 
   final VoidCallback onDelete;
 
+  /// True for an already-finished event (today's past-start group, or any
+  /// event on a past day) — dims the colour bar and text, per
+  /// [_kFinishedOpacity]. The delete button is never dimmed; it's built
+  /// outside the [Opacity] below so it stays fully usable.
+  final bool dimmed;
+
   @override
   Widget build(BuildContext context) {
     final hue = parseHexColor(event.color);
     final reminder = eventReminderSummary(event);
+    final opacity = dimmed ? _kFinishedOpacity : 1.0;
 
     return Container(
       padding: const EdgeInsets.only(left: 12),
@@ -197,12 +287,15 @@ class _EventRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              width: 6,
-              margin: const EdgeInsets.symmetric(vertical: 13),
-              decoration: BoxDecoration(
-                color: hue,
-                borderRadius: BorderRadius.circular(999),
+            Opacity(
+              opacity: opacity,
+              child: Container(
+                width: 6,
+                margin: const EdgeInsets.symmetric(vertical: 13),
+                decoration: BoxDecoration(
+                  color: hue,
+                  borderRadius: BorderRadius.circular(999),
+                ),
               ),
             ),
             Expanded(
@@ -211,44 +304,47 @@ class _EventRow extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            event.eventName,
-                            style: CalendarText.eventName,
-                          ),
-                          if (course != null) ...[
-                            const SizedBox(height: 3),
+                      child: Opacity(
+                        opacity: opacity,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
                             Text(
-                              course!.courseName,
-                              style: CalendarText.eventCourse(hue),
+                              event.eventName,
+                              style: CalendarText.eventName,
                             ),
-                          ],
-                          const SizedBox(height: 3),
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.schedule,
-                                size: 13,
-                                color: AppColors.textSecondary,
-                              ),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  [
-                                    formatStoredTimeForDisplay(
-                                      event.eventTime,
-                                    ),
-                                    ?reminder,
-                                  ].join(' · '),
-                                  style: CalendarText.eventMeta,
-                                ),
+                            if (course != null) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                course!.courseName,
+                                style: CalendarText.eventCourse(hue),
                               ),
                             ],
-                          ),
-                        ],
+                            const SizedBox(height: 3),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.schedule,
+                                  size: 13,
+                                  color: AppColors.textSecondary,
+                                ),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    [
+                                      formatStoredTimeForDisplay(
+                                        event.eventTime,
+                                      ),
+                                      ?reminder,
+                                    ].join(' · '),
+                                    style: CalendarText.eventMeta,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),

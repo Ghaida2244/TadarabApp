@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/models/course.dart';
 import 'package:tadarab_app/models/study_material.dart';
 import 'package:tadarab_app/screens/courses/courses_list_screen.dart';
+import 'package:tadarab_app/theme/app_theme.dart';
 
 import '../../helpers/fake_courses_service.dart';
 
@@ -156,5 +157,45 @@ void main() {
       await tester.pumpAndSettle();
       expect(service.fetchCoursesWithMaterialCountsCalls, 1);
     });
+  });
+
+  group('status bar / safe area', () {
+    Rect navyHeaderRect(WidgetTester tester) {
+      final finder = find.byWidgetPredicate((w) {
+        if (w is! Container) return false;
+        final decoration = w.decoration;
+        return decoration is BoxDecoration && decoration.color == AppColors.navy;
+      });
+      return tester.getRect(finder.first);
+    }
+
+    testWidgets(
+      'the header background reaches the top of the screen under a real '
+      'top inset (no white strip above it), and the title sits below the '
+      'status-bar inset',
+      (tester) async {
+        const insets = EdgeInsets.only(top: 48);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: const MediaQueryData(
+                padding: insets,
+                viewPadding: insets,
+              ),
+              child: CoursesListScreen(
+                uid: 'uid-1',
+                coursesService: FakeCoursesService(),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(navyHeaderRect(tester).top, 0);
+
+        final titleRect = tester.getRect(find.text('Courses'));
+        expect(titleRect.top, greaterThan(48));
+      },
+    );
   });
 }

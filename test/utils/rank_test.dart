@@ -165,6 +165,29 @@ void main() {
       expect(kRanks.last.shortName, 'Master');
     });
 
+    test('shortName drops " Learner" for every one of the ten ranks', () {
+      const expected = [
+        'Beginner',
+        'Active',
+        'Focused',
+        'Rising',
+        'Skilled',
+        'Advanced',
+        'Proficient',
+        'Expert',
+        'Elite',
+        'Master',
+      ];
+      expect(kRanks.length, expected.length);
+      for (var i = 0; i < kRanks.length; i++) {
+        expect(
+          kRanks[i].shortName,
+          expected[i],
+          reason: kRanks[i].name,
+        );
+      }
+    });
+
     test('rangeLabel reads as the design prints it', () {
       expect(kRanks.first.rangeLabel, '0 – 99 pts');
       expect(kRanks[3].rangeLabel, '700 – 1,199 pts');

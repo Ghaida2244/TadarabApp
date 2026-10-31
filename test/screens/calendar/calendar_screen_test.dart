@@ -6,6 +6,7 @@ import 'package:tadarab_app/models/calendar_event.dart';
 import 'package:tadarab_app/models/course.dart';
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/screens/calendar/calendar_screen.dart';
+import 'package:tadarab_app/screens/calendar/widgets/calendar_header.dart';
 import 'package:tadarab_app/screens/calendar/widgets/delete_event_dialog.dart';
 import 'package:tadarab_app/services/calendar_service.dart';
 import 'package:tadarab_app/services/courses_service.dart';
@@ -51,6 +52,7 @@ void main() {
     FakeCalendarService? service,
     FakeCoursesService? coursesService,
     VoidCallback? onEventsChanged,
+    bool active = true,
   }) async {
     tester.view.physicalSize = const Size(412, 892);
     tester.view.devicePixelRatio = 1.0;
@@ -60,6 +62,7 @@ void main() {
         home: Scaffold(
           body: CalendarScreen(
             uid: 'uid-1',
+            active: active,
             calendarService: service ?? FakeCalendarService(),
             coursesService: coursesService ?? FakeCoursesService(),
             now: now,
@@ -116,6 +119,7 @@ void main() {
           home: Scaffold(
             body: CalendarScreen(
               uid: 'uid-1',
+              active: true,
               calendarService: _PendingCalendarService(),
               coursesService: FakeCoursesService(),
               now: now,
@@ -200,6 +204,51 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('April 2026'), findsOneWidget);
     });
+  });
+
+  group('Add Event date picker', () {
+    /// Taps the Add Event pill, opens its date field, then accepts the
+    /// picker's own pre-highlighted day without choosing one — revealing
+    /// what it opened on.
+    Future<void> openAddEventAndAcceptDate(WidgetTester tester) async {
+      await tester.tap(find.text('Add Event'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('event-date')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'opens on today even while the current month is shown (not the '
+      '1st) — regression test for passing the displayed month\'s 1st '
+      'as the initial date',
+      (tester) async {
+        await pumpCalendar(tester);
+
+        await openAddEventAndAcceptDate(tester);
+
+        // `now` is May 3, 2026.
+        expect(find.text('May 3, 2026'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'opens on today, not the 1st, even while browsing a different '
+      'month (e.g. next month)',
+      (tester) async {
+        await pumpCalendar(tester);
+
+        await tester.tap(find.bySemanticsLabel('Next month'));
+        await tester.pumpAndSettle();
+        expect(find.text('June 2026'), findsOneWidget);
+
+        await openAddEventAndAcceptDate(tester);
+
+        // Still today (May 3), not June 1st.
+        expect(find.text('May 3, 2026'), findsOneWidget);
+      },
+    );
   });
 
   group('back to today', () {
@@ -553,6 +602,269 @@ void main() {
 
       expect(service.watchedMonths.length, greaterThan(before));
     });
+  });
+
+  group('reload when becoming the active tab', () {
+    /// Mirrors how HomeScreen embeds this screen (and the Courses tab) in a
+    /// persistent IndexedStack: the widget stays mounted, only `active`
+    /// flips — via a "toggle active" button, same idiom
+    /// `courses_list_screen_test.dart` uses for the identical problem.
+    Future<Future<void> Function()> pumpToggleable(
+      WidgetTester tester, {
+      required FakeCalendarService calendarService,
+      required FakeCoursesService coursesService,
+      required bool Function() isActive,
+      required void Function(bool) setActive,
+    }) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              return Column(
+                children: [
+                  TextButton(
+                    onPressed: () => setState(() => setActive(!isActive())),
+                    child: const Text('toggle active'),
+                  ),
+                  Expanded(
+                    child: CalendarScreen(
+                      uid: 'uid-1',
+                      active: isActive(),
+                      calendarService: calendarService,
+                      coursesService: coursesService,
+                      now: now,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return () async {
+        await tester.tap(find.text('toggle active'));
+        await tester.pumpAndSettle();
+      };
+    }
+
+    testWidgets(
+      'a course added while inactive appears in Add Event\'s dropdown '
+      'once this tab becomes active again',
+      (tester) async {
+        final coursesService = FakeCoursesService();
+        var active = false;
+        final toggle = await pumpToggleable(
+          tester,
+          calendarService: FakeCalendarService(),
+          coursesService: coursesService,
+          isActive: () => active,
+          setActive: (v) => active = v,
+        );
+
+        // "Created elsewhere" (the Courses tab) while this tab sat inactive.
+        coursesService.courses.add(
+          Course(
+            courseId: 'c1',
+            courseName: 'IS230',
+            color: '#16A34A',
+            email: 'e',
+          ),
+        );
+        await toggle();
+
+        await tester.tap(find.text('Add Event'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('course-field')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey('course-option-IS230')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'a course deleted while inactive disappears from Add Event\'s '
+      'dropdown once this tab becomes active again',
+      (tester) async {
+        final coursesService = FakeCoursesService(
+          courses: [
+            Course(
+              courseId: 'c1',
+              courseName: 'IS230',
+              color: '#16A34A',
+              email: 'e',
+            ),
+          ],
+        );
+        var active = true;
+        final toggle = await pumpToggleable(
+          tester,
+          calendarService: FakeCalendarService(),
+          coursesService: coursesService,
+          isActive: () => active,
+          setActive: (v) => active = v,
+        );
+
+        await toggle(); // -> inactive
+        coursesService.courses.removeWhere((c) => c.courseId == 'c1');
+        await toggle(); // -> active again
+
+        await tester.tap(find.text('Add Event'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('course-field')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey('course-option-IS230')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'Add Event\'s colour exclusion uses the fresh course colours once '
+      'this tab becomes active again',
+      (tester) async {
+        final coursesService = FakeCoursesService();
+        var active = false;
+        final toggle = await pumpToggleable(
+          tester,
+          calendarService: FakeCalendarService(),
+          coursesService: coursesService,
+          isActive: () => active,
+          setActive: (v) => active = v,
+        );
+
+        // A non-preset pool colour — only excluded from the random default
+        // once the course list genuinely reflects it.
+        coursesService.courses.add(
+          Course(
+            courseId: 'c1',
+            courseName: 'Teal course',
+            color: '#0D9488',
+            email: 'e',
+          ),
+        );
+        await toggle();
+
+        await tester.tap(find.text('Add Event'));
+        await tester.pumpAndSettle();
+
+        expect(find.bySemanticsLabel('Color #0D9488'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'the day sheet shows the right course name once this tab becomes '
+      'active again, for an event already linked to a course added while '
+      'inactive',
+      (tester) async {
+        final coursesService = FakeCoursesService();
+        var active = false;
+        final toggle = await pumpToggleable(
+          tester,
+          calendarService: FakeCalendarService(
+            events: [event(day: 14, courseId: 'c1')],
+          ),
+          coursesService: coursesService,
+          isActive: () => active,
+          setActive: (v) => active = v,
+        );
+
+        // Before the course exists, the day sheet omits the course line —
+        // the same "course not found" fallback a deleted course gets.
+        await tester.tap(find.text('14'));
+        await tester.pumpAndSettle();
+        expect(find.text('IS230'), findsNothing);
+        await tester.tap(find.bySemanticsLabel('Close'));
+        await tester.pumpAndSettle();
+
+        coursesService.courses.add(
+          Course(
+            courseId: 'c1',
+            courseName: 'IS230',
+            color: '#16A34A',
+            email: 'e',
+          ),
+        );
+        await toggle();
+
+        await tester.tap(find.text('14'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('IS230'), findsOneWidget);
+      },
+    );
+
+    testWidgets('staying active (or going inactive) does not reload', (
+      tester,
+    ) async {
+      final coursesService = FakeCoursesService();
+
+      Widget buildScreen() => MaterialApp(
+        home: Scaffold(
+          body: CalendarScreen(
+            uid: 'uid-1',
+            active: true,
+            calendarService: FakeCalendarService(),
+            coursesService: coursesService,
+            now: now,
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(buildScreen());
+      await tester.pumpAndSettle();
+      expect(coursesService.fetchCoursesCalls, 1);
+
+      // Rebuilding with the same active:true shouldn't trigger a refetch.
+      await tester.pumpWidget(buildScreen());
+      await tester.pumpAndSettle();
+      expect(coursesService.fetchCoursesCalls, 1);
+    });
+  });
+
+  group('status bar / safe area', () {
+    testWidgets(
+      'the header background reaches the top of the screen under a real '
+      'top inset (no white strip above it), and its content sits below '
+      'the status-bar inset',
+      (tester) async {
+        const insets = EdgeInsets.only(top: 48);
+        tester.view.physicalSize = const Size(412, 892);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: const MediaQueryData(
+                padding: insets,
+                viewPadding: insets,
+              ),
+              child: Scaffold(
+                body: CalendarScreen(
+                  uid: 'uid-1',
+                  active: true,
+                  calendarService: FakeCalendarService(),
+                  coursesService: FakeCoursesService(),
+                  now: now,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.getRect(find.byType(CalendarHeader)).top, 0);
+
+        final titleRect = tester.getRect(find.text('Calendar'));
+        expect(titleRect.top, greaterThan(48));
+      },
+    );
   });
 }
 

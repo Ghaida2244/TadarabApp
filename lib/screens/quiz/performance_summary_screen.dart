@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../logic/performance_tier.dart';
 import '../../logic/practice_shuffle.dart';
@@ -7,6 +8,7 @@ import '../../models/quiz_session.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
+import '../../widgets/status_bar_style.dart';
 import 'quiz_navigation.dart';
 import 'quiz_play_screen.dart';
 import 'review_mistakes_screen.dart';
@@ -43,7 +45,8 @@ class PerformanceSummaryScreen extends StatefulWidget {
   bool get isPracticeResult => practiceCorrect != null;
 
   @override
-  State<PerformanceSummaryScreen> createState() => _PerformanceSummaryScreenState();
+  State<PerformanceSummaryScreen> createState() =>
+      _PerformanceSummaryScreenState();
 }
 
 class _PerformanceSummaryScreenState extends State<PerformanceSummaryScreen> {
@@ -122,102 +125,118 @@ class _PerformanceSummaryScreenState extends State<PerformanceSummaryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: FutureBuilder<_SummaryData>(
-          future: _dataFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (!snapshot.hasData) {
-              return Center(
-                child: Text("Couldn't load your results.", style: AppTypography.quizEmptyTitle),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.navy),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          top: false,
+          child: FutureBuilder<_SummaryData>(
+            future: _dataFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (!snapshot.hasData) {
+                return Center(
+                  child: Text(
+                    "Couldn't load your results.",
+                    style: AppTypography.quizEmptyTitle,
+                  ),
+                );
+              }
+              final data = snapshot.data!;
+              final tier = performanceTierFor(
+                numerator: data.correct,
+                denominator: data.total,
               );
-            }
-            final data = snapshot.data!;
-            final tier = performanceTierFor(
-              numerator: data.correct,
-              denominator: data.total,
-            );
-            final wrong = data.total - data.correct;
+              final wrong = data.total - data.correct;
 
-            return Column(
-              children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(22),
-                  decoration: const BoxDecoration(
-                    color: AppColors.navy,
-                    borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
-                  ),
-                  child: Column(
-                    children: [
-                      Text('Performance Summary', style: AppTypography.quizSummaryTitle, textAlign: TextAlign.center),
-                      const SizedBox(height: 4),
-                      Text(
-                        widget.isPracticeResult
-                            ? 'PRACTICE ROUND'
-                            : '${data.session!.mode == Mode.exam ? 'EXAM' : 'LEARNING'} MODE · ${data.total} QUESTIONS',
-                        style: AppTypography.quizHeaderMeta,
+              return Column(
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(22),
+                    decoration: const BoxDecoration(
+                      color: AppColors.navy,
+                      borderRadius: BorderRadius.vertical(
+                        bottom: Radius.circular(30),
                       ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(22, 30, 22, 12),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _CountCard(
-                                icon: Icons.check,
-                                iconBg: AppColors.successBackgroundStrong,
-                                iconColor: AppColors.success,
-                                count: data.correct,
-                                countColor: AppColors.success,
-                                label: 'CORRECT',
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _CountCard(
-                                icon: Icons.close,
-                                iconBg: AppColors.errorBannerBackground,
-                                iconColor: AppColors.red,
-                                count: wrong,
-                                countColor: AppColors.red,
-                                label: 'WRONG',
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 18),
-                        _MoodBanner(tier: tier),
-                        if (!widget.isPracticeResult) ...[
-                          const SizedBox(height: 18),
-                          _PointsStrip(points: data.session!.earnedPoints),
+                    ),
+                    child: SafeArea(
+                      bottom: false,
+                      child: Column(
+                        children: [
+                          Text(
+                            'Performance Summary',
+                            style: AppTypography.quizSummaryTitle,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            widget.isPracticeResult
+                                ? 'PRACTICE ROUND'
+                                : '${data.session!.mode == Mode.exam ? 'EXAM' : 'LEARNING'} MODE · ${data.total} QUESTIONS',
+                            style: AppTypography.quizHeaderMeta,
+                          ),
                         ],
-                      ],
+                      ),
                     ),
                   ),
-                ),
-                // Actions live outside the scrollable area, on their own
-                // fixed bottom bar — anchored to the screen's actual
-                // bottom regardless of how short the scrollable content
-                // above is, rather than following the content flow (which
-                // left empty space beneath them whenever there were no
-                // mistakes to show, e.g. no Review/Practice button).
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(22, 0, 22, 26),
-                  child: Column(children: _buildActions(data)),
-                ),
-              ],
-            );
-          },
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(22, 30, 22, 12),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _CountCard(
+                                  icon: Icons.check,
+                                  iconBg: AppColors.successBackgroundStrong,
+                                  iconColor: AppColors.success,
+                                  count: data.correct,
+                                  countColor: AppColors.success,
+                                  label: 'CORRECT',
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _CountCard(
+                                  icon: Icons.close,
+                                  iconBg: AppColors.errorBannerBackground,
+                                  iconColor: AppColors.red,
+                                  count: wrong,
+                                  countColor: AppColors.red,
+                                  label: 'WRONG',
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 18),
+                          _MoodBanner(tier: tier),
+                          if (!widget.isPracticeResult) ...[
+                            const SizedBox(height: 18),
+                            _PointsStrip(points: data.session!.earnedPoints),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Actions live outside the scrollable area, on their own
+                  // fixed bottom bar — anchored to the screen's actual
+                  // bottom regardless of how short the scrollable content
+                  // above is, rather than following the content flow (which
+                  // left empty space beneath them whenever there were no
+                  // mistakes to show, e.g. no Review/Practice button).
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 0, 22, 26),
+                    child: Column(children: _buildActions(data)),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -374,19 +393,28 @@ class _MoodBanner extends StatelessWidget {
     }
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(22)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(22),
+      ),
       child: Row(
         children: [
           Container(
             width: 48,
             height: 48,
             alignment: Alignment.center,
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: Icon(icon, color: ink),
           ),
           const SizedBox(width: 14),
           Expanded(
-            child: Text(performanceTierMessage(tier), style: AppTypography.quizResultLine(ink)),
+            child: Text(
+              performanceTierMessage(tier),
+              style: AppTypography.quizResultLine(ink),
+            ),
           ),
         ],
       ),
@@ -403,7 +431,10 @@ class _PointsStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-      decoration: BoxDecoration(color: AppColors.warningBackground, borderRadius: BorderRadius.circular(22)),
+      decoration: BoxDecoration(
+        color: AppColors.warningBackground,
+        borderRadius: BorderRadius.circular(22),
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
