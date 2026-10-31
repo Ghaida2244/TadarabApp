@@ -5,6 +5,7 @@ import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../models/calendar_event.dart';
+import '../theme/app_theme.dart';
 import '../utils/event_time.dart';
 
 /// Notification title for every event reminder, exactly as SRS Figure 107
@@ -23,8 +24,7 @@ const kStudyReminderTitle = 'Time to Study!';
 
 /// Notification body for the daily study reminder, exactly as the SRS
 /// specifies.
-const kStudyReminderBody =
-    'Open Tadarab and continue your learning journey.';
+const kStudyReminderBody = 'Open Tadarab and continue your learning journey.';
 
 /// The notification ID reserved for the daily study reminder.
 ///
@@ -76,6 +76,7 @@ class ReminderScheduler {
     channelDescription: 'Reminders for events you added to your calendar.',
     importance: Importance.high,
     priority: Priority.high,
+    color: AppColors.navy,
   );
 
   /// Android notification channel for the daily study reminder. Separate
@@ -87,6 +88,7 @@ class ReminderScheduler {
     channelDescription: 'Your daily nudge to open Tadarab and study.',
     importance: Importance.high,
     priority: Priority.high,
+    color: AppColors.navy,
   );
 
   /// Loads the timezone database and points it at the device's zone, which
@@ -100,7 +102,7 @@ class ReminderScheduler {
       tz.setLocalLocation(tz.getLocation(localZone.identifier));
       await _plugin.initialize(
         settings: const InitializationSettings(
-          android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+          android: AndroidInitializationSettings('ic_stat_notification'),
         ),
       );
       _initialized = true;
