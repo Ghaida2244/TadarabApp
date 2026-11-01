@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../services/profile_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/keyboard_safe_padding.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_error_banner.dart';
+import '../../widgets/dismiss_keyboard_on_tap.dart';
 import 'profile_styles.dart';
 import 'widgets/profile_header.dart';
 
@@ -93,12 +95,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Column(
+      // The Save Changes footer below is pinned outside the scroll area,
+      // at the bottom of the Column — without this, opening the keyboard
+      // (typing the name) shrinks the Scaffold's body and drags that
+      // footer up above it instead of letting the keyboard simply cover
+      // it. See keyboardSafePadding below for the matching fix on the
+      // scroll view's own padding.
+      resizeToAvoidBottomInset: false,
+      body: DismissKeyboardOnTap(
+        child: Column(
         children: [
           ProfileSubHeader(title: 'Edit Profile', enabled: !_saving),
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(22, 22, 22, 12),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: keyboardSafePadding(
+                context,
+                const EdgeInsets.fromLTRB(22, 22, 22, 12),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -229,6 +243,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
           ),
         ],
+        ),
       ),
     );
   }

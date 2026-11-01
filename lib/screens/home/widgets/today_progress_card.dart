@@ -11,10 +11,80 @@ const _weekdayNames = [
   'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
 ];
 
-/// Fixed height for the pager's single row of 7 cells + their labels, so
-/// every page — real data, or the loading placeholder — occupies exactly
-/// the same space and the card never resizes while swiping.
-const _kWeekRowHeight = 54.0;
+/// The day cell's own fixed-size colored box (see [_DayCell]) — never
+/// scales with text, since it holds no text itself.
+const _kDayCellHeight = 34.0;
+
+/// Gap between a day cell's colored box and its weekday/date label below.
+const _kCellLabelGap = 6.0;
+
+/// The day label's own text style (see [_DayCell], which applies
+/// [TextStyle.copyWith] for its actual color — the only part of this that
+/// varies per cell, and irrelevant to layout) *before* Flutter merges it
+/// onto the ambient `DefaultTextStyle`. Named once here, rather than
+/// inline in both places, so [_weekRowHeight]'s measurement and the real
+/// label use the exact same style and the exact same merge, rather than
+/// two independent copies that could silently drift apart.
+///
+/// Deliberately leaves `fontFamily`/`height` unset, same as the real
+/// label — both are meant to inherit from [AppTheme] (via
+/// `DefaultTextStyle`), same as before this fix, so normal-scale
+/// appearance is unchanged. [_dayLabelHeight] performs that same merge
+/// itself before measuring, rather than hardcoding a guess at what it
+/// would resolve to.
+const _kDayLabelStyle = TextStyle(
+  fontSize: 10,
+  fontWeight: FontWeight.w900,
+  letterSpacing: 0.02 * 10,
+);
+
+/// How much vertical room the weekday/date label under each day cell
+/// needs, at [context]'s ambient (ultimately [textScaler]-scaled) style.
+/// Measured with a real [TextPainter] against the *exact* style
+/// [_DayCell]'s [Text] actually renders with — replicating [Text]'s own
+/// `DefaultTextStyle.of(context).style.merge(style)` — rather than a
+/// hand-picked fixed pixel budget. A fixed budget can't account for
+/// whatever [AppTheme]/`DefaultTextStyle` contributes (such as a
+/// Material-3 line-height multiplier): the original version of this
+/// function undercounted by a sub-pixel amount once scaled — small enough
+/// to round away at a scale factor of 1.0, but not on a real device's
+/// larger "larger text" accessibility setting, which is exactly this
+/// card's original bug. `maxLines: 1` matches the real label's own
+/// `maxLines` (see [_DayCell]) — both exist so a long label on the
+/// narrowest supported screens clips instead of wrapping, which would
+/// double its real height past whatever this function returns.
+double _dayLabelHeight(BuildContext context, TextScaler textScaler) {
+  final mergedStyle = DefaultTextStyle.of(context).style.merge(
+    _kDayLabelStyle,
+  );
+  final painter = TextPainter(
+    text: TextSpan(text: 'W 31', style: mergedStyle),
+    textDirection: TextDirection.ltr,
+    textScaler: textScaler,
+    maxLines: 1,
+  )..layout();
+  return painter.height;
+}
+
+/// The pager's single row of 7 cells + their labels, so every page — real
+/// data, or the loading placeholder — occupies exactly the same space and
+/// the card never resizes while swiping *within* one build. Scales with
+/// [textScaler] (clamped by [_kMaxTextScaleFactor], see [TodayProgressCard.
+/// build]) so the label never overflows its share of the row at a larger
+/// accessibility text size, while staying at the exact same height as
+/// before this fix at a scale factor of 1.0.
+double _weekRowHeight(BuildContext context, TextScaler textScaler) =>
+    _kDayCellHeight + _kCellLabelGap + _dayLabelHeight(context, textScaler);
+
+/// Caps how much this card's own text can grow under a large accessibility
+/// text size. Without a cap, several of this card's labels sit in either a
+/// fixed-size box (the day cells — see [_weekRowHeight]) or a `Row` with no
+/// `Expanded`/`Flexible` to absorb extra width (the streak header), so an
+/// unbounded system text scale (up to 2.0) would overflow them. 1.3 keeps
+/// real growth for low-vision users — this card's own text styles are all
+/// small (10-34px) — while staying inside the margin the surrounding
+/// layout already has to spare.
+const _kMaxTextScaleFactor = 1.3;
 
 /// The streak panel's own vertical padding — same value above the header
 /// ("N-day streak" line) and below the day labels, so the row doesn't sit
@@ -161,6 +231,38 @@ class _TodayProgressCardState extends State<TodayProgressCard> {
       now: widget.now,
     );
 
+    // Clamp this card's own effective text scale (see _kMaxTextScaleFactor)
+    // — applied via a MediaQuery override rather than per-Text, so every
+    // label inside this card (including ones the pager's inner LayoutBuilder
+    // builds lazily) is covered without threading a TextScaler through each
+    // one individually. A Builder gets a BuildContext under the override so
+    // _weekRowHeight below reads the *clamped* scaler, not the ambient one.
+    final clampedTextScaler = MediaQuery.textScalerOf(
+      context,
+    ).clamp(maxScaleFactor: _kMaxTextScaleFactor);
+
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: clampedTextScaler),
+      child: Builder(
+        builder: (context) => _buildCard(
+          context,
+          todayCount: todayCount,
+          displayedStreak: displayedStreak,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCard(
+    BuildContext context, {
+    required DailyStudyCount todayCount,
+    required int displayedStreak,
+  }) {
+    final weekRowHeight = _weekRowHeight(
+      context,
+      MediaQuery.textScalerOf(context),
+    );
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -254,7 +356,7 @@ class _TodayProgressCardState extends State<TodayProgressCard> {
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
-                      height: _kWeekRowHeight,
+                      height: weekRowHeight,
                       child: PageView.builder(
                         controller: _pageController,
                         // weeksBack increases with the index; reverse:true
@@ -622,10 +724,16 @@ class _DayCell extends StatelessWidget {
           ExcludeSemantics(
             child: Text(
               '$letter $dayOfMonth',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0.02 * 10,
+              // On the narrowest supported screens, a clamped-but-still-
+              // larger accessibility text size can bring this label right
+              // to the edge of the cell's own width (seven cells share one
+              // row). Pinning it to one line — clipping rather than
+              // wrapping — keeps _weekRowHeight's single-line budget valid
+              // in that edge case instead of silently doubling the text's
+              // real height and overflowing the row.
+              maxLines: 1,
+              overflow: TextOverflow.clip,
+              style: _kDayLabelStyle.copyWith(
                 color: Colors.white.withValues(alpha: labelOpacity),
               ),
             ),

@@ -557,4 +557,211 @@ void main() {
       },
     );
   });
+
+  group('keyboard inset', () {
+    testWidgets(
+      'the Generate quiz footer does not move when the keyboard opens, and '
+      'the extra-instructions field stays reachable while typing',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 640);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        final service = FakeQuizSessionService(materials: [_material]);
+        await _pump(tester, service);
+
+        final buttonFinder = find.widgetWithText(AppButton, 'Generate quiz');
+        final restRect = tester.getRect(buttonFinder);
+
+        tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          tester.getRect(buttonFinder),
+          restRect,
+          reason:
+              'the footer must stay put, covered by the keyboard, not '
+              'pushed up above it',
+        );
+
+        // The extra-instructions field is the last field in the form —
+        // the one most likely to end up trapped behind the keyboard.
+        final promptFieldFinder = find.byType(TextField).last;
+        await tester.ensureVisible(promptFieldFinder);
+        await tester.pumpAndSettle();
+        await tester.tap(promptFieldFinder);
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          tester.getRect(promptFieldFinder).bottom,
+          lessThanOrEqualTo(640 - 300),
+          reason:
+              'the focused field must be scrolled above the keyboard, not '
+              'left behind it',
+        );
+      },
+    );
+  });
+
+  group('no overflow on narrow screens', () {
+    for (final size in [const Size(320, 568), const Size(360, 640)]) {
+      testWidgets(
+        'renders with no overflow at ${size.width.toInt()}x'
+        '${size.height.toInt()}',
+        (tester) async {
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.reset);
+
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: AppTheme.themeData,
+              home: QuizSetupScreen(
+                courseId: 'course-1',
+                courseName: 'IS230',
+                service: FakeQuizSessionService(materials: [_material]),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  });
+
+  group('extra instructions field is a placeholder, never real text', () {
+    testWidgets('the controller starts empty, not the hint text', (
+      tester,
+    ) async {
+      final service = FakeQuizSessionService(materials: [_material]);
+      await _pump(tester, service);
+
+      final field = tester.widget<TextField>(find.byType(TextField).last);
+      expect(field.controller!.text, '');
+      expect(field.decoration?.hintText, isNotNull);
+    });
+
+    testWidgets(
+      'untouched, the request carries no custom prompt at all',
+      (tester) async {
+        final service = FakeQuizSessionService(
+          materials: [_material],
+          createSessionResult: GeneratedSessionResult(
+            session: _newSession(),
+            note: null,
+            requestedCount: 5,
+            questions: _draftQuestions(),
+          ),
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Lecture 1 — Intro'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Generate quiz'));
+        await tester.pumpAndSettle();
+
+        expect(service.createSessionCalls, 1);
+        expect(service.lastCustomPrompt, isNull);
+      },
+    );
+
+    testWidgets('after typing, the typed text — not the hint — is sent', (
+      tester,
+    ) async {
+      final service = FakeQuizSessionService(
+        materials: [_material],
+        createSessionResult: GeneratedSessionResult(
+          session: _newSession(),
+          note: null,
+          requestedCount: 5,
+          questions: _draftQuestions(),
+        ),
+      );
+      await _pump(tester, service);
+
+      await tester.tap(find.text('Lecture 1 — Intro'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byType(TextField).last,
+        'Focus on dates.',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Generate quiz'));
+      await tester.pumpAndSettle();
+
+      expect(service.lastCustomPrompt, 'Focus on dates.');
+    });
+  });
+
+  group('dismiss keyboard', () {
+    Future<void> pumpSmall(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await _pump(tester, FakeQuizSessionService(materials: [_material]));
+    }
+
+    testWidgets('tapping an empty area of the form unfocuses the field', (
+      tester,
+    ) async {
+      await pumpSmall(tester);
+
+      await tester.tap(find.byKey(const ValueKey('count-field')));
+      await tester.pumpAndSettle();
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      // A static label with no gesture handler of its own — the tap can
+      // only be caught by the wrapping dismiss-on-tap handler.
+      final modeLabel = find.text('MODE');
+      await tester.ensureVisible(modeLabel);
+      await tester.pumpAndSettle();
+      await tester.tap(modeLabel);
+      await tester.pumpAndSettle();
+
+      expect(tester.testTextInput.isVisible, isFalse);
+    });
+
+    testWidgets('dragging the form unfocuses the field', (tester) async {
+      await pumpSmall(tester);
+
+      await tester.tap(find.byKey(const ValueKey('count-field')));
+      await tester.pumpAndSettle();
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      await tester.drag(
+        find.byKey(const ValueKey('count-field')),
+        const Offset(0, -300),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.testTextInput.isVisible, isFalse);
+    });
+
+    testWidgets(
+      'pressing Done on the multiline extra-instructions field '
+      'unfocuses it',
+      (tester) async {
+        await pumpSmall(tester);
+
+        final promptFieldFinder = find.byType(TextField).last;
+        await tester.ensureVisible(promptFieldFinder);
+        await tester.pumpAndSettle();
+        await tester.tap(promptFieldFinder);
+        await tester.pumpAndSettle();
+        expect(tester.testTextInput.isVisible, isTrue);
+
+        final field = tester.widget<TextField>(promptFieldFinder);
+        expect(field.textInputAction, TextInputAction.done);
+
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
+
+        expect(tester.testTextInput.isVisible, isFalse);
+      },
+    );
+  });
 }

@@ -5,8 +5,10 @@ import '../../../models/enums.dart';
 import '../../../models/study_material.dart';
 import '../../../services/flashcard_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/keyboard_safe_padding.dart';
 import '../../../widgets/app_button.dart';
 import '../../../widgets/app_error_banner.dart';
+import '../../../widgets/dismiss_keyboard_on_tap.dart';
 import '../../../widgets/generation_loading_overlay.dart';
 import '../widgets/header_circle_button.dart';
 import '../widgets/limit_dialog.dart';
@@ -226,18 +228,32 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
+      // The Generate flashcards footer below (_Footer) is pinned outside
+      // the scroll area, at the bottom of the Column — without this,
+      // opening the keyboard (e.g. typing the card count or extra
+      // instructions) shrinks the Scaffold's body and drags that footer
+      // up above it instead of letting the keyboard simply cover it. See
+      // keyboardSafePadding below for the matching fix on the scroll
+      // view's own padding.
+      resizeToAvoidBottomInset: false,
       body: FutureBuilder<List<StudyMaterial>>(
         future: _materialsFuture,
         builder: (context, snapshot) {
           final materials = snapshot.data ?? const <StudyMaterial>[];
-          return Stack(
+          return DismissKeyboardOnTap(
+            child: Stack(
             children: [
               Column(
                 children: [
                   _Header(onBack: () => Navigator.of(context).maybePop()),
                   Expanded(
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: keyboardSafePadding(
+                        context,
+                        const EdgeInsets.fromLTRB(22, 18, 22, 16),
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -328,6 +344,7 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
                   ),
                 ),
             ],
+            ),
           );
         },
       ),
@@ -354,13 +371,24 @@ class _Header extends StatelessWidget {
           children: [
             HeaderCircleButton(icon: Icons.arrow_back_ios_new, onTap: onBack),
             const SizedBox(width: 13),
-            const Text(
-              'Flashcard setup',
-              style: TextStyle(
-                fontFamily: 'Nunito',
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
+            // Expanded + maxLines/ellipsis: on a narrow screen the title
+            // would otherwise force the Row wider than the screen itself
+            // (a plain Text reports its full single-line width to a Row
+            // with no flex to shrink it into) — ellipsis is the standard
+            // header-title treatment rather than letting it wrap to a
+            // second line. No visible change on a wide-enough screen,
+            // where the title already fits on one line.
+            Expanded(
+              child: Text(
+                'Flashcard setup',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'Nunito',
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                ),
               ),
             ),
           ],
@@ -842,6 +870,15 @@ class _PromptField extends StatelessWidget {
               controller: controller,
               maxLength: _kCustomPromptMaxLength,
               maxLines: 3,
+              // Done, not the multiline default of a literal newline key —
+              // a multiline field is otherwise the one control on this
+              // screen with no way to close the keyboard from the
+              // keyboard itself. The field still looks and wraps exactly
+              // the same (same maxLines); only the IME's enter key stops
+              // inserting a line break and submits/closes the keyboard
+              // instead, same as a normal single-line field's enter key
+              // already does.
+              textInputAction: TextInputAction.done,
               buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
               onChanged: (_) => onChanged(),
               style: const TextStyle(fontFamily: 'Nunito', fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.navy, height: 1.5),

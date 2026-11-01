@@ -1540,6 +1540,128 @@ void main() {
       },
     );
   });
+
+  group('keyboard inset', () {
+    testWidgets(
+      'the Save Event footer does not move when the keyboard opens, and '
+      'the reminder amount field stays reachable while typing',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 640);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AddEventScreen(
+              uid: 'uid-1',
+              calendarService: FakeCalendarService(),
+              courses: const [],
+              reminderScheduler: FakeReminderScheduler(),
+              now: mainNow,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final buttonFinder = find.widgetWithText(AppButton, 'Save Event');
+        final restRect = tester.getRect(buttonFinder);
+
+        // Turn the reminder on so its amount field — the deepest field in
+        // the form — exists to focus below.
+        final toggleFinder = find.byKey(const ValueKey('reminder-toggle'));
+        await tester.ensureVisible(toggleFinder);
+        await tester.pumpAndSettle();
+        await tester.tap(toggleFinder);
+        await tester.pumpAndSettle();
+
+        // Open the keyboard.
+        tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          tester.getRect(buttonFinder),
+          restRect,
+          reason:
+              'the footer must stay put, covered by the keyboard, not '
+              'pushed up above it',
+        );
+
+        // Focus the reminder amount field — the field most likely to end
+        // up trapped behind the keyboard — and confirm it scrolls clear.
+        final amountFinder = find.byKey(const ValueKey('reminder-amount'));
+        await tester.ensureVisible(amountFinder);
+        await tester.pumpAndSettle();
+        await tester.tap(amountFinder);
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        final fieldBottom = tester.getRect(amountFinder).bottom;
+        expect(
+          fieldBottom,
+          lessThanOrEqualTo(640 - 300),
+          reason:
+              'the focused field must be scrolled above the keyboard, not '
+              'left behind it',
+        );
+      },
+    );
+  });
+
+  group('dismiss keyboard', () {
+    // A small surface, not pumpAddEvent's own tall-on-purpose one: the
+    // drag test specifically needs the form to actually overflow and
+    // scroll, which it never does on a surface already "tall enough for
+    // the whole form".
+    Future<void> pumpSmall(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AddEventScreen(
+            uid: 'uid-1',
+            calendarService: FakeCalendarService(),
+            courses: const [],
+            reminderScheduler: FakeReminderScheduler(),
+            now: mainNow,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('tapping an empty area of the form unfocuses the field', (
+      tester,
+    ) async {
+      await pumpSmall(tester);
+
+      await tester.tap(find.byKey(const ValueKey('event-name')));
+      await tester.pumpAndSettle();
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      // A static label with no gesture handler of its own — the tap can
+      // only be caught by the wrapping dismiss-on-tap handler.
+      await tester.tap(find.text('EVENT NAME'));
+      await tester.pumpAndSettle();
+
+      expect(tester.testTextInput.isVisible, isFalse);
+    });
+
+    testWidgets('dragging the form unfocuses the field', (tester) async {
+      await pumpSmall(tester);
+
+      await tester.tap(find.byKey(const ValueKey('event-name')));
+      await tester.pumpAndSettle();
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      await tester.drag(find.text('EVENT NAME'), const Offset(0, -300));
+      await tester.pumpAndSettle();
+
+      expect(tester.testTextInput.isVisible, isFalse);
+    });
+  });
 }
 
 /// Never resolves its write, so the "Saving…" state can be observed.

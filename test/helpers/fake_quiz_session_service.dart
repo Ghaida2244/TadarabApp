@@ -49,6 +49,11 @@ class FakeQuizSessionService extends QuizSessionService {
   int completeCalls = 0;
   int reportCalls = 0;
   int createSessionCalls = 0;
+
+  /// The `customPrompt` passed to the most recent [createSession] call —
+  /// lets a test assert exactly what reached the service, not just that
+  /// generation was attempted.
+  String? lastCustomPrompt;
   int fetchSessionsCalls = 0;
   int submitExamSessionCalls = 0;
   int commitLearningSessionCalls = 0;
@@ -91,6 +96,7 @@ class FakeQuizSessionService extends QuizSessionService {
     String? customPrompt,
   }) async {
     createSessionCalls++;
+    lastCustomPrompt = customPrompt;
     if (createSessionError != null) throw createSessionError!;
     // Generation only — mirrors the real QuizSessionService.createSession,
     // which no longer writes anything for either mode. Nothing is added
