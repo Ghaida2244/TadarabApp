@@ -20,6 +20,12 @@ class FakeReminderScheduler extends ReminderScheduler {
   final bool permissionGranted;
 
   final List<CalendarEvent> scheduled = [];
+
+  /// The `courseName` each entry in [scheduled] was asked to schedule
+  /// with, in the same order — so a test can check what name (or null) a
+  /// given call passed, not just that a call happened.
+  final List<String?> scheduledCourseNames = [];
+
   final List<String> cancelled = [];
   int permissionRequests = 0;
 
@@ -33,8 +39,12 @@ class FakeReminderScheduler extends ReminderScheduler {
   }
 
   @override
-  Future<bool> scheduleReminder(CalendarEvent event) async {
+  Future<bool> scheduleReminder(
+    CalendarEvent event, {
+    String? courseName,
+  }) async {
     scheduled.add(event);
+    scheduledCourseNames.add(courseName);
     return scheduleResult;
   }
 

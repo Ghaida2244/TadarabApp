@@ -153,8 +153,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
   /// True when the enabled reminder can't be used as it stands — either its
   /// amount box is empty/out of range, or its lead time has already passed.
   bool get _reminderInvalid =>
-      _reminderEnabled &&
-      (_reminderAmountIncomplete || _reminderLeadPassed);
+      _reminderEnabled && (_reminderAmountIncomplete || _reminderLeadPassed);
 
   /// True when the enabled reminder's lead time has already passed.
   bool get _reminderLeadPassed =>
@@ -347,7 +346,10 @@ class _AddEventScreenState extends State<AddEventScreen> {
       // Android 13+ a reminder can't be shown at all without it.
       if (!await _scheduler.requestPermission()) {
         reminderNotice = kReminderPermissionDeniedMessage;
-      } else if (await _scheduler.scheduleReminder(requested)) {
+      } else if (await _scheduler.scheduleReminder(
+        requested,
+        courseName: _selectedCourse?.courseName,
+      )) {
         reminderSet = true;
       } else {
         reminderNotice = kReminderNotScheduledMessage;
@@ -411,200 +413,204 @@ class _AddEventScreenState extends State<AddEventScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: statusBarStyleFor(AppColors.navy),
       child: Scaffold(
-      backgroundColor: Colors.white,
-      // The Save Event footer below is pinned outside the scroll area, at
-      // the bottom of the Column — without this, opening the keyboard
-      // (e.g. typing the event name) shrinks the Scaffold's body and drags
-      // that footer up above it instead of letting the keyboard simply
-      // cover it. See keyboardSafePadding below for the matching fix on
-      // the scroll view's own padding.
-      resizeToAvoidBottomInset: false,
-      body: DismissKeyboardOnTap(
-        child: Column(
-        children: [
-          ScreenHeader(
-            title: 'Add Event',
-            subtitle: 'Add an event to your calendar',
-            backgroundColor: AppColors.navy,
-            onClose: _saving ? null : () => Navigator.of(context).pop(),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: keyboardSafePadding(
-                context,
-                const EdgeInsets.all(22),
+        backgroundColor: Colors.white,
+        // The Save Event footer below is pinned outside the scroll area, at
+        // the bottom of the Column — without this, opening the keyboard
+        // (e.g. typing the event name) shrinks the Scaffold's body and drags
+        // that footer up above it instead of letting the keyboard simply
+        // cover it. See keyboardSafePadding below for the matching fix on
+        // the scroll view's own padding.
+        resizeToAvoidBottomInset: false,
+        body: DismissKeyboardOnTap(
+          child: Column(
+            children: [
+              ScreenHeader(
+                title: 'Add Event',
+                subtitle: 'Add an event to your calendar',
+                backgroundColor: AppColors.navy,
+                onClose: _saving ? null : () => Navigator.of(context).pop(),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_errorMessage != null) ...[
-                    AppErrorBanner(
-                      heading: "Couldn't save your event",
-                      body: _errorMessage!,
-                    ),
-                    const SizedBox(height: 24),
-                  ],
-
-                  const _FieldLabel('EVENT NAME'),
-                  const SizedBox(height: 8),
-                  _FieldBox(
-                    filled: _nameFilled,
-                    child: TextField(
-                      key: const ValueKey('event-name'),
-                      controller: _nameController,
-                      enabled: !_saving,
-                      inputFormatters: [
-                        LengthLimitingTextInputFormatter(kEventNameMaxLength),
+              Expanded(
+                child: SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: keyboardSafePadding(
+                    context,
+                    const EdgeInsets.all(22),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_errorMessage != null) ...[
+                        AppErrorBanner(
+                          heading: "Couldn't save your event",
+                          body: _errorMessage!,
+                        ),
+                        const SizedBox(height: 24),
                       ],
-                      style: CalendarText.fieldInput(AppColors.navy),
-                      decoration: InputDecoration(
-                        border: InputBorder.none,
-                        isDense: true,
-                        hintText: 'e.g. Midterm exam, Assignment 1',
-                        hintStyle:
-                            CalendarText.fieldInput(AppColors.placeholder),
+
+                      const _FieldLabel('EVENT NAME'),
+                      const SizedBox(height: 8),
+                      _FieldBox(
+                        filled: _nameFilled,
+                        child: TextField(
+                          key: const ValueKey('event-name'),
+                          controller: _nameController,
+                          enabled: !_saving,
+                          inputFormatters: [
+                            LengthLimitingTextInputFormatter(
+                              kEventNameMaxLength,
+                            ),
+                          ],
+                          style: CalendarText.fieldInput(AppColors.navy),
+                          decoration: InputDecoration(
+                            border: InputBorder.none,
+                            isDense: true,
+                            hintText: 'e.g. Midterm exam, Assignment 1',
+                            hintStyle: CalendarText.fieldInput(
+                              AppColors.placeholder,
+                            ),
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
                       ),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
+                      const SizedBox(height: 24),
 
-                  const _FieldLabel('COURSE', optional: '· OPTIONAL'),
-                  const SizedBox(height: 8),
-                  _CourseField(
-                    courses: widget.courses,
-                    selected: _selectedCourse,
-                    open: _coursesOpen,
-                    enabled: !_saving,
-                    onToggle: () =>
-                        setState(() => _coursesOpen = !_coursesOpen),
-                    onSelected: (course) => setState(() {
-                      _selectedCourse = course;
-                      _coursesOpen = false;
-                    }),
-                  ),
-
-                  if (_selectedCourse == null) ...[
-                    const SizedBox(height: 24),
-                    const _FieldLabel('EVENT COLOR'),
-                    const SizedBox(height: 10),
-                    _ColorSwatchGrid(
-                      tiles: eventColorTiles(
-                        savedColors: _savedColors,
-                        courseColors: widget.courses.map((c) => c.color),
-                        selectedColor: _selectedColor,
+                      const _FieldLabel('COURSE', optional: '· OPTIONAL'),
+                      const SizedBox(height: 8),
+                      _CourseField(
+                        courses: widget.courses,
+                        selected: _selectedCourse,
+                        open: _coursesOpen,
+                        enabled: !_saving,
+                        onToggle: () =>
+                            setState(() => _coursesOpen = !_coursesOpen),
+                        onSelected: (course) => setState(() {
+                          _selectedCourse = course;
+                          _coursesOpen = false;
+                        }),
                       ),
-                      selected: _selectedColor,
-                      onSelected: (hex) => setState(() {
-                        _selectedColor = hex;
-                        _colorPickedByUser = true;
-                      }),
-                      onCustom: _pickCustomColor,
-                      onRemove: _removeSavedColor,
-                    ),
-                  ],
 
-                  const SizedBox(height: 24),
-                  const _FieldLabel('DATE'),
-                  const SizedBox(height: 8),
-                  _PickerField(
-                    fieldKey: const ValueKey('event-date'),
-                    enabled: !_saving,
-                    onTap: _pickDate,
-                    placeholder: 'Select a date',
-                    value: _selectedDate == null
-                        ? null
-                        : formatLongDate(_selectedDate!),
-                  ),
+                      if (_selectedCourse == null) ...[
+                        const SizedBox(height: 24),
+                        const _FieldLabel('EVENT COLOR'),
+                        const SizedBox(height: 10),
+                        _ColorSwatchGrid(
+                          tiles: eventColorTiles(
+                            savedColors: _savedColors,
+                            courseColors: widget.courses.map((c) => c.color),
+                            selectedColor: _selectedColor,
+                          ),
+                          selected: _selectedColor,
+                          onSelected: (hex) => setState(() {
+                            _selectedColor = hex;
+                            _colorPickedByUser = true;
+                          }),
+                          onCustom: _pickCustomColor,
+                          onRemove: _removeSavedColor,
+                        ),
+                      ],
 
-                  const SizedBox(height: 24),
-                  const _FieldLabel('TIME'),
-                  const SizedBox(height: 8),
-                  _PickerField(
-                    fieldKey: const ValueKey('event-time'),
-                    enabled: !_saving,
-                    onTap: _pickTime,
-                    placeholder: 'Select a time',
-                    value: _selectedTime == null
-                        ? null
-                        : formatEventTimeForDisplay(_selectedTime!),
-                  ),
+                      const SizedBox(height: 24),
+                      const _FieldLabel('DATE'),
+                      const SizedBox(height: 8),
+                      _PickerField(
+                        fieldKey: const ValueKey('event-date'),
+                        enabled: !_saving,
+                        onTap: _pickDate,
+                        placeholder: 'Select a date',
+                        value: _selectedDate == null
+                            ? null
+                            : formatLongDate(_selectedDate!),
+                      ),
 
-                  const SizedBox(height: 24),
-                  ReminderCard(
-                    enabled: _reminderEnabled,
-                    amount: _reminderAmount,
-                    unit: _reminderUnit,
-                    unitsOpen: _unitsOpen,
-                    date: _selectedDate,
-                    time: _selectedTime,
-                    now: _now,
-                    onToggled: (value) => setState(() {
-                      _reminderEnabled = value;
-                      _unitsOpen = false;
-                      // The card rebuilds its box from _reminderAmount, so a
-                      // half-typed value can't survive a toggle.
-                      _reminderAmountIncomplete = false;
-                    }),
-                    onAmountChanged: (value) => setState(() {
-                      _reminderAmountIncomplete = value == null;
-                      if (value != null) _reminderAmount = value;
-                    }),
-                    onUnitChanged: (value) => setState(() {
-                      _reminderUnit = value;
-                      _unitsOpen = false;
-                    }),
-                    onToggleUnits: () =>
-                        setState(() => _unitsOpen = !_unitsOpen),
-                    onRejected: _onReminderRejected,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Pinned footer, outside the scroll area.
-          Padding(
-            padding: const EdgeInsets.fromLTRB(22, 14, 22, 26),
-            child: Column(
-              children: [
-                Semantics(
-                  button: true,
-                  enabled: reason == null && !_saving,
-                  // A disabled AppButton has no onPressed, so a screen
-                  // reader would otherwise announce nothing at all; the
-                  // reason travels with the button instead.
-                  hint: reason,
-                  child: AppButton(
-                    label: 'Save Event',
-                    variant: AppButtonVariant.accent,
-                    height: 56,
-                    borderRadius: 18,
-                    fontSize: 16,
-                    loading: _saving,
-                    loadingLabel: 'Saving…',
-                    disabledBackgroundColor: AppColors.disabledRedFill,
-                    disabledRemovesShadow: true,
-                    onPressed: reason == null && !_saving ? _save : null,
+                      const SizedBox(height: 24),
+                      const _FieldLabel('TIME'),
+                      const SizedBox(height: 8),
+                      _PickerField(
+                        fieldKey: const ValueKey('event-time'),
+                        enabled: !_saving,
+                        onTap: _pickTime,
+                        placeholder: 'Select a time',
+                        value: _selectedTime == null
+                            ? null
+                            : formatEventTimeForDisplay(_selectedTime!),
+                      ),
+
+                      const SizedBox(height: 24),
+                      ReminderCard(
+                        enabled: _reminderEnabled,
+                        amount: _reminderAmount,
+                        unit: _reminderUnit,
+                        unitsOpen: _unitsOpen,
+                        date: _selectedDate,
+                        time: _selectedTime,
+                        now: _now,
+                        onToggled: (value) => setState(() {
+                          _reminderEnabled = value;
+                          _unitsOpen = false;
+                          // The card rebuilds its box from _reminderAmount, so a
+                          // half-typed value can't survive a toggle.
+                          _reminderAmountIncomplete = false;
+                        }),
+                        onAmountChanged: (value) => setState(() {
+                          _reminderAmountIncomplete = value == null;
+                          if (value != null) _reminderAmount = value;
+                        }),
+                        onUnitChanged: (value) => setState(() {
+                          _reminderUnit = value;
+                          _unitsOpen = false;
+                        }),
+                        onToggleUnits: () =>
+                            setState(() => _unitsOpen = !_unitsOpen),
+                        onRejected: _onReminderRejected,
+                      ),
+                    ],
                   ),
                 ),
-                // Only while the form is incomplete: once saving starts the
-                // button itself says "Saving…" and the reason is moot.
-                if (reason != null && !_saving) ...[
-                  const SizedBox(height: 9),
-                  Text(
-                    reason,
-                    key: const ValueKey('save-reason'),
-                    textAlign: TextAlign.center,
-                    style: CalendarText.saveReason,
-                  ),
-                ],
-              ],
-            ),
+              ),
+              // Pinned footer, outside the scroll area.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(22, 14, 22, 26),
+                child: Column(
+                  children: [
+                    Semantics(
+                      button: true,
+                      enabled: reason == null && !_saving,
+                      // A disabled AppButton has no onPressed, so a screen
+                      // reader would otherwise announce nothing at all; the
+                      // reason travels with the button instead.
+                      hint: reason,
+                      child: AppButton(
+                        label: 'Save Event',
+                        variant: AppButtonVariant.accent,
+                        height: 56,
+                        borderRadius: 18,
+                        fontSize: 16,
+                        loading: _saving,
+                        loadingLabel: 'Saving…',
+                        disabledBackgroundColor: AppColors.disabledRedFill,
+                        disabledRemovesShadow: true,
+                        onPressed: reason == null && !_saving ? _save : null,
+                      ),
+                    ),
+                    // Only while the form is incomplete: once saving starts the
+                    // button itself says "Saving…" and the reason is moot.
+                    if (reason != null && !_saving) ...[
+                      const SizedBox(height: 9),
+                      Text(
+                        reason,
+                        key: const ValueKey('save-reason'),
+                        textAlign: TextAlign.center,
+                        style: CalendarText.saveReason,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
         ),
-      ),
       ),
     );
   }
@@ -750,9 +756,7 @@ class _CourseField extends StatelessWidget {
                   child: Text(
                     selected?.courseName ?? 'No course selected',
                     style: CalendarText.fieldInput(
-                      selected == null
-                          ? AppColors.placeholder
-                          : AppColors.navy,
+                      selected == null ? AppColors.placeholder : AppColors.navy,
                     ),
                   ),
                 ),
@@ -853,9 +857,7 @@ class _CourseOption extends StatelessWidget {
               decoration: BoxDecoration(color: hue, shape: BoxShape.circle),
             ),
             const SizedBox(width: 11),
-            Expanded(
-              child: Text(label, style: CalendarText.courseOption),
-            ),
+            Expanded(child: Text(label, style: CalendarText.courseOption)),
           ],
         ),
       ),
@@ -970,4 +972,3 @@ class _ColorSwatchGrid extends StatelessWidget {
     );
   }
 }
-

@@ -11,7 +11,8 @@ import 'package:tadarab_app/screens/calendar/add_event_screen.dart';
 import 'package:tadarab_app/screens/calendar/calendar_styles.dart';
 import 'package:tadarab_app/screens/calendar/widgets/reminder_card.dart';
 import 'package:tadarab_app/services/calendar_service.dart';
-import 'package:tadarab_app/services/courses_service.dart' show kCoursePresetColors;
+import 'package:tadarab_app/services/courses_service.dart'
+    show kCoursePresetColors;
 import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
 import 'package:tadarab_app/widgets/color_picker_dialog.dart';
@@ -211,9 +212,7 @@ void main() {
       expect(find.text(kSaveReasonTime), findsOneWidget);
     });
 
-    testWidgets('the reason disappears once the form is valid', (
-      tester,
-    ) async {
+    testWidgets('the reason disappears once the form is valid', (tester) async {
       await pumpAddEvent(tester);
       await fillValidForm(tester);
 
@@ -275,10 +274,7 @@ void main() {
 
       await tapVisible(tester, find.byKey(const ValueKey('course-field')));
 
-      expect(
-        find.byKey(const ValueKey('course-option-IS230')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('course-option-IS230')), findsOneWidget);
       expect(
         find.byKey(const ValueKey('course-option-No course selected')),
         findsOneWidget,
@@ -293,7 +289,10 @@ void main() {
       expect(find.text('EVENT COLOR'), findsOneWidget);
 
       await tapVisible(tester, find.byKey(const ValueKey('course-field')));
-      await tapVisible(tester, find.byKey(const ValueKey('course-option-IS230')));
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('course-option-IS230')),
+      );
 
       expect(find.text('EVENT COLOR'), findsNothing);
       expect(find.text('Event will use this course color'), findsOneWidget);
@@ -318,7 +317,10 @@ void main() {
       await pumpAddEvent(tester, courses: [aCourse]);
 
       await tapVisible(tester, find.byKey(const ValueKey('course-field')));
-      await tapVisible(tester, find.byKey(const ValueKey('course-option-IS230')));
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('course-option-IS230')),
+      );
       await tapVisible(tester, find.byKey(const ValueKey('course-field')));
       await tapVisible(
         tester,
@@ -330,33 +332,31 @@ void main() {
   });
 
   group('colour row', () {
-    testWidgets(
-      'the default is a seeded-random pool colour, preselected, when '
-      'nothing is taken',
-      (tester) async {
-        final expected = randomEventColor(
-          courseColors: const [],
-          standaloneColors: const [],
-          random: Random(1),
-        );
+    testWidgets('the default is a seeded-random pool colour, preselected, when '
+        'nothing is taken', (tester) async {
+      final expected = randomEventColor(
+        courseColors: const [],
+        standaloneColors: const [],
+        random: Random(1),
+      );
 
-        await pumpAddEvent(tester, random: Random(1));
-        await fillValidForm(tester);
-        await tapVisible(tester, find.text('Save Event'));
+      await pumpAddEvent(tester, random: Random(1));
+      await fillValidForm(tester);
+      await tapVisible(tester, find.text('Save Event'));
 
-        expect(calendarService.addedEvents.single.color, expected);
-      },
-    );
+      expect(calendarService.addedEvents.single.color, expected);
+    });
 
-    testWidgets('the default is never one of the five presets', (
-      tester,
-    ) async {
+    testWidgets('the default is never one of the five presets', (tester) async {
       for (var seed = 0; seed < 10; seed++) {
         await pumpAddEvent(tester, random: Random(seed));
         await fillValidForm(tester);
         await tapVisible(tester, find.text('Save Event'));
 
-        expect(kCoursePresetColors, isNot(contains(calendarService.addedEvents.last.color)));
+        expect(
+          kCoursePresetColors,
+          isNot(contains(calendarService.addedEvents.last.color)),
+        );
       }
     });
 
@@ -426,7 +426,7 @@ void main() {
         ];
         final courses = [
           for (final hex in nonPresetPool)
-            Course(courseId: hex, courseName: hex, color: hex, email: 'e')
+            Course(courseId: hex, courseName: hex, color: hex, email: 'e'),
         ];
         final expected = randomEventColor(
           courseColors: nonPresetPool,
@@ -521,10 +521,7 @@ void main() {
       'shows the student\'s saved colours once the read resolves, each '
       'removable',
       (tester) async {
-        await pumpAddEvent(
-          tester,
-          savedColors: const ['#2563EB', '#7C3AED'],
-        );
+        await pumpAddEvent(tester, savedColors: const ['#2563EB', '#7C3AED']);
 
         expect(find.bySemanticsLabel('Color #2563EB'), findsOneWidget);
         expect(find.bySemanticsLabel('Color #7C3AED'), findsOneWidget);
@@ -556,22 +553,19 @@ void main() {
       },
     );
 
-    testWidgets(
-      'the default tile (shown alone, with no saved colours) has no '
-      'remove badge',
-      (tester) async {
-        final expected = randomEventColor(
-          courseColors: const [],
-          standaloneColors: const [],
-          random: Random(1),
-        );
+    testWidgets('the default tile (shown alone, with no saved colours) has no '
+        'remove badge', (tester) async {
+      final expected = randomEventColor(
+        courseColors: const [],
+        standaloneColors: const [],
+        random: Random(1),
+      );
 
-        await pumpAddEvent(tester, random: Random(1));
+      await pumpAddEvent(tester, random: Random(1));
 
-        expect(find.bySemanticsLabel('Color $expected'), findsOneWidget);
-        expect(find.bySemanticsLabel('Remove color $expected'), findsNothing);
-      },
-    );
+      expect(find.bySemanticsLabel('Color $expected'), findsOneWidget);
+      expect(find.bySemanticsLabel('Remove color $expected'), findsNothing);
+    });
 
     testWidgets(
       'a failed saved-colours read leaves just the default tile and "+", '
@@ -638,10 +632,7 @@ void main() {
       'removing a saved tile that is not selected leaves the selection '
       'alone',
       (tester) async {
-        await pumpAddEvent(
-          tester,
-          savedColors: const ['#2563EB', '#7C3AED'],
-        );
+        await pumpAddEvent(tester, savedColors: const ['#2563EB', '#7C3AED']);
         await tapVisible(tester, find.bySemanticsLabel('Color #2563EB'));
 
         await tester.tap(find.bySemanticsLabel('Remove color #7C3AED'));
@@ -656,28 +647,24 @@ void main() {
       },
     );
 
-    testWidgets(
-      'removing a tile calls CalendarService.removeSavedEventColor',
-      (tester) async {
-        await pumpAddEvent(tester, savedColors: const ['#2563EB']);
-        await tester.tap(find.bySemanticsLabel('Remove color #2563EB'));
-        await tester.pump();
+    testWidgets('removing a tile calls CalendarService.removeSavedEventColor', (
+      tester,
+    ) async {
+      await pumpAddEvent(tester, savedColors: const ['#2563EB']);
+      await tester.tap(find.bySemanticsLabel('Remove color #2563EB'));
+      await tester.pump();
 
-        expect(calendarService.removedColors, ['#2563EB']);
-      },
-    );
+      expect(calendarService.removedColors, ['#2563EB']);
+    });
 
-    testWidgets(
-      'saving a standalone event records its colour',
-      (tester) async {
-        await pumpAddEvent(tester, savedColors: const ['#2563EB']);
-        await tapVisible(tester, find.bySemanticsLabel('Color #2563EB'));
-        await fillValidForm(tester);
-        await tapVisible(tester, find.text('Save Event'));
+    testWidgets('saving a standalone event records its colour', (tester) async {
+      await pumpAddEvent(tester, savedColors: const ['#2563EB']);
+      await tapVisible(tester, find.bySemanticsLabel('Color #2563EB'));
+      await fillValidForm(tester);
+      await tapVisible(tester, find.text('Save Event'));
 
-        expect(calendarService.recordedColors, ['#2563EB']);
-      },
-    );
+      expect(calendarService.recordedColors, ['#2563EB']);
+    });
 
     testWidgets(
       'saving a course-linked event never records a colour — the course '
@@ -770,22 +757,19 @@ void main() {
       },
     );
 
-    testWidgets(
-      'selecting a different tile makes the extra dialog-colour tile '
-      'disappear',
-      (tester) async {
-        await pumpAddEvent(tester, savedColors: const ['#2563EB']);
+    testWidgets('selecting a different tile makes the extra dialog-colour tile '
+        'disappear', (tester) async {
+      await pumpAddEvent(tester, savedColors: const ['#2563EB']);
 
-        await tapVisible(tester, find.byKey(const ValueKey('custom-color')));
-        await typeDialogHex(tester, '#FF00A8');
-        await tapVisible(tester, find.text('Use this color'));
-        expect(find.bySemanticsLabel('Color #FF00A8'), findsOneWidget);
+      await tapVisible(tester, find.byKey(const ValueKey('custom-color')));
+      await typeDialogHex(tester, '#FF00A8');
+      await tapVisible(tester, find.text('Use this color'));
+      expect(find.bySemanticsLabel('Color #FF00A8'), findsOneWidget);
 
-        await tapVisible(tester, find.bySemanticsLabel('Color #2563EB'));
+      await tapVisible(tester, find.bySemanticsLabel('Color #2563EB'));
 
-        expect(find.bySemanticsLabel('Color #FF00A8'), findsNothing);
-      },
-    );
+      expect(find.bySemanticsLabel('Color #FF00A8'), findsNothing);
+    });
 
     testWidgets('cancelling the picker leaves the colour alone', (
       tester,
@@ -838,29 +822,26 @@ void main() {
     // regressing to something larger than the rest of the screen's own
     // label-to-field (8-10px) and between-section (24px) rhythm, however
     // many tiles the grid ends up showing.
-    testWidgets(
-      'the label-to-grid and grid-to-DATE gaps match the rest of the '
-      'screen\'s rhythm, even with a full, two-row grid, with no safe-area '
-      'insets',
-      (tester) async {
-        await pumpAddEvent(
-          tester,
-          savedColors: const [
-            '#2563EB',
-            '#F5A524',
-            '#E31B23',
-            '#7C3AED',
-            '#0D9488',
-          ],
-        );
+    testWidgets('the label-to-grid and grid-to-DATE gaps match the rest of the '
+        'screen\'s rhythm, even with a full, two-row grid, with no safe-area '
+        'insets', (tester) async {
+      await pumpAddEvent(
+        tester,
+        savedColors: const [
+          '#2563EB',
+          '#F5A524',
+          '#E31B23',
+          '#7C3AED',
+          '#0D9488',
+        ],
+      );
 
-        final labelRect = tester.getRect(find.text('EVENT COLOR'));
-        final dateLabelRect = tester.getRect(find.text('DATE'));
+      final labelRect = tester.getRect(find.text('EVENT COLOR'));
+      final dateLabelRect = tester.getRect(find.text('DATE'));
 
-        expect(firstColourTileTop(tester) - labelRect.bottom, 10);
-        expect(dateLabelRect.top - lastColourTileBottom(tester), 24);
-      },
-    );
+      expect(firstColourTileTop(tester) - labelRect.bottom, 10);
+      expect(dateLabelRect.top - lastColourTileBottom(tester), 24);
+    });
 
     testWidgets(
       'the gaps stay exactly 10dp and 24dp under real safe-area insets '
@@ -872,10 +853,7 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             home: MediaQuery(
-              data: const MediaQueryData(
-                padding: insets,
-                viewPadding: insets,
-              ),
+              data: const MediaQueryData(padding: insets, viewPadding: insets),
               child: Scaffold(
                 body: AddEventScreen(
                   uid: 'uid-1',
@@ -966,21 +944,18 @@ void main() {
       expect(find.text('May 1, 2026'), findsOneWidget);
     });
 
-    testWidgets(
-      'with no date picked yet, the date picker opens on today (from '
-      '`now`), not the 1st of whatever month is passed in',
-      (tester) async {
-        await pumpAddEvent(tester);
+    testWidgets('with no date picked yet, the date picker opens on today (from '
+        '`now`), not the 1st of whatever month is passed in', (tester) async {
+      await pumpAddEvent(tester);
 
-        // Accept the picker's own pre-highlighted day without tapping any
-        // date — reveals what it opened on.
-        await tapVisible(tester, find.byKey(const ValueKey('event-date')));
-        await tapVisible(tester, find.text('OK'));
+      // Accept the picker's own pre-highlighted day without tapping any
+      // date — reveals what it opened on.
+      await tapVisible(tester, find.byKey(const ValueKey('event-date')));
+      await tapVisible(tester, find.text('OK'));
 
-        // `mainNow` is May 3, 2026 — not the 1st.
-        expect(find.text('May 3, 2026'), findsOneWidget);
-      },
-    );
+      // `mainNow` is May 3, 2026 — not the 1st.
+      expect(find.text('May 3, 2026'), findsOneWidget);
+    });
 
     testWidgets('the time picker fills the field in 12-hour form', (
       tester,
@@ -992,18 +967,15 @@ void main() {
       expect(find.text('Select a time'), findsNothing);
     });
 
-    testWidgets(
-      'with no time picked yet, the time picker opens on the current '
-      'time, not a fixed fallback',
-      (tester) async {
-        // Distinct from the file-wide `mainNow` (9:00 AM), so accepting
-        // the picker's own default genuinely proves it opened on `now`.
-        await pumpAddEvent(tester, now: DateTime(2026, 5, 3, 14, 37));
-        await pickDefaultTime(tester);
+    testWidgets('with no time picked yet, the time picker opens on the current '
+        'time, not a fixed fallback', (tester) async {
+      // Distinct from the file-wide `mainNow` (9:00 AM), so accepting
+      // the picker's own default genuinely proves it opened on `now`.
+      await pumpAddEvent(tester, now: DateTime(2026, 5, 3, 14, 37));
+      await pickDefaultTime(tester);
 
-        expect(find.text('2:37 PM'), findsOneWidget);
-      },
-    );
+      expect(find.text('2:37 PM'), findsOneWidget);
+    });
 
     testWidgets('cancelling a picker leaves the field untouched', (
       tester,
@@ -1044,10 +1016,7 @@ void main() {
       expect(find.byKey(const ValueKey('reminder-amount')), findsOneWidget);
       expect(find.byKey(const ValueKey('reminder-unit')), findsOneWidget);
       expect(find.byKey(const ValueKey('reminder-note')), findsOneWidget);
-      expect(
-        find.textContaining('Pick a date and time'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('Pick a date and time'), findsOneWidget);
     });
 
     testWidgets('the note turns green once the reminder is valid', (
@@ -1085,10 +1054,16 @@ void main() {
       await fillValidForm(tester);
       await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
 
-      await tapVisible(tester, find.byKey(const ValueKey('reminder-increment')));
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('reminder-increment')),
+      );
       expect(amountText(tester), '2');
 
-      await tapVisible(tester, find.byKey(const ValueKey('reminder-decrement')));
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('reminder-decrement')),
+      );
       expect(amountText(tester), '1');
     });
 
@@ -1097,7 +1072,10 @@ void main() {
       await fillValidForm(tester);
       await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
 
-      await tapVisible(tester, find.byKey(const ValueKey('reminder-decrement')));
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('reminder-decrement')),
+      );
 
       expect(amountText(tester), '1');
     });
@@ -1109,7 +1087,10 @@ void main() {
 
       expect(find.text('Day'), findsOneWidget);
 
-      await tapVisible(tester, find.byKey(const ValueKey('reminder-increment')));
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('reminder-increment')),
+      );
 
       expect(find.text('Days'), findsOneWidget);
     });
@@ -1249,9 +1230,7 @@ void main() {
       expect(find.text(kSaveReasonReminder), findsOneWidget);
     });
 
-    testWidgets('exactly the maximum clears the range message', (
-      tester,
-    ) async {
+    testWidgets('exactly the maximum clears the range message', (tester) async {
       await openReminder(tester);
       await typeAmount(tester, '60');
 
@@ -1319,7 +1298,10 @@ void main() {
     ) async {
       await openReminder(tester);
       await typeAmount(tester, '5');
-      await tapVisible(tester, find.byKey(const ValueKey('reminder-decrement')));
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('reminder-decrement')),
+      );
 
       expect(amountText(tester), '4');
     });
@@ -1354,7 +1336,10 @@ void main() {
     testWidgets('stores the linked course id', (tester) async {
       await pumpAddEvent(tester, courses: [aCourse]);
       await tapVisible(tester, find.byKey(const ValueKey('course-field')));
-      await tapVisible(tester, find.byKey(const ValueKey('course-option-IS230')));
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('course-option-IS230')),
+      );
       await fillValidForm(tester);
       await tapVisible(tester, find.text('Save Event'));
 
@@ -1373,10 +1358,28 @@ void main() {
 
       expect(scheduler.permissionRequests, 1);
       expect(scheduler.scheduled, hasLength(1));
+      // No course selected — the reminder's title falls back to just the
+      // event name (see reminder_scheduler_test.dart's eventReminderTitle).
+      expect(scheduler.scheduledCourseNames.single, isNull);
       final saved = calendarService.addedEvents.single;
       expect(saved.reminderEnabled, isTrue);
       expect(saved.reminderBefore, 1);
       expect(saved.reminderUnit, ReminderUnit.days);
+    });
+
+    testWidgets('passes the selected course\'s name to the scheduler, for the '
+        'reminder notification\'s title', (tester) async {
+      await pumpAddEvent(tester, courses: [aCourse]);
+      await tapVisible(tester, find.byKey(const ValueKey('course-field')));
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('course-option-IS230')),
+      );
+      await fillValidForm(tester);
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
+      await tapVisible(tester, find.text('Save Event'));
+
+      expect(scheduler.scheduledCourseNames.single, 'IS230');
     });
 
     testWidgets(
@@ -1399,22 +1402,21 @@ void main() {
       },
     );
 
-    testWidgets(
-      'a refused schedule still saves, with reminderEnabled false',
-      (tester) async {
-        await pumpAddEvent(
-          tester,
-          reminderScheduler: FakeReminderScheduler(scheduleResult: false),
-        );
-        await fillValidForm(tester);
-        await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
-        await tapVisible(tester, find.text('Save Event'));
+    testWidgets('a refused schedule still saves, with reminderEnabled false', (
+      tester,
+    ) async {
+      await pumpAddEvent(
+        tester,
+        reminderScheduler: FakeReminderScheduler(scheduleResult: false),
+      );
+      await fillValidForm(tester);
+      await tapVisible(tester, find.byKey(const ValueKey('reminder-toggle')));
+      await tapVisible(tester, find.text('Save Event'));
 
-        final saved = calendarService.addedEvents.single;
-        expect(saved.reminderEnabled, isFalse);
-        expect(find.text(kReminderNotScheduledMessage), findsOneWidget);
-      },
-    );
+      final saved = calendarService.addedEvents.single;
+      expect(saved.reminderEnabled, isFalse);
+      expect(find.text(kReminderNotScheduledMessage), findsOneWidget);
+    });
 
     testWidgets('a write failure shows the banner and cancels the reminder', (
       tester,
@@ -1436,13 +1438,8 @@ void main() {
       expect(poppedResult, isNull);
     });
 
-    testWidgets('shows "Saving…" while the write is in flight', (
-      tester,
-    ) async {
-      await pumpAddEvent(
-        tester,
-        service: _SlowCalendarService(),
-      );
+    testWidgets('shows "Saving…" while the write is in flight', (tester) async {
+      await pumpAddEvent(tester, service: _SlowCalendarService());
       await fillValidForm(tester);
       await tester.tap(find.text('Save Event'));
       await tester.pump();
@@ -1493,23 +1490,20 @@ void main() {
       },
     );
 
-    testWidgets(
-      'the close button is disabled (dimmed, non-interactive) while '
-      'saving — same as the old back arrow',
-      (tester) async {
-        await pumpAddEvent(tester, service: _SlowCalendarService());
-        await fillValidForm(tester);
-        await tester.tap(find.text('Save Event'));
-        await tester.pump();
+    testWidgets('the close button is disabled (dimmed, non-interactive) while '
+        'saving — same as the old back arrow', (tester) async {
+      await pumpAddEvent(tester, service: _SlowCalendarService());
+      await fillValidForm(tester);
+      await tester.tap(find.text('Save Event'));
+      await tester.pump();
 
-        final icon = tester.widget<Icon>(find.byIcon(Icons.close));
-        expect((icon.color as Color).a, closeTo(0.4, 0.01));
+      final icon = tester.widget<Icon>(find.byIcon(Icons.close));
+      expect((icon.color as Color).a, closeTo(0.4, 0.01));
 
-        await tester.tap(find.byIcon(Icons.close));
-        await tester.pump();
-        expect(find.text('Add Event'), findsOneWidget);
-      },
-    );
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pump();
+      expect(find.text('Add Event'), findsOneWidget);
+    });
   });
 
   group('status bar / safe area', () {
@@ -1525,10 +1519,7 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             home: MediaQuery(
-              data: const MediaQueryData(
-                padding: insets,
-                viewPadding: insets,
-              ),
+              data: const MediaQueryData(padding: insets, viewPadding: insets),
               child: AddEventScreen(
                 uid: 'uid-1',
                 calendarService: FakeCalendarService(),
