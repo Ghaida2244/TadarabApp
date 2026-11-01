@@ -8,14 +8,49 @@ import '../models/calendar_event.dart';
 import '../theme/app_theme.dart';
 import '../utils/event_time.dart';
 
-/// Notification title for every event reminder, exactly as SRS Figure 107
-/// shows it. Deliberately generic rather than the event's name: the same
-/// text is used for all events, per the SRS.
-const kEventReminderTitle = 'Event Reminder';
+/// The event reminder notification's title: the event name, and — when
+/// [courseName] is given and isn't blank once trimmed — " · " followed by
+/// the course name. `"mid · IS463"`, or just `"mid"` for a standalone
+/// event. Android truncates a long title on its own; this never cuts one
+/// short itself.
+String eventReminderTitle(String eventName, String? courseName) {
+  final name = eventName.trim();
+  final course = courseName?.trim() ?? '';
+  return course.isEmpty ? name : '$name · $course';
+}
 
-/// Notification body for every event reminder, exactly as SRS Figure 107
-/// shows it.
-const kEventReminderBody = "Don't forget your upcoming event.";
+/// The event reminder notification's body: the fixed opening sentence,
+/// followed by when [event] happens relative to the moment this reminder
+/// actually fires ([fireTime]) — "today"/"tomorrow" (both calendar-day
+/// comparisons in the device's local time zone, matching
+/// [reminderFireTime]'s own arithmetic, and neither one repeats the date —
+/// "today"/"tomorrow" already says it) or "on `<date>`" for anything
+/// further out — and the event's time, via [formatStoredTimeForDisplay].
+/// Ends with a period.
+String eventReminderBody(CalendarEvent event, DateTime fireTime) {
+  final when = eventDateTime(event);
+  final time = formatStoredTimeForDisplay(event.eventTime);
+
+  if (isSameDay(when, fireTime)) {
+    return "Don't forget your upcoming event today at $time.";
+  }
+  if (isSameDay(when, fireTime.add(const Duration(days: 1)))) {
+    return "Don't forget your upcoming event tomorrow at $time.";
+  }
+  final date = _shortEventDate(when, fireTime);
+  return "Don't forget your upcoming event on $date at $time.";
+}
+
+/// `"Nov 1"`, or `"Jan 5, 2027"` when [date] falls in a different year
+/// than [fireTime] — a short month name (every entry in [kMonthNames]
+/// happens to abbreviate to its own first three letters) plus the day
+/// number.
+String _shortEventDate(DateTime date, DateTime fireTime) {
+  final month = kMonthNames[date.month - 1].substring(0, 3);
+  return date.year == fireTime.year
+      ? '$month ${date.day}'
+      : '$month ${date.day}, ${date.year}';
+}
 
 /// Notification title for the daily study reminder, exactly as the SRS
 /// specifies. Distinct from the event reminder above: this one nudges the
@@ -134,7 +169,15 @@ class ReminderScheduler {
   ///
   /// A fire time in the past is a normal case, not an error: a student can
   /// legitimately add an event for later today with a 1-day reminder.
-  Future<bool> scheduleReminder(CalendarEvent event) async {
+  ///
+  /// [courseName] is the linked course's display name, for the title (see
+  /// [eventReminderTitle]) — [event] only carries the course's id. Pass
+  /// null when the event has no course, or the caller can't resolve its
+  /// name; the title then falls back to just the event name.
+  Future<bool> scheduleReminder(
+    CalendarEvent event, {
+    String? courseName,
+  }) async {
     final fireTime = reminderFireTime(event);
     if (fireTime == null) return false;
 
@@ -147,8 +190,8 @@ class ReminderScheduler {
     try {
       await _plugin.zonedSchedule(
         id: notificationIdFor(event.eventId),
-        title: kEventReminderTitle,
-        body: kEventReminderBody,
+        title: eventReminderTitle(event.eventName, courseName),
+        body: eventReminderBody(event, fireTime),
         scheduledDate: scheduled,
         notificationDetails: const NotificationDetails(
           android: _androidDetails,
