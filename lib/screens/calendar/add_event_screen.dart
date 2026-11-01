@@ -11,10 +11,12 @@ import '../../services/calendar_service.dart';
 import '../../services/reminder_scheduler.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/event_time.dart';
+import '../../utils/keyboard_safe_padding.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_error_banner.dart';
 import '../../widgets/color_picker_dialog.dart';
 import '../../widgets/color_swatch_tile.dart';
+import '../../widgets/dismiss_keyboard_on_tap.dart';
 import '../../widgets/screen_header.dart';
 import '../../widgets/status_bar_style.dart';
 import 'calendar_styles.dart';
@@ -410,7 +412,15 @@ class _AddEventScreenState extends State<AddEventScreen> {
       value: statusBarStyleFor(AppColors.navy),
       child: Scaffold(
       backgroundColor: Colors.white,
-      body: Column(
+      // The Save Event footer below is pinned outside the scroll area, at
+      // the bottom of the Column — without this, opening the keyboard
+      // (e.g. typing the event name) shrinks the Scaffold's body and drags
+      // that footer up above it instead of letting the keyboard simply
+      // cover it. See keyboardSafePadding below for the matching fix on
+      // the scroll view's own padding.
+      resizeToAvoidBottomInset: false,
+      body: DismissKeyboardOnTap(
+        child: Column(
         children: [
           ScreenHeader(
             title: 'Add Event',
@@ -420,7 +430,11 @@ class _AddEventScreenState extends State<AddEventScreen> {
           ),
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(22),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: keyboardSafePadding(
+                context,
+                const EdgeInsets.all(22),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -589,6 +603,7 @@ class _AddEventScreenState extends State<AddEventScreen> {
             ),
           ),
         ],
+        ),
       ),
       ),
     );

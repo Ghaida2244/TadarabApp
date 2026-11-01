@@ -5,9 +5,11 @@ import '../../models/course.dart';
 import '../../services/calendar_service.dart';
 import '../../services/courses_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/keyboard_safe_padding.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/color_picker_dialog.dart';
 import '../../widgets/color_swatch_tile.dart';
+import '../../widgets/dismiss_keyboard_on_tap.dart';
 import '../../widgets/screen_header.dart';
 import '../../widgets/status_bar_style.dart';
 import '../calendar/calendar_styles.dart'
@@ -247,7 +249,15 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: statusBarStyleFor(AppColors.navy),
       child: Scaffold(
-      body: SafeArea(
+      // The Save course footer below is pinned outside the scroll area, at
+      // the bottom of the Column — without this, opening the keyboard (e.g.
+      // typing the course name) shrinks the Scaffold's body and drags that
+      // footer up above it instead of letting the keyboard simply cover it.
+      // See keyboardSafePadding below for the matching fix on the scroll
+      // view's own padding.
+      resizeToAvoidBottomInset: false,
+      body: DismissKeyboardOnTap(
+        child: SafeArea(
         top: false,
         child: Column(
           children: [
@@ -273,7 +283,12 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
                   final sectionGap = _gapFor(constraints.maxHeight);
                   _recordBaseContentHeight();
                   return SingleChildScrollView(
-                    padding: const EdgeInsets.all(20),
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: keyboardSafePadding(
+                      context,
+                      const EdgeInsets.all(20),
+                    ),
                     child: Column(
                       key: _contentKey,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -377,6 +392,7 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
               ),
             ),
           ],
+        ),
         ),
       ),
       ),

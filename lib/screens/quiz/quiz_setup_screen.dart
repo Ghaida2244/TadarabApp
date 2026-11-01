@@ -6,7 +6,9 @@ import '../../models/study_material.dart';
 import '../../services/quiz_generation_client.dart' show GenerationFailure;
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/keyboard_safe_padding.dart';
 import '../../widgets/app_button.dart';
+import '../../widgets/dismiss_keyboard_on_tap.dart';
 import '../../widgets/generation_loading_overlay.dart';
 import '../../widgets/status_bar_style.dart';
 import 'quiz_play_screen.dart';
@@ -240,7 +242,16 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
       value: statusBarStyleFor(AppColors.navy),
       child: Scaffold(
         backgroundColor: Colors.white,
-        body: SafeArea(
+        // The Generate quiz footer below is pinned outside the scroll
+        // area, at the bottom of the Column — without this, opening the
+        // keyboard (e.g. typing the question count or extra instructions)
+        // shrinks the Scaffold's body and drags that footer up above it
+        // instead of letting the keyboard simply cover it. See
+        // keyboardSafePadding below for the matching fix on the scroll
+        // view's own padding.
+        resizeToAvoidBottomInset: false,
+        body: DismissKeyboardOnTap(
+          child: SafeArea(
           top: false,
           child: Stack(
             children: [
@@ -264,9 +275,20 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                             onTap: () => Navigator.of(context).maybePop(),
                           ),
                           const SizedBox(width: 13),
-                          Text(
-                            'Quiz setup',
-                            style: AppTypography.quizHeaderTitle,
+                          // Expanded + maxLines/ellipsis: on a narrow
+                          // screen the title would otherwise force the
+                          // Row wider than the screen itself (a plain
+                          // Text reports its full single-line width to a
+                          // Row with no flex to shrink it into). No
+                          // visible change on a wide-enough screen, where
+                          // the title already fits on one line.
+                          Expanded(
+                            child: Text(
+                              'Quiz setup',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.quizHeaderTitle,
+                            ),
                           ),
                         ],
                       ),
@@ -283,7 +305,12 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                         }
                         final materials = snapshot.data ?? const [];
                         return SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(22, 4, 22, 16),
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          padding: keyboardSafePadding(
+                            context,
+                            const EdgeInsets.fromLTRB(22, 4, 22, 16),
+                          ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -362,6 +389,7 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                   ),
                 ),
             ],
+          ),
           ),
         ),
       ),
@@ -600,16 +628,26 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text('EXTRA INSTRUCTIONS ', style: AppTypography.quizEyebrow),
-            Text(
-              '· OPTIONAL',
-              style: AppTypography.quizEyebrow.copyWith(
-                color: AppColors.textOnDisabled,
+        // A single Text.rich, not a Row of two Texts: a Row offers each
+        // non-flex child its own unconstrained width, so on a narrow
+        // screen the two labels' combined natural width could exceed the
+        // screen and overflow horizontally — a Text.rich is one widget
+        // that wraps as a unit within whatever width its parent actually
+        // gives it, with no visible change at a width where it already
+        // fit on one line.
+        Text.rich(
+          TextSpan(
+            text: 'EXTRA INSTRUCTIONS ',
+            style: AppTypography.quizEyebrow,
+            children: [
+              TextSpan(
+                text: '· OPTIONAL',
+                style: AppTypography.quizEyebrow.copyWith(
+                  color: AppColors.textOnDisabled,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         const SizedBox(height: 9),
         Wrap(
@@ -649,6 +687,14 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
           controller: _promptController,
           maxLength: 300,
           maxLines: 3,
+          // Done, not the multiline default of a literal newline key — a
+          // multiline field is otherwise the one control on this screen
+          // with no way to close the keyboard from the keyboard itself.
+          // The field still looks and wraps exactly the same (same
+          // maxLines); only the IME's enter key stops inserting a line
+          // break and submits/closes the keyboard instead, same as a
+          // normal single-line field's enter key already does.
+          textInputAction: TextInputAction.done,
           buildCounter: (
             _, {
             required currentLength,

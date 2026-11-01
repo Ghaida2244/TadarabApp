@@ -188,4 +188,94 @@ void main() {
       expect(popped, isNull);
     });
   });
+
+  group('keyboard inset', () {
+    testWidgets(
+      'the Save Changes footer does not move when the keyboard opens, and '
+      'the name field stays reachable while typing',
+      (tester) async {
+        // pumpEdit sizes the view to 412x1200 itself; shrink to a small
+        // phone height afterwards, since this is about a real keyboard
+        // inset on a small screen.
+        await pumpEdit(tester);
+        tester.view.physicalSize = const Size(360, 640);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+        await tester.pumpAndSettle();
+
+        final buttonFinder = find.widgetWithText(AppButton, 'Save Changes');
+        final restRect = tester.getRect(buttonFinder);
+
+        tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          tester.getRect(buttonFinder),
+          restRect,
+          reason:
+              'the footer must stay put, covered by the keyboard, not '
+              'pushed up above it',
+        );
+
+        final nameFieldFinder = find.byKey(const ValueKey('profile-name'));
+        await tester.ensureVisible(nameFieldFinder);
+        await tester.pumpAndSettle();
+        await tester.tap(nameFieldFinder);
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          tester.getRect(nameFieldFinder).bottom,
+          lessThanOrEqualTo(640 - 300),
+          reason:
+              'the focused field must be scrolled above the keyboard, not '
+              'left behind it',
+        );
+      },
+    );
+  });
+
+  group('dismiss keyboard', () {
+    Future<void> pumpSmall(WidgetTester tester) async {
+      await pumpEdit(tester);
+      // Short enough that the form's two fields genuinely overflow and
+      // need to scroll — Edit Profile's content is short enough to fit
+      // at a plain 360x640 without scrolling at all.
+      tester.view.physicalSize = const Size(360, 360);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('tapping an empty area of the form unfocuses the field', (
+      tester,
+    ) async {
+      await pumpSmall(tester);
+
+      await tester.tap(find.byKey(const ValueKey('profile-name')));
+      await tester.pumpAndSettle();
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      // A static label with no gesture handler of its own — the tap can
+      // only be caught by the wrapping dismiss-on-tap handler.
+      await tester.tap(find.text('EMAIL'));
+      await tester.pumpAndSettle();
+
+      expect(tester.testTextInput.isVisible, isFalse);
+    });
+
+    testWidgets('dragging the form unfocuses the field', (tester) async {
+      await pumpSmall(tester);
+
+      await tester.tap(find.byKey(const ValueKey('profile-name')));
+      await tester.pumpAndSettle();
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      await tester.drag(find.text('EMAIL'), const Offset(0, -200));
+      await tester.pumpAndSettle();
+
+      expect(tester.testTextInput.isVisible, isFalse);
+    });
+  });
 }
