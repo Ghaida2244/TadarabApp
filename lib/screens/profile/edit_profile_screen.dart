@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../services/profile_service.dart';
 import '../../theme/app_theme.dart';
@@ -6,8 +7,9 @@ import '../../utils/keyboard_safe_padding.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_error_banner.dart';
 import '../../widgets/dismiss_keyboard_on_tap.dart';
+import '../../widgets/screen_header.dart';
+import '../../widgets/status_bar_style.dart';
 import 'profile_styles.dart';
-import 'widgets/profile_header.dart';
 
 /// The note under the locked email field, as the design words it.
 const kEmailLockedNote = "Your email can't be changed here.";
@@ -51,8 +53,9 @@ class EditProfileScreen extends StatefulWidget {
 }
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.name);
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.name,
+  );
 
   bool _saving = false;
   String? _errorMessage;
@@ -93,156 +96,167 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget build(BuildContext context) {
     final nameEmpty = _trimmed.isEmpty;
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      // The Save Changes footer below is pinned outside the scroll area,
-      // at the bottom of the Column — without this, opening the keyboard
-      // (typing the name) shrinks the Scaffold's body and drags that
-      // footer up above it instead of letting the keyboard simply cover
-      // it. See keyboardSafePadding below for the matching fix on the
-      // scroll view's own padding.
-      resizeToAvoidBottomInset: false,
-      body: DismissKeyboardOnTap(
-        child: Column(
-        children: [
-          ProfileSubHeader(title: 'Edit Profile', enabled: !_saving),
-          Expanded(
-            child: SingleChildScrollView(
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: keyboardSafePadding(
-                context,
-                const EdgeInsets.fromLTRB(22, 22, 22, 12),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.navy),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        // The Save Changes footer below is pinned outside the scroll area,
+        // at the bottom of the Column — without this, opening the keyboard
+        // (typing the name) shrinks the Scaffold's body and drags that
+        // footer up above it instead of letting the keyboard simply cover
+        // it. See keyboardSafePadding below for the matching fix on the
+        // scroll view's own padding.
+        resizeToAvoidBottomInset: false,
+        body: DismissKeyboardOnTap(
+          child: Column(
+            children: [
+              ScreenHeader(
+                title: 'Edit Profile',
+                backgroundColor: AppColors.navy,
+                icon: Icons.chevron_left,
+                semanticLabel: 'Back',
+                buttonOnStart: true,
+                onClose: _saving ? null : () => Navigator.of(context).pop(),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_errorMessage != null) ...[
-                    AppErrorBanner(
-                      heading: "Couldn't save your changes",
-                      body: _errorMessage!,
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                  Text('NAME', style: ProfileText.fieldLabel),
-                  const SizedBox(height: 10),
-                  Container(
-                    height: 56,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: nameEmpty
-                            ? AppColors.red
-                            : AppColors.borderLight,
-                        width: 2,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.person_outline,
-                          size: 18,
-                          color: AppColors.placeholder,
+              Expanded(
+                child: SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: keyboardSafePadding(
+                    context,
+                    const EdgeInsets.fromLTRB(22, 22, 22, 12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_errorMessage != null) ...[
+                        AppErrorBanner(
+                          heading: "Couldn't save your changes",
+                          body: _errorMessage!,
                         ),
-                        const SizedBox(width: 11),
-                        Expanded(
-                          child: TextField(
-                            key: const ValueKey('profile-name'),
-                            controller: _controller,
-                            enabled: !_saving,
-                            style: ProfileText.fieldInput(AppColors.navy),
-                            decoration: InputDecoration(
-                              border: InputBorder.none,
-                              isDense: true,
-                              hintText: 'Your name',
-                              hintStyle: ProfileText.fieldInput(
-                                AppColors.placeholder,
+                        const SizedBox(height: 20),
+                      ],
+                      Text('NAME', style: ProfileText.fieldLabel),
+                      const SizedBox(height: 10),
+                      Container(
+                        height: 56,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: nameEmpty
+                                ? AppColors.red
+                                : AppColors.borderLight,
+                            width: 2,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.person_outline,
+                              size: 18,
+                              color: AppColors.placeholder,
+                            ),
+                            const SizedBox(width: 11),
+                            Expanded(
+                              child: TextField(
+                                key: const ValueKey('profile-name'),
+                                controller: _controller,
+                                enabled: !_saving,
+                                style: ProfileText.fieldInput(AppColors.navy),
+                                decoration: InputDecoration(
+                                  border: InputBorder.none,
+                                  isDense: true,
+                                  hintText: 'Your name',
+                                  hintStyle: ProfileText.fieldInput(
+                                    AppColors.placeholder,
+                                  ),
+                                ),
+                                onChanged: (_) => setState(() {}),
                               ),
                             ),
-                            onChanged: (_) => setState(() {}),
-                          ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    nameEmpty ? kNameRequiredNote : kNameHelpNote,
-                    key: const ValueKey('name-note'),
-                    style: ProfileText.fieldNote(
-                      nameEmpty
-                          ? AppColors.errorBannerBody
-                          : AppColors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                  Text('EMAIL', style: ProfileText.fieldLabel),
-                  const SizedBox(height: 10),
-                  // Read-only by design: a padlock, a muted fill, and no
-                  // input at all — not a disabled TextField, which would
-                  // still suggest it could become editable.
-                  Container(
-                    height: 56,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceMuted,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: AppColors.cardTint,
-                        width: 2,
                       ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.mail_outline,
-                          size: 18,
-                          color: AppColors.placeholder,
+                      const SizedBox(height: 10),
+                      Text(
+                        nameEmpty ? kNameRequiredNote : kNameHelpNote,
+                        key: const ValueKey('name-note'),
+                        style: ProfileText.fieldNote(
+                          nameEmpty
+                              ? AppColors.errorBannerBody
+                              : AppColors.textSecondary,
                         ),
-                        const SizedBox(width: 11),
-                        Expanded(
-                          child: Text(
-                            widget.email,
-                            overflow: TextOverflow.ellipsis,
-                            style: ProfileText.fieldInput(
-                              AppColors.textSecondary,
-                            ),
+                      ),
+                      const SizedBox(height: 22),
+                      Text('EMAIL', style: ProfileText.fieldLabel),
+                      const SizedBox(height: 10),
+                      // Read-only by design: a padlock, a muted fill, and no
+                      // input at all — not a disabled TextField, which would
+                      // still suggest it could become editable.
+                      Container(
+                        height: 56,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceMuted,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: AppColors.cardTint,
+                            width: 2,
                           ),
                         ),
-                        const Icon(
-                          Icons.lock_outline,
-                          size: 16,
-                          color: AppColors.textOnDisabled,
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.mail_outline,
+                              size: 18,
+                              color: AppColors.placeholder,
+                            ),
+                            const SizedBox(width: 11),
+                            Expanded(
+                              child: Text(
+                                widget.email,
+                                overflow: TextOverflow.ellipsis,
+                                style: ProfileText.fieldInput(
+                                  AppColors.textSecondary,
+                                ),
+                              ),
+                            ),
+                            const Icon(
+                              Icons.lock_outline,
+                              size: 16,
+                              color: AppColors.textOnDisabled,
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        kEmailLockedNote,
+                        style: ProfileText.fieldNote(AppColors.placeholder),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    kEmailLockedNote,
-                    style: ProfileText.fieldNote(AppColors.placeholder),
-                  ),
-                ],
+                ),
               ),
-            ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(22, 14, 22, 26),
+                child: AppButton(
+                  label: 'Save Changes',
+                  variant: AppButtonVariant.accent,
+                  height: 56,
+                  borderRadius: 18,
+                  fontSize: 16,
+                  loading: _saving,
+                  loadingLabel: 'Saving…',
+                  disabledBackgroundColor: AppColors.disabledRedFill,
+                  disabledRemovesShadow: true,
+                  onPressed: _canSave && !_saving ? _save : null,
+                ),
+              ),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(22, 14, 22, 26),
-            child: AppButton(
-              label: 'Save Changes',
-              variant: AppButtonVariant.accent,
-              height: 56,
-              borderRadius: 18,
-              fontSize: 16,
-              loading: _saving,
-              loadingLabel: 'Saving…',
-              disabledBackgroundColor: AppColors.disabledRedFill,
-              disabledRemovesShadow: true,
-              onPressed: _canSave && !_saving ? _save : null,
-            ),
-          ),
-        ],
         ),
       ),
     );

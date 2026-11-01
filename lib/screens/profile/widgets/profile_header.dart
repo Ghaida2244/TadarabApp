@@ -92,68 +92,6 @@ class ProfileAvatarHeader extends StatelessWidget {
   }
 }
 
-/// The navy header every Profile sub-screen shares: a back chip and a
-/// title. Used by Ranks, Edit Profile, Study Reminder and the About
-/// documents.
-class ProfileSubHeader extends StatelessWidget {
-  const ProfileSubHeader({super.key, required this.title, this.enabled = true});
-
-  final String title;
-
-  /// False dims the back chip and blocks it, so a screen mid-save can't be
-  /// navigated away from.
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        color: AppColors.navy,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
-      ),
-      padding: const EdgeInsets.fromLTRB(22, 0, 22, 22),
-      child: SafeArea(
-        bottom: false,
-        child: Row(
-          children: [
-            Semantics(
-              button: true,
-              label: 'Back',
-              child: GestureDetector(
-                onTap: enabled ? () => Navigator.of(context).pop() : null,
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.chevron_left,
-                    size: 19,
-                    color: Colors.white.withValues(alpha: enabled ? 1 : 0.4),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Text(
-                title,
-                overflow: TextOverflow.ellipsis,
-                style: ProfileText.screenTitle,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// The white card every Profile row and panel sits on: the design's
 /// `0 0 0 2px #EEF0FF` ring plus a hard `0 3px 0` drop.
 class ProfileCard extends StatelessWidget {

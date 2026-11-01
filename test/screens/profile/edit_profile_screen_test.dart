@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/screens/profile/edit_profile_screen.dart';
 import 'package:tadarab_app/services/profile_service.dart';
+import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
+import 'package:tadarab_app/widgets/screen_header.dart';
 
 import '../../helpers/fake_profile_service.dart';
 
@@ -241,8 +243,11 @@ void main() {
       await pumpEdit(tester);
       // Short enough that the form's two fields genuinely overflow and
       // need to scroll — Edit Profile's content is short enough to fit
-      // at a plain 360x640 without scrolling at all.
-      tester.view.physicalSize = const Size(360, 360);
+      // at a plain 360x640 without scrolling at all. Not shorter than
+      // this: the now-taller unified ScreenHeader (see screen_header.dart)
+      // needs enough room left over for the EMAIL field to still land
+      // inside the viewport's hit-testable area.
+      tester.view.physicalSize = const Size(360, 480);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       await tester.pumpAndSettle();
@@ -277,5 +282,68 @@ void main() {
 
       expect(tester.testTextInput.isVisible, isFalse);
     });
+  });
+
+  testWidgets(
+    'the header is the shared ScreenHeader, the same height as Add '
+    "course's own (title-only, no subtitle)",
+    (tester) async {
+      await pumpEdit(tester);
+
+      final headerFinder = find.byType(ScreenHeader);
+      expect(headerFinder, findsOneWidget);
+      final realHeight = tester.getSize(headerFinder).height;
+
+      // Add course's own header is taller only because it also carries a
+      // subtitle ('Create a course to organize your studies') — padding,
+      // title style, button size and border radius are the exact same
+      // ScreenHeader component either way, so the fair comparison is
+      // against a title-only instance (no subtitle, matching this
+      // screen), not Add course's actual subtitled height.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                ScreenHeader(
+                  title: 'Add course',
+                  backgroundColor: AppColors.navy,
+                  onClose: () {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final referenceHeight = tester.getSize(find.byType(ScreenHeader)).height;
+
+      expect(realHeight, referenceHeight);
+    },
+  );
+
+  testWidgets('the back chevron sits to the left of the title', (
+    tester,
+  ) async {
+    await pumpEdit(tester);
+
+    final screenHeader = tester.widget<ScreenHeader>(
+      find.byType(ScreenHeader),
+    );
+    expect(screenHeader.buttonOnStart, isTrue);
+
+    final buttonX = tester.getTopLeft(find.byIcon(Icons.chevron_left)).dx;
+    final titleX = tester.getTopLeft(find.text('Edit Profile')).dx;
+    expect(buttonX, lessThan(titleX));
+  });
+
+  testWidgets('tapping the back chevron pops', (tester) async {
+    await pumpEdit(tester);
+
+    await tester.tap(find.byIcon(Icons.chevron_left));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(EditProfileScreen), findsNothing);
+    expect(popped, isNull);
   });
 }

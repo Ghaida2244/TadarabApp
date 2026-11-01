@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../theme/app_theme.dart';
 import '../../utils/rank.dart';
+import '../../widgets/screen_header.dart';
+import '../../widgets/status_bar_style.dart';
 import 'content/learning_guide_content.dart';
 import 'profile_styles.dart';
-import 'widgets/profile_header.dart';
 
 /// The Learning Guide: how points are earned, how ranks follow from them,
 /// and what each practice mode does.
@@ -22,45 +24,55 @@ class LearningGuideScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Column(
-        children: [
-          const ProfileSubHeader(title: 'Learning Guide'),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(kGuideEarnHeading, style: ProfileText.guideEyebrow),
-                  const SizedBox(height: 10),
-                  // Same reason as the Profile summary pair: `stretch`
-                  // needs a bounded height, and this row scrolls.
-                  IntrinsicHeight(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        for (final tile in kGuidePointsTiles) ...[
-                          Expanded(child: _PointsTile(tile: tile)),
-                          if (tile != kGuidePointsTiles.last)
-                            const SizedBox(width: 10),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.navy),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: Column(
+          children: [
+            ScreenHeader(
+              title: 'Learning Guide',
+              backgroundColor: AppColors.navy,
+              icon: Icons.chevron_left,
+              semanticLabel: 'Back',
+              buttonOnStart: true,
+              onClose: () => Navigator.of(context).pop(),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(kGuideEarnHeading, style: ProfileText.guideEyebrow),
+                    const SizedBox(height: 10),
+                    // Same reason as the Profile summary pair: `stretch`
+                    // needs a bounded height, and this row scrolls.
+                    IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final tile in kGuidePointsTiles) ...[
+                            Expanded(child: _PointsTile(tile: tile)),
+                            if (tile != kGuidePointsTiles.last)
+                              const SizedBox(width: 10),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 18),
-                  _RankLadderCard(points: points),
-                  const SizedBox(height: 18),
-                  for (final item in kGuideItems) ...[
-                    _GuideItemCard(item: item),
-                    if (item != kGuideItems.last) const SizedBox(height: 10),
+                    const SizedBox(height: 18),
+                    _RankLadderCard(points: points),
+                    const SizedBox(height: 18),
+                    for (final item in kGuideItems) ...[
+                      _GuideItemCard(item: item),
+                      if (item != kGuideItems.last) const SizedBox(height: 10),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

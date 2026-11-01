@@ -6,7 +6,9 @@ import 'package:tadarab_app/screens/profile/learning_guide_screen.dart';
 import 'package:tadarab_app/screens/profile/content/learning_guide_content.dart';
 import 'package:tadarab_app/features/flashcards/logic/flashcard_logic.dart';
 import 'package:tadarab_app/services/quiz_session_service.dart';
+import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/utils/rank.dart';
+import 'package:tadarab_app/widgets/screen_header.dart';
 
 void main() {
   Future<void> pumpDocument(WidgetTester tester, AboutDocument document) async {
@@ -18,6 +20,40 @@ void main() {
       MaterialApp(home: AboutDocumentScreen(document: document)),
     );
     await tester.pumpAndSettle();
+  }
+
+  // Measured by pumping a lone, title-only (no subtitle) ScreenHeader at
+  // the same title — the fair comparison for these screens, none of which
+  // have a subtitle: padding, title style, button size and border radius
+  // are the exact same ScreenHeader component either way, so using each
+  // screen's own title (rather than always 'Add course') is what makes
+  // this an apples-to-apples check. 'Privacy Policy' and 'Learning
+  // Guide' no longer wrap to two lines at a phone width — ScreenHeader's
+  // title now shrinks (FittedBox + scaleDown) rather than wrapping — but
+  // this still isn't hardcoded to 'Add course' specifically, since that
+  // would stop being a fair comparison the moment any title needs even a
+  // little of that shrink.
+  Future<double> referenceScreenHeaderHeight(
+    WidgetTester tester,
+    String title,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              ScreenHeader(
+                title: title,
+                backgroundColor: AppColors.navy,
+                onClose: () {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    return tester.getSize(find.byType(ScreenHeader)).height;
   }
 
   group('classic documents', () {
@@ -56,6 +92,116 @@ void main() {
 
       expect(find.bySemanticsLabel('Back'), findsOneWidget);
     });
+
+    testWidgets('the back chevron sits to the left of the title', (
+      tester,
+    ) async {
+      await pumpDocument(tester, kAboutUsDocument);
+
+      final screenHeader = tester.widget<ScreenHeader>(
+        find.byType(ScreenHeader),
+      );
+      expect(screenHeader.buttonOnStart, isTrue);
+
+      final buttonX = tester.getTopLeft(find.byIcon(Icons.chevron_left)).dx;
+      final titleX = tester.getTopLeft(find.text('About Us')).dx;
+      expect(buttonX, lessThan(titleX));
+    });
+
+    testWidgets('tapping the back chevron pops', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        AboutDocumentScreen(document: kAboutUsDocument),
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AboutDocumentScreen), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.chevron_left));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AboutDocumentScreen), findsNothing);
+      expect(find.text('open'), findsOneWidget);
+    });
+
+    for (final document in [
+      kAboutUsDocument,
+      kPrivacyPolicyDocument,
+      kTermsOfUseDocument,
+    ]) {
+      testWidgets(
+        '${document.title}\'s header is the shared ScreenHeader, the '
+        "same height as Add course's own (title-only, no subtitle)",
+        (tester) async {
+          await pumpDocument(tester, document);
+
+          final headerFinder = find.byType(ScreenHeader);
+          expect(headerFinder, findsOneWidget);
+          final realHeight = tester.getSize(headerFinder).height;
+
+          final referenceHeight = await referenceScreenHeaderHeight(
+            tester,
+            document.title,
+          );
+
+          expect(realHeight, referenceHeight);
+        },
+      );
+    }
+  });
+
+  group('Privacy Policy title stays on one line', () {
+    // 14 characters at the header's 26px/w900 title style needs ~357
+    // logical pixels unscaled — more than a 360 or 412dp phone's header
+    // has left over once its own padding and the back button are
+    // subtracted. ScreenHeader's title now shrinks as a whole (FittedBox
+    // + scaleDown) instead of wrapping to a second line, so this checks
+    // it never wraps at either width, not that it stays at full size.
+    for (final width in [360.0, 412.0]) {
+      testWidgets('never wraps at ${width.toInt()}dp width', (tester) async {
+        tester.view.physicalSize = Size(width, 1600);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AboutDocumentScreen(document: kPrivacyPolicyDocument),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+
+        // Measuring the FittedBox itself, not the Text inside it: a
+        // FittedBox's child is always laid out at its own natural,
+        // unconstrained size first (which is why measuring the Text
+        // directly would read ~37px regardless of how much it then gets
+        // scaled down) — the FittedBox's own rendered size is what
+        // reflects the real, visible, scaled result. A single line
+        // scales down to under 40px at both widths (27.9px at 360dp,
+        // 33.3px at 412dp, measured directly); two wrapped lines would
+        // still be at least ~60px even after scaling, since scaling
+        // preserves the (now much squarer) aspect ratio wrapping would
+        // produce.
+        final fittedBoxHeight = tester
+            .getSize(find.byType(FittedBox))
+            .height;
+        expect(fittedBoxHeight, lessThan(40));
+      });
+    }
   });
 
   group('team-chosen copy', () {
@@ -289,5 +435,93 @@ void main() {
 
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets(
+      'the header is the shared ScreenHeader, the same height as Add '
+      "course's own (title-only, no subtitle)",
+      (tester) async {
+        await pumpGuide(tester);
+
+        final headerFinder = find.byType(ScreenHeader);
+        expect(headerFinder, findsOneWidget);
+        final realHeight = tester.getSize(headerFinder).height;
+
+        final referenceHeight = await referenceScreenHeaderHeight(
+          tester,
+          'Learning Guide',
+        );
+
+        expect(realHeight, referenceHeight);
+      },
+    );
+
+    testWidgets('the back chevron sits to the left of the title', (
+      tester,
+    ) async {
+      await pumpGuide(tester);
+
+      final screenHeader = tester.widget<ScreenHeader>(
+        find.byType(ScreenHeader),
+      );
+      expect(screenHeader.buttonOnStart, isTrue);
+
+      final buttonX = tester.getTopLeft(find.byIcon(Icons.chevron_left)).dx;
+      final titleX = tester.getTopLeft(find.text('Learning Guide')).dx;
+      expect(buttonX, lessThan(titleX));
+    });
+
+    testWidgets('tapping the back chevron pops', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const LearningGuideScreen(points: 1450),
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.byType(LearningGuideScreen), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.chevron_left));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LearningGuideScreen), findsNothing);
+      expect(find.text('open'), findsOneWidget);
+    });
+
+    for (final width in [360.0, 412.0]) {
+      testWidgets(
+        'the title never wraps at ${width.toInt()}dp width',
+        (tester) async {
+          tester.view.physicalSize = Size(width, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.reset);
+
+          await tester.pumpWidget(
+            const MaterialApp(home: LearningGuideScreen(points: 1450)),
+          );
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull);
+
+          // See the equivalent 'Privacy Policy' check above for why the
+          // FittedBox itself, not the Text inside it, is what has to be
+          // measured.
+          final fittedBoxHeight = tester
+              .getSize(find.byType(FittedBox))
+              .height;
+          expect(fittedBoxHeight, lessThan(40));
+        },
+      );
+    }
   });
 }

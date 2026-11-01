@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../services/profile_service.dart';
 import '../../services/reminder_scheduler.dart';
@@ -6,6 +7,8 @@ import '../../theme/app_theme.dart';
 import '../../utils/event_time.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_error_banner.dart';
+import '../../widgets/screen_header.dart';
+import '../../widgets/status_bar_style.dart';
 import '../calendar/widgets/calendar_pickers.dart';
 import 'profile_styles.dart';
 import 'widgets/profile_header.dart';
@@ -144,9 +147,7 @@ class _StudyReminderScreenState extends State<StudyReminderScreen> {
           backgroundColor: AppColors.navy,
           content: Text(
             notice ??
-                studyReminderSavedMessage(
-                  effectiveEnabled ? _draftTime : null,
-                ),
+                studyReminderSavedMessage(effectiveEnabled ? _draftTime : null),
             style: ProfileText.save.copyWith(fontSize: 14),
           ),
         ),
@@ -166,209 +167,220 @@ class _StudyReminderScreenState extends State<StudyReminderScreen> {
   Widget build(BuildContext context) {
     final hasTime = _draftTime != null;
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Column(
-        children: [
-          ProfileSubHeader(title: 'Study Reminder', enabled: !_saving),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_errorMessage != null) ...[
-                    AppErrorBanner(
-                      heading: "Couldn't save your reminder",
-                      body: _errorMessage!,
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  GestureDetector(
-                    key: const ValueKey('study-reminder-toggle'),
-                    onTap: _saving
-                        ? null
-                        : () => setState(() => _draftEnabled = !_draftEnabled),
-                    behavior: HitTestBehavior.opaque,
-                    child: ProfileCard(
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 38,
-                            height: 38,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: _draftEnabled
-                                  ? AppColors.cardTint
-                                  : AppColors.surfaceMuted,
-                              borderRadius: BorderRadius.circular(13),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.navy),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: Column(
+          children: [
+            ScreenHeader(
+              title: 'Study Reminder',
+              backgroundColor: AppColors.navy,
+              icon: Icons.chevron_left,
+              semanticLabel: 'Back',
+              buttonOnStart: true,
+              onClose: _saving ? null : () => Navigator.of(context).pop(),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_errorMessage != null) ...[
+                      AppErrorBanner(
+                        heading: "Couldn't save your reminder",
+                        body: _errorMessage!,
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+                    GestureDetector(
+                      key: const ValueKey('study-reminder-toggle'),
+                      onTap: _saving
+                          ? null
+                          : () =>
+                                setState(() => _draftEnabled = !_draftEnabled),
+                      behavior: HitTestBehavior.opaque,
+                      child: ProfileCard(
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 38,
+                              height: 38,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: _draftEnabled
+                                    ? AppColors.cardTint
+                                    : AppColors.surfaceMuted,
+                                borderRadius: BorderRadius.circular(13),
+                              ),
+                              child: Icon(
+                                Icons.notifications_none,
+                                size: 19,
+                                color: _draftEnabled
+                                    ? AppColors.navy
+                                    : AppColors.textOnDisabled,
+                              ),
                             ),
-                            child: Icon(
-                              Icons.notifications_none,
-                              size: 19,
-                              color: _draftEnabled
-                                  ? AppColors.navy
-                                  : AppColors.textOnDisabled,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Enable Reminder',
+                                    style: ProfileText.reminderTitle,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Get a daily nudge to study',
+                                    style: ProfileText.reminderSubtitle,
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Enable Reminder',
-                                  style: ProfileText.reminderTitle,
+                            // Hand-built so it matches the design's 54x31
+                            // pill, which Material's Switch can't be sized to.
+                            Container(
+                              width: 54,
+                              height: 31,
+                              padding: const EdgeInsets.all(3),
+                              alignment: _draftEnabled
+                                  ? Alignment.centerRight
+                                  : Alignment.centerLeft,
+                              decoration: BoxDecoration(
+                                color: _draftEnabled
+                                    ? AppColors.navy
+                                    : AppColors.borderLight,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Container(
+                                width: 25,
+                                height: 25,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppColors.navy.withValues(
+                                        alpha: 0.3,
+                                      ),
+                                      offset: const Offset(0, 1),
+                                      blurRadius: 3,
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(height: 2),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (_draftEnabled) ...[
+                      const SizedBox(height: 14),
+                      ProfileCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.schedule,
+                                  size: 17,
+                                  color: AppColors.navy,
+                                ),
+                                const SizedBox(width: 9),
                                 Text(
-                                  'Get a daily nudge to study',
-                                  style: ProfileText.reminderSubtitle,
+                                  'Reminder Time',
+                                  style: ProfileText.reminderSectionTitle,
                                 ),
                               ],
                             ),
-                          ),
-                          // Hand-built so it matches the design's 54x31
-                          // pill, which Material's Switch can't be sized to.
-                          Container(
-                            width: 54,
-                            height: 31,
-                            padding: const EdgeInsets.all(3),
-                            alignment: _draftEnabled
-                                ? Alignment.centerRight
-                                : Alignment.centerLeft,
-                            decoration: BoxDecoration(
-                              color: _draftEnabled
-                                  ? AppColors.navy
-                                  : AppColors.borderLight,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Container(
-                              width: 25,
-                              height: 25,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.navy.withValues(
-                                      alpha: 0.3,
-                                    ),
-                                    offset: const Offset(0, 1),
-                                    blurRadius: 3,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (_draftEnabled) ...[
-                    const SizedBox(height: 14),
-                    ProfileCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.schedule,
-                                size: 17,
-                                color: AppColors.navy,
-                              ),
-                              const SizedBox(width: 9),
-                              Text(
-                                'Reminder Time',
-                                style: ProfileText.reminderSectionTitle,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 11),
-                          GestureDetector(
-                            key: const ValueKey('reminder-time-field'),
-                            onTap: _saving ? null : _pickTime,
-                            behavior: HitTestBehavior.opaque,
-                            child: Container(
-                              height: 56,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 15,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.surfaceMuted,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: hasTime
-                                      ? AppColors.borderLight
-                                      : AppColors.red,
-                                  width: 2,
+                            const SizedBox(height: 11),
+                            GestureDetector(
+                              key: const ValueKey('reminder-time-field'),
+                              onTap: _saving ? null : _pickTime,
+                              behavior: HitTestBehavior.opaque,
+                              child: Container(
+                                height: 56,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 15,
                                 ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      hasTime
-                                          ? formatEventTimeForDisplay(
-                                              _draftTime!,
-                                            )
-                                          : '--:-- --',
-                                      key: const ValueKey('reminder-time'),
-                                      style: ProfileText.reminderTime(
+                                decoration: BoxDecoration(
+                                  color: AppColors.surfaceMuted,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: hasTime
+                                        ? AppColors.borderLight
+                                        : AppColors.red,
+                                    width: 2,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
                                         hasTime
-                                            ? AppColors.navy
-                                            : AppColors.placeholder,
+                                            ? formatEventTimeForDisplay(
+                                                _draftTime!,
+                                              )
+                                            : '--:-- --',
+                                        key: const ValueKey('reminder-time'),
+                                        style: ProfileText.reminderTime(
+                                          hasTime
+                                              ? AppColors.navy
+                                              : AppColors.placeholder,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  const Icon(
-                                    Icons.schedule,
-                                    size: 18,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ],
+                                    const Icon(
+                                      Icons.schedule,
+                                      size: 18,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 11),
-                          Text(
-                            hasTime
-                                ? "You'll receive a reminder at "
-                                      '${formatEventTimeForDisplay(_draftTime!)} '
-                                      'every day.'
-                                : kPickTimeNote,
-                            key: const ValueKey('reminder-helper'),
-                            style: ProfileText.reminderHelper(
+                            const SizedBox(height: 11),
+                            Text(
                               hasTime
-                                  ? AppColors.successDark
-                                  : AppColors.errorBannerBody,
+                                  ? "You'll receive a reminder at "
+                                        '${formatEventTimeForDisplay(_draftTime!)} '
+                                        'every day.'
+                                  : kPickTimeNote,
+                              key: const ValueKey('reminder-helper'),
+                              style: ProfileText.reminderHelper(
+                                hasTime
+                                    ? AppColors.successDark
+                                    : AppColors.errorBannerBody,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(22, 14, 22, 26),
-            child: AppButton(
-              label: 'Save Changes',
-              variant: AppButtonVariant.accent,
-              height: 56,
-              borderRadius: 18,
-              fontSize: 16,
-              loading: _saving,
-              loadingLabel: 'Saving…',
-              disabledBackgroundColor: AppColors.disabledRedFill,
-              disabledRemovesShadow: true,
-              onPressed: _canSave ? _save : null,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 14, 22, 26),
+              child: AppButton(
+                label: 'Save Changes',
+                variant: AppButtonVariant.accent,
+                height: 56,
+                borderRadius: 18,
+                fontSize: 16,
+                loading: _saving,
+                loadingLabel: 'Saving…',
+                disabledBackgroundColor: AppColors.disabledRedFill,
+                disabledRemovesShadow: true,
+                onPressed: _canSave ? _save : null,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
