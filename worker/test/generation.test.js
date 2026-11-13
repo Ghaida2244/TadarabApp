@@ -143,9 +143,11 @@ describe('buildPrompt', () => {
     expect(formatIndex).toBeGreaterThan(sourceTagsIndex);
   });
 
-  test('normal: the language-of-the-source sentence appears exactly once', () => {
+  test('normal: the language-of-the-material sentence appears exactly once', () => {
     const prompt = buildPrompt(baseArgs);
-    const occurrences = prompt.split('same language as the source text').length - 1;
+    const occurrences =
+      prompt.split('write each item entirely in the language of the material it comes from.')
+        .length - 1;
     expect(occurrences).toBe(1);
   });
 
