@@ -630,4 +630,22 @@ void main() {
       expect(tester.testTextInput.isVisible, isFalse);
     });
   });
+
+  testWidgets(
+    'the close button stays on the right of the title (buttonOnStart is '
+    'unchanged by the Profile screens\' back-chevron-on-the-left work)',
+    (tester) async {
+      await pump(tester);
+
+      final screenHeader = tester.widget<ScreenHeader>(
+        find.byType(ScreenHeader),
+      );
+      expect(screenHeader.buttonOnStart, isFalse);
+      expect(screenHeader.icon, Icons.close);
+
+      final buttonX = tester.getTopLeft(find.byIcon(Icons.close)).dx;
+      final titleX = tester.getTopLeft(find.text('Add course')).dx;
+      expect(titleX, lessThan(buttonX));
+    },
+  );
 }

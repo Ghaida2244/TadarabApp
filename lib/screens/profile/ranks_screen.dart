@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../theme/app_theme.dart';
 import '../../utils/rank.dart';
+import '../../widgets/screen_header.dart';
+import '../../widgets/status_bar_style.dart';
 import 'profile_styles.dart';
-import 'widgets/profile_header.dart';
 import 'widgets/rank_icon.dart';
 
 /// Whether a rank row shows the "CURRENT" pill.
@@ -29,24 +31,34 @@ class RanksScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final current = rankForPoints(points);
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Column(
-        children: [
-          const ProfileSubHeader(title: 'Ranks'),
-          Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-              itemCount: kRanks.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 11),
-              itemBuilder: (context, index) => _RankRow(
-                rank: kRanks[index],
-                points: points,
-                currentTier: current.tier,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: statusBarStyleFor(AppColors.navy),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: Column(
+          children: [
+            ScreenHeader(
+              title: 'Ranks',
+              backgroundColor: AppColors.navy,
+              icon: Icons.chevron_left,
+              semanticLabel: 'Back',
+              buttonOnStart: true,
+              onClose: () => Navigator.of(context).pop(),
+            ),
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+                itemCount: kRanks.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 11),
+                itemBuilder: (context, index) => _RankRow(
+                  rank: kRanks[index],
+                  points: points,
+                  currentTier: current.tier,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -72,7 +84,9 @@ class _RankRow extends StatelessWidget {
 
     // Only the current rank shows partial progress; ranks behind it read as
     // complete and ranks ahead read as empty.
-    final fraction = isDone ? 1.0 : (isCurrent ? progressWithinRank(points) : 0.0);
+    final fraction = isDone
+        ? 1.0
+        : (isCurrent ? progressWithinRank(points) : 0.0);
     final percentLabel = '${(fraction * 100).round()}%';
 
     return Container(
@@ -204,9 +218,7 @@ class _RankRow extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  isDone
-                      ? 'COMPLETED'
-                      : (isCurrent ? 'IN PROGRESS' : 'LOCKED'),
+                  isDone ? 'COMPLETED' : (isCurrent ? 'IN PROGRESS' : 'LOCKED'),
                   style: ProfileText.rankStatus(
                     isDone
                         ? AppColors.navy

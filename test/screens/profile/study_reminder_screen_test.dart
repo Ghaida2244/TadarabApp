@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/screens/profile/study_reminder_screen.dart';
 import 'package:tadarab_app/services/profile_service.dart';
+import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
+import 'package:tadarab_app/widgets/screen_header.dart';
 
 import '../../helpers/fake_profile_service.dart';
 import '../../helpers/fake_reminder_scheduler.dart';
@@ -298,6 +300,66 @@ void main() {
       expect(find.text("Couldn't save your reminder"), findsOneWidget);
       // Nothing was stored, so nothing should remain scheduled.
       expect(scheduler.dailyCancelled, 1);
+    });
+  });
+
+  group('header', () {
+    testWidgets(
+      'is the shared ScreenHeader, the same height as Add course\'s own '
+      '(title-only, no subtitle), with the back chevron to the left of '
+      'the title',
+      (tester) async {
+        await pumpReminder(tester);
+
+        final headerFinder = find.byType(ScreenHeader);
+        expect(headerFinder, findsOneWidget);
+        final screenHeader = tester.widget<ScreenHeader>(headerFinder);
+        expect(screenHeader.buttonOnStart, isTrue);
+        final realHeight = tester.getSize(headerFinder).height;
+
+        final buttonX = tester
+            .getTopLeft(find.byIcon(Icons.chevron_left))
+            .dx;
+        final titleX = tester.getTopLeft(find.text('Study Reminder')).dx;
+        expect(buttonX, lessThan(titleX));
+
+        // Add course's own header is taller only because it also carries
+        // a subtitle — padding, title style, button size and border
+        // radius are the exact same ScreenHeader component either way,
+        // so the fair comparison is against a title-only instance (no
+        // subtitle, matching this screen).
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Column(
+                children: [
+                  ScreenHeader(
+                    title: 'Add course',
+                    backgroundColor: AppColors.navy,
+                    onClose: () {},
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        final referenceHeight = tester
+            .getSize(find.byType(ScreenHeader))
+            .height;
+
+        expect(realHeight, referenceHeight);
+      },
+    );
+
+    testWidgets('tapping the back chevron pops', (tester) async {
+      await pumpReminder(tester);
+
+      await tester.tap(find.byIcon(Icons.chevron_left));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(StudyReminderScreen), findsNothing);
+      expect(find.text('open'), findsOneWidget);
     });
   });
 }
