@@ -134,19 +134,24 @@ class _FlashcardReviewPassScreenState extends State<FlashcardReviewPassScreen> {
             child: Column(
               children: [
                 AppButton(
-                  label: _isLast ? 'Done reviewing →' : 'Next →',
+                  label: _isLast ? 'Done reviewing' : 'Next',
                   variant: AppButtonVariant.accent,
                   height: 54,
                   shadowColor: AppColors.redShadow.withValues(alpha: 0.6),
                   onPressed: _goNext,
                 ),
-                const SizedBox(height: 10),
-                AppButton(
-                  label: 'Previous',
-                  variant: AppButtonVariant.outlinedNeutral,
-                  height: 50,
-                  onPressed: _index == 0 ? null : _goPrevious,
-                ),
+                if (total > 1) ...[
+                  const SizedBox(height: 10),
+                  AppButton(
+                    label: 'Previous',
+                    variant: AppButtonVariant.outlinedNeutral,
+                    height: 50,
+                    activeBorderColor: AppColors.navy.withValues(alpha: 0.32),
+                    activeTextColor: AppColors.navy,
+                    activeShadowColor: AppColors.navy.withValues(alpha: 0.10),
+                    onPressed: _index == 0 ? null : _goPrevious,
+                  ),
+                ],
               ],
             ),
           ),

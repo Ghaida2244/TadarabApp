@@ -279,7 +279,7 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Thanks — we will take a look at this question.'),
+        content: Text('Thanks, we will take a look at this question.'),
       ),
     );
   }
@@ -530,10 +530,12 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
                           const SizedBox(height: 10),
                           AppButton(
                             label: 'Previous',
-                            variant: AppButtonVariant.outlinedBrand,
+                            variant: AppButtonVariant.outlinedNeutral,
                             height: 50,
                             borderRadius: 16,
-                            shadowColor: AppColors.navy.withValues(alpha: 0.10),
+                            activeBorderColor: AppColors.navy.withValues(alpha: 0.32),
+                            activeTextColor: AppColors.navy,
+                            activeShadowColor: AppColors.navy.withValues(alpha: 0.10),
                             onPressed: _index == 0
                                 ? null
                                 : () => _previous(data),

@@ -203,6 +203,14 @@ class _CheckEmailScreenState extends State<CheckEmailScreen> {
                         label: 'Resend link',
                         variant: AppButtonVariant.outlinedNeutral,
                         loading: _resending,
+                        // Exactly the enabled "Previous" button look — only
+                        // applied by AppButton while enabled and not
+                        // loading, so this still dims during the cooldown
+                        // (onPressed == null) and while the request is in
+                        // flight (loading == true).
+                        activeBorderColor: AppColors.navy.withValues(alpha: 0.32),
+                        activeTextColor: AppColors.navy,
+                        activeShadowColor: AppColors.navy.withValues(alpha: 0.10),
                         onPressed: onCooldown ? null : _resend,
                       ),
                     ],

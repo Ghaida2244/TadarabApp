@@ -1,9 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
+import 'package:tadarab_app/widgets/app_button.dart';
 import 'package:tadarab_app/widgets/save_and_leave_sheet.dart';
 
 Widget _wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
+
+Color _borderColorOf(WidgetTester tester, String label) {
+  final container = tester.widget<AnimatedContainer>(
+    find.descendant(
+      of: find.widgetWithText(AppButton, label),
+      matching: find.byType(AnimatedContainer),
+    ),
+  );
+  return (container.decoration as BoxDecoration).border!.top.color;
+}
+
+Color _textColorOf(WidgetTester tester, String label) {
+  final text = tester.widget<Text>(
+    find.descendant(
+      of: find.widgetWithText(AppButton, label),
+      matching: find.byType(Text),
+    ),
+  );
+  return text.style!.color!;
+}
+
+List<BoxShadow>? _shadowOf(WidgetTester tester, String label) {
+  final container = tester.widget<AnimatedContainer>(
+    find.descendant(
+      of: find.widgetWithText(AppButton, label),
+      matching: find.byType(AnimatedContainer),
+    ),
+  );
+  return (container.decoration as BoxDecoration).boxShadow;
+}
 
 void main() {
   group('SaveAndLeaveSheet', () {
@@ -84,6 +115,30 @@ void main() {
       expect(savedCalls, 0);
       expect(keepGoingCalls, 1);
     });
+
+    testWidgets(
+      'Keep going looks active, like the enabled Previous button',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            SaveAndLeaveSheet(
+              body: 'Body',
+              onSaveAndLeave: () {},
+              onKeepGoing: () {},
+            ),
+          ),
+        );
+
+        expect(
+          _borderColorOf(tester, 'Keep going'),
+          AppColors.navy.withValues(alpha: 0.32),
+        );
+        expect(_textColorOf(tester, 'Keep going'), AppColors.navy);
+        final shadow = _shadowOf(tester, 'Keep going');
+        expect(shadow, isNotNull);
+        expect(shadow!.single.color, AppColors.navy.withValues(alpha: 0.10));
+      },
+    );
   });
 
   group('showSaveAndLeaveSheetModal', () {

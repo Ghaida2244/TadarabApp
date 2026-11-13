@@ -5,8 +5,42 @@ import 'package:tadarab_app/models/question.dart';
 import 'package:tadarab_app/models/quiz_session.dart';
 import 'package:tadarab_app/screens/quiz/quiz_play_screen.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
+import 'package:tadarab_app/widgets/app_button.dart';
 
 import '../../helpers/fake_quiz_session_service.dart';
+
+AppButton _button(WidgetTester tester, String label) =>
+    tester.widget<AppButton>(find.widgetWithText(AppButton, label));
+
+Color _borderColorOf(WidgetTester tester, String label) {
+  final container = tester.widget<AnimatedContainer>(
+    find.descendant(
+      of: find.widgetWithText(AppButton, label),
+      matching: find.byType(AnimatedContainer),
+    ),
+  );
+  return (container.decoration as BoxDecoration).border!.top.color;
+}
+
+Color _textColorOf(WidgetTester tester, String label) {
+  final text = tester.widget<Text>(
+    find.descendant(
+      of: find.widgetWithText(AppButton, label),
+      matching: find.byType(Text),
+    ),
+  );
+  return text.style!.color!;
+}
+
+List<BoxShadow>? _shadowOf(WidgetTester tester, String label) {
+  final container = tester.widget<AnimatedContainer>(
+    find.descendant(
+      of: find.widgetWithText(AppButton, label),
+      matching: find.byType(AnimatedContainer),
+    ),
+  );
+  return (container.decoration as BoxDecoration).boxShadow;
+}
 
 List<Question> _questions({String? firstAnswer}) {
   return [
@@ -283,11 +317,29 @@ void main() {
 
       final previousButtonFinder = find.text('Previous');
       expect(previousButtonFinder, findsOneWidget);
+      expect(_button(tester, 'Previous').onPressed, isNull);
+      expect(_borderColorOf(tester, 'Previous'), AppColors.borderDefault);
+      expect(_textColorOf(tester, 'Previous'), AppColors.textSecondary);
+      expect(_shadowOf(tester, 'Previous'), isNull);
+
+      // Tapping while disabled does nothing — still question 1.
+      await tester.tap(find.text('Previous'));
+      await tester.pumpAndSettle();
+      expect(find.text('Question 1 of 2'), findsOneWidget);
 
       await tester.tap(find.text('A collection of related data'));
       await tester.pump();
       await tester.tap(find.text('Next'));
       await tester.pumpAndSettle();
+
+      expect(_button(tester, 'Previous').onPressed, isNotNull);
+      expect(_borderColorOf(tester, 'Previous'), AppColors.navy.withValues(alpha: 0.32));
+      expect(_textColorOf(tester, 'Previous'), AppColors.navy);
+      final shadow = _shadowOf(tester, 'Previous');
+      expect(shadow, isNotNull);
+      expect(shadow!.single.color, AppColors.navy.withValues(alpha: 0.10));
+      expect(shadow.single.offset, const Offset(0, 3));
+      expect(shadow.single.blurRadius, 0);
 
       await tester.tap(find.text('A DBMS'));
       await tester.pump();
@@ -295,6 +347,63 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Question 1 of 2'), findsOneWidget);
+      expect(_button(tester, 'Previous').onPressed, isNull);
+      expect(_borderColorOf(tester, 'Previous'), AppColors.borderDefault);
+      expect(_textColorOf(tester, 'Previous'), AppColors.textSecondary);
+      expect(_shadowOf(tester, 'Previous'), isNull);
+    });
+
+    testWidgets('a single-question exam session does not crash, and Previous '
+        'stays disabled throughout', (tester) async {
+      final service = FakeQuizSessionService(
+        sessions: [_session(mode: Mode.exam)],
+        questions: {'s1': _questions().sublist(0, 1)},
+      );
+      await _pumpSession(tester, service);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Question 1 of 1'), findsOneWidget);
+      expect(_button(tester, 'Previous').onPressed, isNull);
+
+      await tester.tap(find.text('Previous'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Question 1 of 1'), findsOneWidget);
+    });
+
+    testWidgets('renders with no overflow at 320x568 and 1.3x text scale', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final service = FakeQuizSessionService(
+        sessions: [_session(mode: Mode.exam)],
+        questions: {'s1': _questions()},
+      );
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(1.3)),
+          child: MaterialApp(
+            home: QuizPlayScreen(sessionId: 's1', service: service),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+
+      // The option may sit below the fold at this scale/size — the question
+      // area scrolls independently of the pinned Next/Previous footer.
+      await tester.ensureVisible(find.text('A collection of related data'));
+      await tester.pump();
+      await tester.tap(find.text('A collection of related data'));
+      await tester.pump();
+      await tester.tap(find.text('Next'));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('last question turns Next into Submit quiz and completes on tap', (tester) async {

@@ -27,6 +27,9 @@ class AppButton extends StatefulWidget {
     this.disabledBackgroundColor,
     this.disabledRemovesShadow = false,
     this.fontSize,
+    this.activeBorderColor,
+    this.activeTextColor,
+    this.activeShadowColor,
 
   });
 
@@ -74,6 +77,22 @@ class AppButton extends StatefulWidget {
   /// Stacks design's smaller side-by-side completed-session buttons).
   final double? fontSize;
 
+  /// When [onPressed] is non-null and the button isn't [loading] (the
+  /// normal enabled state), overrides an outlined variant's border color
+  /// instead of the variant's default — e.g. so a secondary action like
+  /// "Previous" can read as genuinely usable without a new variant.
+  final Color? activeBorderColor;
+
+  /// Paired with [activeBorderColor]: overrides the label color while
+  /// enabled.
+  final Color? activeTextColor;
+
+  /// Paired with [activeBorderColor]/[activeTextColor]: gives an outlined
+  /// button the same hard-offset bottom shadow a filled button has while
+  /// enabled — pass a soft tint (not the filled buttons' own shadow color)
+  /// so it still reads as the lighter, secondary action.
+  final Color? activeShadowColor;
+
 
   @override
   State<AppButton> createState() => _AppButtonState();
@@ -109,6 +128,16 @@ class _AppButtonState extends State<AppButton> {
 
     if (disabledNotLoading && widget.disabledRemovesShadow) {
       colors = colors.copyWithShadow(null);
+    }
+    final bool enabledNotLoading = widget.onPressed != null && !widget.loading;
+    if (enabledNotLoading && widget.activeBorderColor != null) {
+      colors = colors.copyWithBorder(widget.activeBorderColor);
+    }
+    if (enabledNotLoading && widget.activeTextColor != null) {
+      colors = colors.copyWithText(widget.activeTextColor!);
+    }
+    if (enabledNotLoading && widget.activeShadowColor != null) {
+      colors = colors.copyWithShadow(widget.activeShadowColor);
     }
     final double shadowOffset = colors.hasShadow ? (_pressed ? 1 : 3) : 0;
 
@@ -254,6 +283,13 @@ class _ButtonColors {
   );
 
   _ButtonColors copyWithBackground(Color background) => _ButtonColors(
+    background: background,
+    border: border,
+    shadow: shadow,
+    text: text,
+  );
+
+  _ButtonColors copyWithText(Color text) => _ButtonColors(
     background: background,
     border: border,
     shadow: shadow,

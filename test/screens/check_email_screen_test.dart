@@ -3,8 +3,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/screens/auth/check_email_screen.dart';
 import 'package:tadarab_app/screens/auth/login_screen.dart';
 import 'package:tadarab_app/services/auth_service.dart';
+import 'package:tadarab_app/theme/app_theme.dart';
+import 'package:tadarab_app/widgets/app_button.dart';
 
 import '../helpers/fake_auth_service.dart';
+
+Color _borderColorOf(WidgetTester tester, String label) {
+  final container = tester.widget<AnimatedContainer>(
+    find.descendant(
+      of: find.widgetWithText(AppButton, label),
+      matching: find.byType(AnimatedContainer),
+    ),
+  );
+  return (container.decoration as BoxDecoration).border!.top.color;
+}
 
 void main() {
   Future<void> pumpCheckEmail(
@@ -57,6 +69,18 @@ void main() {
       },
     );
 
+    testWidgets('Resend link keeps the dim look while disabled on cooldown', (
+      tester,
+    ) async {
+      await pumpCheckEmail(tester);
+
+      // The disabled look is outlinedNeutral's own default border — the
+      // active override never applies while onPressed is null.
+      expect(_borderColorOf(tester, 'Resend link'), AppColors.borderDefault);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
     testWidgets('counts down each second', (tester) async {
       await pumpCheckEmail(tester);
 
@@ -87,6 +111,45 @@ void main() {
       );
       expect(resendButton.onTap, isNotNull);
     });
+
+    testWidgets('Resend link looks active once the cooldown expires', (
+      tester,
+    ) async {
+      await pumpCheckEmail(tester);
+
+      await tester.pump(const Duration(seconds: 61));
+
+      expect(
+        _borderColorOf(tester, 'Resend link'),
+        AppColors.navy.withValues(alpha: 0.32),
+      );
+    });
+
+    testWidgets(
+      'Resend link falls back to the dim loading look while the request '
+      'is in flight, not the active look',
+      (tester) async {
+        final fake = FakeAuthService(delay: const Duration(seconds: 1));
+        await pumpCheckEmail(tester, authService: fake);
+
+        await tester.pump(const Duration(seconds: 61));
+        await tester.tap(find.text('Resend link'));
+        await tester.pump();
+
+        // AppButton's loading look has no border at all — confirming the
+        // active override isn't leaking into it.
+        final container = tester.widget<AnimatedContainer>(
+          find.descendant(
+            of: find.widgetWithText(AppButton, 'Resend link'),
+            matching: find.byType(AnimatedContainer),
+          ),
+        );
+        expect((container.decoration as BoxDecoration).border, isNull);
+
+        await tester.pump(const Duration(seconds: 1));
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
 
     testWidgets(
       'tapping Resend calls sendPasswordReset again and restarts the cooldown',

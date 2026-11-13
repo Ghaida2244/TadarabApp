@@ -185,9 +185,9 @@ void main() {
         expect(find.byType(FlashcardReviewPassScreen), findsOneWidget);
 
         // Walk through both cards to the end (Done reviewing pops).
-        await tester.tap(find.text('Next →'));
+        await tester.tap(find.text('Next'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Done reviewing →'));
+        await tester.tap(find.text('Done reviewing'));
         await tester.pumpAndSettle();
 
         expect(find.byType(FlashcardReviewPassScreen), findsNothing);
