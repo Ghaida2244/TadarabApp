@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/screens/profile/ranks_screen.dart';
 import 'package:tadarab_app/screens/profile/widgets/rank_icon.dart';
+import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/utils/rank.dart';
+import 'package:tadarab_app/widgets/screen_header.dart';
 
 void main() {
   Future<void> pumpRanks(WidgetTester tester, int points) async {
@@ -134,5 +136,93 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'the header is the shared ScreenHeader, the same height as Add '
+    "course's own (title-only, no subtitle)",
+    (tester) async {
+      await pumpRanks(tester, 0);
+
+      final headerFinder = find.byType(ScreenHeader);
+      expect(headerFinder, findsOneWidget);
+      final realHeight = tester.getSize(headerFinder).height;
+
+      // Add course's own header is taller only because it also carries a
+      // subtitle ('Create a course to organize your studies') — padding,
+      // title style, button size and border radius are the exact same
+      // ScreenHeader component either way, so the fair comparison is
+      // against a title-only instance (no subtitle, matching this
+      // screen), not Add course's actual subtitled height.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            // A Column, not a bare Scaffold.body: a lone body widget is
+            // stretched to fill the whole screen, which would measure the
+            // *screen's* height, not the header's own — a Column instead
+            // gives a non-flexible child its natural content height, the
+            // same as how the real screen actually uses it.
+            body: Column(
+              children: [
+                ScreenHeader(
+                  title: 'Add course',
+                  backgroundColor: AppColors.navy,
+                  onClose: () {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final referenceHeight = tester.getSize(find.byType(ScreenHeader)).height;
+
+      expect(realHeight, referenceHeight);
+    },
+  );
+
+  testWidgets('the back chevron sits to the left of the title', (
+    tester,
+  ) async {
+    await pumpRanks(tester, 0);
+
+    final screenHeader = tester.widget<ScreenHeader>(
+      find.byType(ScreenHeader),
+    );
+    expect(screenHeader.buttonOnStart, isTrue);
+
+    final buttonX = tester
+        .getTopLeft(find.byIcon(Icons.chevron_left))
+        .dx;
+    final titleX = tester.getTopLeft(find.text('Ranks')).dx;
+    expect(buttonX, lessThan(titleX));
+  });
+
+  testWidgets('tapping the back chevron pops', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const RanksScreen(points: 0),
+                ),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.byType(RanksScreen), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.chevron_left));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(RanksScreen), findsNothing);
+    expect(find.text('open'), findsOneWidget);
   });
 }
