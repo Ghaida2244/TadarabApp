@@ -13,11 +13,10 @@ import '../../services/flashcard_service.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
+import '../../widgets/confirm_dialog.dart';
 import '../../widgets/status_bar_style.dart';
 import '../quiz/quiz_navigation.dart';
 import '../quiz/quiz_sessions_screen.dart';
-import 'widgets/delete_course_dialog.dart';
-import 'widgets/delete_material_dialog.dart';
 import 'widgets/upload_material_sheet.dart';
 
 /// A course's detail screen: Study Tools (locked until the first material
@@ -142,9 +141,14 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   }
 
   Future<void> _confirmDelete() async {
-    final confirmed = await showDeleteCourseDialog(
-      context: context,
-      courseName: widget.course.courseName,
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete ${widget.course.courseName}?',
+      message:
+          'Deleting this course will also delete all its materials, '
+          'quizzes, flashcard sessions, and calendar events with their '
+          "reminders. This can't be undone.",
+      confirmLabel: 'Delete course',
     );
     if (!confirmed || _deleting) return;
 
@@ -166,9 +170,13 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   }
 
   Future<void> _confirmDeleteMaterial(StudyMaterial material) async {
-    final confirmed = await showDeleteMaterialDialog(
-      context: context,
-      materialTitle: material.title,
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete ${material.title}?',
+      message:
+          'This material will be permanently deleted. '
+          "This can't be undone.",
+      confirmLabel: 'Delete material',
     );
     if (!confirmed || _deletingMaterialIds.contains(material.materialId)) {
       return;

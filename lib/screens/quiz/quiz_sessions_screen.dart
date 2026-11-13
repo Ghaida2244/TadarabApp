@@ -8,6 +8,7 @@ import '../../models/session.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
+import '../../widgets/confirm_dialog.dart';
 import '../../widgets/dashed_border.dart';
 import '../../widgets/generation_loading_overlay.dart';
 import '../../widgets/retake_label_pill.dart';
@@ -173,11 +174,13 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
     QuizSession session, {
     bool closeFocusIfGroupShrinks = false,
   }) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => _DeleteSessionDialog(),
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete this session?',
+      message: "You will lose your progress. This can't be undone.",
+      confirmLabel: 'Delete session',
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
     await widget.service.deleteSession(session.sessionId);
 
     if (!closeFocusIfGroupShrinks || _openStackKey == null) {
@@ -898,60 +901,6 @@ class _SessionCard extends StatelessWidget {
                   ],
                 ),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DeleteSessionDialog extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: AppColors.errorBannerBackground,
-                borderRadius: BorderRadius.circular(17),
-              ),
-              child: const Icon(Icons.delete_outline, color: AppColors.red),
-            ),
-            const SizedBox(height: 13),
-            Text(
-              'Delete this session?',
-              style: AppTypography.quizDialogTitle,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "You will lose your progress. This can't be undone.",
-              style: AppTypography.quizDialogBody,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            AppButton(
-              label: 'Delete session',
-              variant: AppButtonVariant.accent,
-              height: 52,
-              shadowColor: AppColors.navy.withValues(alpha: 0.10),
-              onPressed: () => Navigator.of(context).pop(true),
-            ),
-            const SizedBox(height: 10),
-            AppButton(
-              label: 'Keep it',
-              variant: AppButtonVariant.outlinedNeutral,
-              height: 46,
-              onPressed: () => Navigator.of(context).pop(false),
             ),
           ],
         ),

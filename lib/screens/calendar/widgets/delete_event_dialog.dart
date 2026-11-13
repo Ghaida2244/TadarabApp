@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../models/calendar_event.dart';
 import '../../../theme/app_theme.dart';
-import '../../../widgets/app_button.dart';
-import '../calendar_styles.dart';
+import '../../../widgets/confirm_dialog.dart';
 
 /// The two leading sentences of the confirmation body, chosen by whether the
 /// event actually has a reminder to cancel.
@@ -40,77 +39,11 @@ Future<bool> showDeleteEventDialog(
   final confirmed = await showDialog<bool>(
     context: context,
     barrierColor: AppColors.navy.withValues(alpha: 0.5),
-    builder: (context) => _DeleteEventDialog(body: deleteEventBody(event)),
+    builder: (context) => ConfirmDialog(
+      title: 'Delete this event?',
+      message: deleteEventBody(event),
+      confirmLabel: 'Delete event',
+    ),
   );
   return confirmed ?? false;
-}
-
-class _DeleteEventDialog extends StatelessWidget {
-  const _DeleteEventDialog({required this.body});
-
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.white,
-      insetPadding: const EdgeInsets.all(26),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(26),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AppColors.errorBannerBackground,
-                borderRadius: BorderRadius.circular(17),
-              ),
-              child: const Icon(
-                Icons.delete_outline,
-                size: 24,
-                color: AppColors.red,
-              ),
-            ),
-            const SizedBox(height: 13),
-            Text(
-              'Delete this event?',
-              textAlign: TextAlign.center,
-              style: CalendarText.dialogTitle,
-            ),
-            const SizedBox(height: 13),
-            Text(
-              body,
-              textAlign: TextAlign.center,
-              style: CalendarText.dialogBody,
-            ),
-            const SizedBox(height: 13),
-            AppButton(
-              label: 'Delete event',
-              variant: AppButtonVariant.accent,
-              height: 52,
-              borderRadius: 16,
-              fontSize: 15,
-              onPressed: () => Navigator.of(context).pop(true),
-            ),
-            const SizedBox(height: 13),
-            AppButton(
-              label: 'Keep it',
-              variant: AppButtonVariant.outlinedNeutral,
-              height: 46,
-              borderRadius: 16,
-              borderColor: AppColors.borderDefault,
-              fontSize: 14,
-              onPressed: () => Navigator.of(context).pop(false),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

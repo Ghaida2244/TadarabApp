@@ -112,8 +112,11 @@ class _ColorPickerDialogState extends State<ColorPickerDialog> {
                 variant: AppButtonVariant.outlinedNeutral,
                 height: 46,
                 borderRadius: 16,
-                borderColor: AppColors.borderDefault,
                 fontSize: 14,
+                // Exactly the enabled "Previous" button look.
+                activeBorderColor: AppColors.navy.withValues(alpha: 0.32),
+                activeTextColor: AppColors.navy,
+                activeShadowColor: AppColors.navy.withValues(alpha: 0.10),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ],

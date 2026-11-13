@@ -8,6 +8,7 @@ import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/keyboard_safe_padding.dart';
 import '../../widgets/app_button.dart';
+import '../../widgets/confirm_dialog.dart';
 import '../../widgets/dismiss_keyboard_on_tap.dart';
 import '../../widgets/generation_loading_overlay.dart';
 import '../../widgets/status_bar_style.dart';
@@ -176,63 +177,23 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
     }
   }
 
-  Future<bool?> _showLimitDialog({
+  Future<bool> _showLimitDialog({
     required int actual,
     required int requested,
   }) {
-    return showDialog<bool>(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: AppColors.warningBackground,
-                  borderRadius: BorderRadius.circular(17),
-                ),
-                child: const Icon(
-                  Icons.warning_amber_rounded,
-                  color: AppColors.warningText,
-                ),
-              ),
-              const SizedBox(height: 13),
-              Text(
-                'Fewer questions than asked',
-                style: AppTypography.quizDialogTitle,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Your material supported $actual solid questions out of the $requested you aimed for. '
-                'Start with these $actual, or add another material.',
-                style: AppTypography.quizDialogBody,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              AppButton(
-                label: 'Start with these',
-                onPressed: () => Navigator.of(context).pop(true),
-                height: 52,
-                shadowColor: AppColors.navy.withValues(alpha: 0.10),
-              ),
-              const SizedBox(height: 10),
-              AppButton(
-                label: 'Change the setup',
-                variant: AppButtonVariant.outlinedNeutral,
-                height: 46,
-                onPressed: () => Navigator.of(context).pop(false),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return showConfirmDialog(
+      context,
+      title: 'Fewer questions than asked',
+      message:
+          'Your material supported $actual solid questions out of the $requested you aimed for. '
+          'Start with these $actual, or add another material.',
+      confirmLabel: 'Start with these',
+      cancelLabel: 'Change the setup',
+      icon: Icons.warning_amber_rounded,
+      iconColor: AppColors.warningText,
+      iconBackgroundColor: AppColors.warningBackground,
+      confirmVariant: AppButtonVariant.primary,
+      confirmShadowColor: AppColors.navy.withValues(alpha: 0.10),
     );
   }
 
