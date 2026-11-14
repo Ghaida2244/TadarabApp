@@ -431,20 +431,6 @@ class QuizSessionService {
     });
   }
 
-  /// Flags a question via "Report this question" — flag-and-store only, no
-  /// admin review flow (approved scope).
-  Future<void> reportQuestion({
-    required String sessionId,
-    required String questionId,
-  }) async {
-    final uid = currentUid!;
-    await _sessionsRef(
-      uid,
-    ).doc(sessionId).collection('questions').doc(questionId).update({
-      'isReported': true,
-    });
-  }
-
   /// Marks a real (non-practice) session completed: scores it from its
   /// questions' stored answers (an unanswered question counts as
   /// incorrect), writes the result, credits points to the student's

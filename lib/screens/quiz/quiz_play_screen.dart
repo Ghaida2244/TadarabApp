@@ -67,10 +67,6 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
   int _index = 0;
   bool _revealed = false;
   final Map<int, String> _localAnswers = {};
-  // Exam-draft only: "Report this question" has nothing persisted to
-  // update yet, so it's held here and merged into the final question list
-  // in _finish, right alongside _localAnswers.
-  final Set<String> _locallyReportedQuestionIds = {};
   Mode _mode = Mode.learning;
   bool _finishing = false;
 
@@ -202,18 +198,13 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
 
     if (widget.isExamDraft) {
       // The one and only Firestore write for this whole exam — merge the
-      // local answers (and any locally-flagged reports) into the draft
-      // questions, then hand the complete, already-final picture to
-      // submitExamSession. See its doc comment for why this is the only
-      // place an Exam session's id ever touches Firestore.
+      // local answers into the draft questions, then hand the complete,
+      // already-final picture to submitExamSession. See its doc comment
+      // for why this is the only place an Exam session's id ever touches
+      // Firestore.
       final answered = [
         for (var i = 0; i < data.questions.length; i++)
-          data.questions[i].copyWith(
-            studentAnswer: _localAnswers[i],
-            isReported: _locallyReportedQuestionIds.contains(
-              data.questions[i].questionId,
-            ),
-          ),
+          data.questions[i].copyWith(studentAnswer: _localAnswers[i]),
       ];
       final completed = await widget.service.submitExamSession(
         draftSession: data.session!,
@@ -260,26 +251,6 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
           sessionId: widget.sessionId!,
           service: widget.service,
         ),
-      ),
-    );
-  }
-
-  Future<void> _report(_PlayData data) async {
-    if (widget.isPractice) return;
-    if (widget.isExamDraft) {
-      // Nothing persisted to update yet — held locally and merged into
-      // the final question list in _finish, alongside _localAnswers.
-      _locallyReportedQuestionIds.add(data.questions[_index].questionId);
-    } else {
-      await widget.service.reportQuestion(
-        sessionId: widget.sessionId!,
-        questionId: data.questions[_index].questionId,
-      );
-    }
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Thanks, we will take a look at this question.'),
       ),
     );
   }
@@ -449,33 +420,16 @@ class _QuizPlayScreenState extends State<QuizPlayScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                // NOTE 10: fontSize 20 / w800 locally — app_typography.dart
-                                // is frozen, so quizQuestion's own 21/w900 stays
-                                // untouched and this overrides just those two
-                                // properties at the call site instead.
-                                child: Text(
-                                  current.questionText,
-                                  style: AppTypography.quizQuestion.copyWith(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                              if (!widget.isPractice)
-                                IconButton(
-                                  onPressed: () => _report(data),
-                                  icon: const Icon(
-                                    Icons.flag_outlined,
-                                    size: 20,
-                                    color: AppColors.placeholder,
-                                  ),
-                                  tooltip: 'Report this question',
-                                ),
-                            ],
+                          // NOTE 10: fontSize 20 / w800 locally — app_typography.dart
+                          // is frozen, so quizQuestion's own 21/w900 stays
+                          // untouched and this overrides just those two
+                          // properties at the call site instead.
+                          Text(
+                            current.questionText,
+                            style: AppTypography.quizQuestion.copyWith(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                           const SizedBox(height: 18),
                           ...current.options.map((option) {
