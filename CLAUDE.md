@@ -156,11 +156,9 @@ after generation as a monitoring check only, not a gate: a slightly
 imprecise sourceLocation shown to the student is acceptable, but losing a
 valid question is not, so an ungrounded item is never discarded or
 regenerated for this reason — it's logged instead, to inform future prompt
-tuning. Include a "Report this question" option in the UI as a fallback
-(flag + store is enough — no admin review flow required); if the material
-can't support the
-requested count, generate as many good ones as it supports and tell the
-student — never pad with low-quality or off-topic items.
+tuning. If the material can't support the requested count, generate as many
+good ones as it supports and tell the student — never pad with low-quality
+or off-topic items.
 
 ### Non-functional requirements
 

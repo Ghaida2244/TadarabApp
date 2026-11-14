@@ -1,8 +1,9 @@
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/models/question.dart';
 
 void main() {
-  Question aQuestion({String? studentAnswer, bool isReported = false}) {
+  Question aQuestion({String? studentAnswer}) {
     return Question(
       questionId: 'q1',
       questionText: 'What is a database?',
@@ -17,8 +18,19 @@ void main() {
         'A hardware device',
       ],
       sessionId: 'session-1',
-      isReported: isReported,
     );
+  }
+
+  late FakeFirebaseFirestore firestore;
+
+  setUp(() {
+    firestore = FakeFirebaseFirestore();
+  });
+
+  Future<Question> seedAndRead(Map<String, dynamic> data) async {
+    final ref = await firestore.collection('questions').add(data);
+    final doc = await ref.get();
+    return Question.fromFirestore(doc);
   }
 
   group('isCorrect', () {
@@ -45,15 +57,6 @@ void main() {
 
       expect(answered.studentAnswer, 'A collection of related data');
       expect(answered.questionId, q.questionId);
-      expect(answered.isReported, q.isReported);
-    });
-
-    test('edge case: omitting an argument preserves the existing value', () {
-      final q = aQuestion(studentAnswer: 'A programming language');
-      final flagged = q.copyWith(isReported: true);
-
-      expect(flagged.studentAnswer, 'A programming language');
-      expect(flagged.isReported, isTrue);
     });
 
     test('failure case: copyWith cannot clear studentAnswer back to null', () {
@@ -84,8 +87,8 @@ void main() {
 
     test('edge case: omitting options preserves the existing order', () {
       final q = aQuestion();
-      final flagged = q.copyWith(isReported: true);
-      expect(flagged.options, q.options);
+      final sameOptions = q.copyWith(studentAnswer: 'A programming language');
+      expect(sameOptions.options, q.options);
     });
   });
 
@@ -104,7 +107,7 @@ void main() {
     });
 
     test('does not touch any other field', () {
-      final q = aQuestion(studentAnswer: 'A programming language', isReported: true);
+      final q = aQuestion(studentAnswer: 'A programming language');
       final fresh = q.asUnanswered();
 
       expect(fresh.questionId, q.questionId);
@@ -114,19 +117,118 @@ void main() {
       expect(fresh.sourceLocation, q.sourceLocation);
       expect(fresh.options, q.options);
       expect(fresh.sessionId, q.sessionId);
-      expect(fresh.isReported, q.isReported);
     });
   });
 
-  group('toFirestore', () {
-    test('defaults isReported to false when constructed without it', () {
-      final q = aQuestion();
-      expect(q.toFirestore()['isReported'], false);
+  group('fromFirestore', () {
+    test('normal case: reads every field from a real document', () async {
+      final q = await seedAndRead({
+        'questionText': 'What is a database?',
+        'correctAnswer': 'A collection of related data',
+        'explanation': 'Because...',
+        'sourceLocation': 'Lecture 1 - Slide 8',
+        'studentAnswer': 'A collection of related data',
+        'options': [
+          'A collection of unrelated data',
+          'A collection of related data',
+          'A programming language',
+          'A hardware device',
+        ],
+        'sessionId': 'session-1',
+      });
+
+      expect(q.questionText, 'What is a database?');
+      expect(q.correctAnswer, 'A collection of related data');
+      expect(q.explanation, 'Because...');
+      expect(q.sourceLocation, 'Lecture 1 - Slide 8');
+      expect(q.studentAnswer, 'A collection of related data');
+      expect(q.options, [
+        'A collection of unrelated data',
+        'A collection of related data',
+        'A programming language',
+        'A hardware device',
+      ]);
+      expect(q.sessionId, 'session-1');
     });
 
-    test('carries an explicit report flag through', () {
-      final q = aQuestion(isReported: true);
-      expect(q.toFirestore()['isReported'], true);
+    test(
+      'edge case: a stray isReported field from an older document is '
+      'silently ignored, with no error, and every other field still reads '
+      'correctly',
+      () async {
+        final q = await seedAndRead({
+          'questionText': 'What is a database?',
+          'correctAnswer': 'A collection of related data',
+          'explanation': 'Because...',
+          'sourceLocation': 'Lecture 1 - Slide 8',
+          'studentAnswer': 'A collection of related data',
+          'options': [
+            'A collection of unrelated data',
+            'A collection of related data',
+            'A programming language',
+            'A hardware device',
+          ],
+          'sessionId': 'session-1',
+          // Leftover from the since-removed "Report this question" feature —
+          // must not throw and must not surface anywhere on Question.
+          'isReported': true,
+        });
+
+        expect(q.questionText, 'What is a database?');
+        expect(q.correctAnswer, 'A collection of related data');
+        expect(q.explanation, 'Because...');
+        expect(q.sourceLocation, 'Lecture 1 - Slide 8');
+        expect(q.studentAnswer, 'A collection of related data');
+        expect(q.options, [
+          'A collection of unrelated data',
+          'A collection of related data',
+          'A programming language',
+          'A hardware device',
+        ]);
+        expect(q.sessionId, 'session-1');
+      },
+    );
+  });
+
+  group('toFirestore', () {
+    test('normal case: writes exactly the expected fields, no isReported', () {
+      final q = aQuestion(studentAnswer: 'A collection of related data');
+      final data = q.toFirestore();
+
+      expect(data.keys.toSet(), {
+        'questionText',
+        'correctAnswer',
+        'explanation',
+        'sourceLocation',
+        'studentAnswer',
+        'options',
+        'sessionId',
+      });
+      expect(data.containsKey('isReported'), isFalse);
+      expect(data['questionText'], q.questionText);
+      expect(data['correctAnswer'], q.correctAnswer);
+      expect(data['explanation'], q.explanation);
+      expect(data['sourceLocation'], q.sourceLocation);
+      expect(data['studentAnswer'], q.studentAnswer);
+      expect(data['options'], q.options);
+      expect(data['sessionId'], q.sessionId);
     });
+
+    test(
+      'normal case: fromFirestore(toFirestore(q)) round-trips every field '
+      'except questionId (Firestore assigns that on write, not this method)',
+      () async {
+        final q = aQuestion(studentAnswer: 'A collection of related data');
+        final roundTripped = await seedAndRead(q.toFirestore());
+
+        expect(roundTripped.questionText, q.questionText);
+        expect(roundTripped.correctAnswer, q.correctAnswer);
+        expect(roundTripped.explanation, q.explanation);
+        expect(roundTripped.sourceLocation, q.sourceLocation);
+        expect(roundTripped.studentAnswer, q.studentAnswer);
+        expect(roundTripped.options, q.options);
+        expect(roundTripped.sessionId, q.sessionId);
+      },
+    );
   });
 }
