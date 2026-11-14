@@ -273,18 +273,16 @@ void main() {
       },
     );
 
-    testWidgets('reporting a question calls through to the service', (tester) async {
+    testWidgets('no report-question flag icon is shown on a question', (
+      tester,
+    ) async {
       final service = FakeQuizSessionService(
         sessions: [_session(mode: Mode.learning)],
         questions: {'s1': _questions()},
       );
       await _pumpSession(tester, service);
 
-      await tester.tap(find.byIcon(Icons.flag_outlined));
-      await tester.pumpAndSettle();
-
-      expect(service.reportCalls, 1);
-      expect(service.lastReportedQuestionId, 'q1');
+      expect(find.byIcon(Icons.flag_outlined), findsNothing);
     });
   });
 
@@ -538,30 +536,6 @@ void main() {
       },
     );
 
-    testWidgets(
-      'reporting a question is held locally and only reaches the service at final Submit',
-      (tester) async {
-        final service = FakeQuizSessionService();
-        await pumpDraft(tester, service, _questions());
-
-        await tester.tap(find.byIcon(Icons.flag_outlined));
-        await tester.pumpAndSettle();
-        expect(service.reportCalls, 0); // nothing to update yet — held locally
-
-        await tester.tap(find.text('A collection of related data'));
-        await tester.pump();
-        await tester.tap(find.text('Next'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('A DBMS'));
-        await tester.pump();
-        await tester.tap(find.text('Submit quiz'));
-        await tester.pumpAndSettle();
-
-        expect(service.reportCalls, 0); // still never a direct call
-        expect(service.lastSubmittedExamQuestions![0].isReported, isTrue);
-        expect(service.lastSubmittedExamQuestions![1].isReported, isFalse);
-      },
-    );
   });
 
   group('Practice mode', () {

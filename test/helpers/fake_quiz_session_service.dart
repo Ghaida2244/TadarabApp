@@ -47,7 +47,6 @@ class FakeQuizSessionService extends QuizSessionService {
   int deleteCalls = 0;
   int retakeCalls = 0;
   int completeCalls = 0;
-  int reportCalls = 0;
   int createSessionCalls = 0;
 
   /// The `customPrompt` passed to the most recent [createSession] call —
@@ -57,7 +56,6 @@ class FakeQuizSessionService extends QuizSessionService {
   int fetchSessionsCalls = 0;
   int submitExamSessionCalls = 0;
   int commitLearningSessionCalls = 0;
-  String? lastReportedQuestionId;
   List<String> submittedAnswers = [];
   // Snapshot of the questions handed to the most recent submitExamSession
   // call — lets a test assert on exactly what was (or wasn't) submitted,
@@ -135,19 +133,6 @@ class FakeQuizSessionService extends QuizSessionService {
   }) async {
     final idx = sessions.indexWhere((s) => s.sessionId == sessionId);
     if (idx != -1) sessions[idx] = _withIndex(sessions[idx], index);
-  }
-
-  @override
-  Future<void> reportQuestion({
-    required String sessionId,
-    required String questionId,
-  }) async {
-    reportCalls++;
-    lastReportedQuestionId = questionId;
-    final list = questionsBySession[sessionId];
-    if (list == null) return;
-    final idx = list.indexWhere((q) => q.questionId == questionId);
-    if (idx != -1) list[idx] = list[idx].copyWith(isReported: true);
   }
 
   @override
