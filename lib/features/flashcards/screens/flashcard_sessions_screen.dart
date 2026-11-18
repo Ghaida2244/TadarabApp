@@ -4,8 +4,11 @@ import 'package:flutter/services.dart';
 import '../../../logic/session_stacking.dart';
 import '../../../models/flashcard_session.dart';
 import '../../../models/session.dart';
+import '../../../services/flashcard_generation_service.dart'
+    show WorkerUnreachableException;
 import '../../../services/flashcard_session_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/error_messages.dart';
 import '../../../widgets/app_button.dart';
 import '../../../widgets/dashed_border.dart';
 import '../../../widgets/generation_loading_overlay.dart';
@@ -223,6 +226,15 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
       });
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.message)));
+    } on WorkerUnreachableException {
+      if (!mounted) return;
+      setState(() {
+        _retakingSessionIds.remove(session.sessionId);
+        _retakingSource = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(kNetworkFailureMessage)),
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -230,7 +242,7 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
         _retakingSource = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Retake failed. Please try again.')),
+        const SnackBar(content: Text(kGenericFailureMessage)),
       );
     }
   }

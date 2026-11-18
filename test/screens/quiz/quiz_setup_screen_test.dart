@@ -8,7 +8,9 @@ import 'package:tadarab_app/screens/quiz/quiz_setup_screen.dart';
 import 'package:tadarab_app/services/quiz_generation_service.dart';
 import 'package:tadarab_app/services/quiz_session_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
+import 'package:tadarab_app/utils/error_messages.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
+import 'package:tadarab_app/widgets/app_error_banner.dart';
 
 import '../../helpers/fake_quiz_session_service.dart';
 
@@ -435,25 +437,57 @@ void main() {
     },
   );
 
-  testWidgets('failure case: a generation error shows an error banner, not a crash', (tester) async {
-    final service = FakeQuizSessionService(
-      materials: [_material],
-      createSessionError: GenerationFailure('The quiz generator returned an error. Please try again.'),
-    );
-    await _pump(tester, service);
+  testWidgets(
+    'failure case: a generic generation error shows the AppErrorBanner '
+    "with heading 'Could not generate quiz', not a crash",
+    (tester) async {
+      final service = FakeQuizSessionService(
+        materials: [_material],
+        // The raw message is never shown — only isUnreachable decides the
+        // text, and it defaults to false (the generic bucket) here.
+        createSessionError: GenerationFailure('simulated Worker failure'),
+      );
+      await _pump(tester, service);
 
-    await tester.tap(find.text('Lecture 1 — Intro'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Lecture 1 — Intro'));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Generate quiz'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Generate quiz'));
+      await tester.pumpAndSettle();
 
-    expect(
-      find.text('The quiz generator returned an error. Please try again.'),
-      findsOneWidget,
-    );
-    expect(find.text('Quiz setup'), findsOneWidget); // stayed on Setup
-  });
+      expect(find.byType(AppErrorBanner), findsOneWidget);
+      expect(find.text('Could not generate quiz'), findsOneWidget);
+      expect(find.text(kGenericFailureMessage), findsOneWidget);
+      expect(find.text('Quiz setup'), findsOneWidget); // stayed on Setup
+    },
+  );
+
+  testWidgets(
+    'failure case: an unreachable-Worker generation error shows the '
+    "AppErrorBanner with heading 'Could not generate quiz' and the "
+    'network message',
+    (tester) async {
+      final service = FakeQuizSessionService(
+        materials: [_material],
+        createSessionError: GenerationFailure(
+          'simulated network failure',
+          isUnreachable: true,
+        ),
+      );
+      await _pump(tester, service);
+
+      await tester.tap(find.text('Lecture 1 — Intro'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Generate quiz'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AppErrorBanner), findsOneWidget);
+      expect(find.text('Could not generate quiz'), findsOneWidget);
+      expect(find.text(kNetworkFailureMessage), findsOneWidget);
+      expect(find.text('Quiz setup'), findsOneWidget); // stayed on Setup
+    },
+  );
 
   testWidgets('failure case: zero items generated shows the note, not a blank quiz', (tester) async {
     final service = FakeQuizSessionService(
@@ -475,6 +509,26 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'edge case: zero items generated with no Worker note falls back to '
+    'kQuizNoItemsMessage, the same text Retake uses for the same case',
+    (tester) async {
+      final service = FakeQuizSessionService(
+        materials: [_material],
+        createSessionError: NoQuestionsGeneratedException(null),
+      );
+      await _pump(tester, service);
+
+      await tester.tap(find.text('Lecture 1 — Intro'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Generate quiz'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(kQuizNoItemsMessage), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'the footer matches Flashcards setup\'s own footer: top corners '

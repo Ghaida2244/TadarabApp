@@ -7,8 +7,11 @@ import 'package:tadarab_app/features/flashcards/screens/flashcard_sessions_scree
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/flashcard.dart';
 import 'package:tadarab_app/models/flashcard_session.dart';
+import 'package:tadarab_app/services/flashcard_generation_service.dart'
+    show WorkerUnreachableException;
 import 'package:tadarab_app/services/flashcard_session_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
+import 'package:tadarab_app/utils/error_messages.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
 import 'package:tadarab_app/widgets/generation_loading_overlay.dart';
 import 'package:tadarab_app/widgets/scrollable_title_pill.dart';
@@ -522,6 +525,52 @@ void main() {
         expect(find.byType(GenerationLoadingOverlay), findsNothing);
         expect(_retakeButton(tester).onPressed, isNotNull);
         expect(find.text('Retake'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'an unreachable-Worker retake failure (raw, not wrapped in '
+      'FlashcardFailure — same as retake() really propagates it) shows '
+      'the network message',
+      (tester) async {
+        final service = FakeFlashcardSessionService(
+          sessions: [
+            _session(id: 's1', completed: true, knownCount: 8),
+          ],
+          writeError: WorkerUnreachableException(),
+        );
+        await tester.pumpWidget(_wrap(service));
+        await tester.pump();
+
+        await tester.tap(find.text('Retake'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text(kNetworkFailureMessage), findsOneWidget);
+        expect(find.byType(GenerationLoadingOverlay), findsNothing);
+        expect(_retakeButton(tester).onPressed, isNotNull);
+      },
+    );
+
+    testWidgets(
+      'any other raw retake failure shows the generic message',
+      (tester) async {
+        final service = FakeFlashcardSessionService(
+          sessions: [
+            _session(id: 's1', completed: true, knownCount: 8),
+          ],
+          writeError: Exception('boom'),
+        );
+        await tester.pumpWidget(_wrap(service));
+        await tester.pump();
+
+        await tester.tap(find.text('Retake'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text(kGenericFailureMessage), findsOneWidget);
+        expect(find.byType(GenerationLoadingOverlay), findsNothing);
+        expect(_retakeButton(tester).onPressed, isNotNull);
       },
     );
   });

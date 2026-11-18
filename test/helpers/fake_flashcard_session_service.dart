@@ -35,7 +35,11 @@ class FakeFlashcardSessionService extends FlashcardSessionService {
 
   /// Thrown by every write method (createSession/markFlashcard/
   /// completeSession/retake/deleteSession) when set, to test retry paths.
-  FlashcardFailure? writeError;
+  /// `Object?`, not just `FlashcardFailure?`, so a test can also throw a
+  /// raw [WorkerUnreachableException]/[WorkerResponseException] through
+  /// `retake` — the real `retake()` lets those propagate uncaught, same
+  /// as this fake.
+  Object? writeError;
 
   /// When set, `generateFlashcards` awaits this instead of resolving
   /// immediately — lets a test observe the Generating overlay before

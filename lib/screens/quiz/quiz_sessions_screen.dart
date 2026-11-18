@@ -5,8 +5,10 @@ import '../../logic/session_stacking.dart';
 import '../../models/enums.dart';
 import '../../models/quiz_session.dart';
 import '../../models/session.dart';
+import '../../services/quiz_generation_service.dart' show GenerationFailure;
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/error_messages.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/dashed_border.dart';
@@ -290,9 +292,18 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
         _retakingSource = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.note ?? kQuizNoItemsMessage)),
+      );
+    } on GenerationFailure catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _retakingSessionIds.remove(session.sessionId);
+        _retakingSource = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            e.note ?? "Couldn't generate a retake from this material.",
+            e.isUnreachable ? kNetworkFailureMessage : kGenericFailureMessage,
           ),
         ),
       );
@@ -303,7 +314,7 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
         _retakingSource = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Retake failed. Please try again.')),
+        const SnackBar(content: Text(kGenericFailureMessage)),
       );
     }
   }

@@ -237,52 +237,66 @@ void main() {
         mock,
         idTokenProvider: () async => null,
       ).generateQuiz(count: 5, difficulties: [DifficultyLevel.easy], materials: materials),
-      throwsA(isA<GenerationFailure>()),
+      throwsA(isA<GenerationFailure>().having((e) => e.isUnreachable, 'isUnreachable', false)),
     );
     expect(called, isFalse);
   });
 
-  test('failure case: a non-200 response surfaces the server message', () async {
-    final mock = MockClient((request) async {
-      return http.Response(
-        jsonEncode({'error': 'Bad Request', 'message': '"count" must be a positive integer'}),
-        400,
-      );
-    });
+  test(
+    'failure case: a non-200 response never surfaces the raw server '
+    'message — it is not written for a student',
+    () async {
+      final mock = MockClient((request) async {
+        return http.Response(
+          jsonEncode({'error': 'Bad Request', 'message': '"count" must be a positive integer'}),
+          400,
+        );
+      });
 
-    await expectLater(
-      client(mock).generateQuiz(count: 5, difficulties: [DifficultyLevel.easy], materials: materials),
-      throwsA(
-        isA<GenerationFailure>().having(
-          (e) => e.message,
-          'message',
-          '"count" must be a positive integer',
+      await expectLater(
+        client(mock).generateQuiz(count: 5, difficulties: [DifficultyLevel.easy], materials: materials),
+        throwsA(
+          isA<GenerationFailure>()
+              .having((e) => e.isUnreachable, 'isUnreachable', false)
+              .having(
+                (e) => e.message,
+                'message',
+                isNot(contains('"count" must be a positive integer')),
+              ),
         ),
-      ),
-    );
-  });
+      );
+    },
+  );
 
-  test('failure case: a network exception becomes a GenerationFailure', () async {
-    final mock = MockClient((request) async {
-      throw const SocketExceptionStub();
-    });
+  test(
+    'failure case: a network exception becomes a GenerationFailure with '
+    'isUnreachable: true',
+    () async {
+      final mock = MockClient((request) async {
+        throw const SocketExceptionStub();
+      });
 
-    await expectLater(
-      client(mock).generateQuiz(count: 5, difficulties: [DifficultyLevel.easy], materials: materials),
-      throwsA(isA<GenerationFailure>()),
-    );
-  });
+      await expectLater(
+        client(mock).generateQuiz(count: 5, difficulties: [DifficultyLevel.easy], materials: materials),
+        throwsA(isA<GenerationFailure>().having((e) => e.isUnreachable, 'isUnreachable', true)),
+      );
+    },
+  );
 
-  test('failure case: a malformed body (no items list) is a GenerationFailure', () async {
-    final mock = MockClient((request) async {
-      return http.Response(jsonEncode({'unexpected': true}), 200);
-    });
+  test(
+    'failure case: a malformed body (no items list) is a GenerationFailure '
+    'with isUnreachable: false',
+    () async {
+      final mock = MockClient((request) async {
+        return http.Response(jsonEncode({'unexpected': true}), 200);
+      });
 
-    await expectLater(
-      client(mock).generateQuiz(count: 5, difficulties: [DifficultyLevel.easy], materials: materials),
-      throwsA(isA<GenerationFailure>()),
-    );
-  });
+      await expectLater(
+        client(mock).generateQuiz(count: 5, difficulties: [DifficultyLevel.easy], materials: materials),
+        throwsA(isA<GenerationFailure>().having((e) => e.isUnreachable, 'isUnreachable', false)),
+      );
+    },
+  );
 }
 
 /// A minimal stand-in for a thrown network error — the real exception type

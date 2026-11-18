@@ -66,13 +66,26 @@ class GenerationResult {
   final List<String> coveredTopics;
 }
 
-/// A generation request failed in a way the student should be told about
-/// (network error, not signed in, Worker/Claude error, timeout). [message]
-/// is written to be shown directly in the UI.
+/// A generation request failed (network error, not signed in, Worker/Claude
+/// error, timeout, malformed response). [message] is an internal/debug
+/// detail only — never shown to the student directly, since it may carry
+/// a raw Worker/HTTP message (status codes, validation text meant for an
+/// API caller, not a 16+ student). [isUnreachable] is the one thing the
+/// caller needs to pick the right user-facing text: true only for "the
+/// Worker could not be reached at all" (network/timeout/DNS), which maps
+/// to the shared `kNetworkFailureMessage` (lib/utils/error_messages.dart); false for every
+/// other case (non-200, malformed body, not signed in), which maps to
+/// `kGenericFailureMessage`. Mirrors how Flashcards' generation layer
+/// signals the same two buckets via two distinct exception types
+/// ([WorkerUnreachableException]/[WorkerResponseException] in
+/// flashcard_generation_service.dart) — kept as one class with a flag here
+/// instead, since `GenerationFailure` already existed with callers relying
+/// on its name.
 class GenerationFailure implements Exception {
-  GenerationFailure(this.message);
+  GenerationFailure(this.message, {this.isUnreachable = false});
 
   final String message;
+  final bool isUnreachable;
 
   @override
   String toString() => message;
@@ -120,6 +133,12 @@ class QuizGenerationService {
   /// [previousTopics] is only ever meaningfully sent when [isRetake] is
   /// true and non-empty — the retake's source session's own stored
   /// `coveredTopics` (see `buildPreviousTopics` in generation_topics.dart).
+  ///
+  /// Every failure throws [GenerationFailure] with [GenerationFailure
+  /// .isUnreachable] set correctly for the caller to pick a user-facing
+  /// message from — see that class's doc comment. No raw Worker/HTTP text
+  /// (status codes, validation messages meant for an API caller) is ever
+  /// carried in a way that reaches the student.
   Future<GenerationResult> generateQuiz({
     required int count,
     required List<DifficultyLevel> difficulties,
@@ -132,13 +151,13 @@ class QuizGenerationService {
     try {
       final idToken = await _idTokenProvider();
       if (idToken == null) {
-        throw GenerationFailure('You need to be signed in to generate a quiz.');
+        throw GenerationFailure('Not signed in.');
       }
       token = idToken;
     } on GenerationFailure {
       rethrow;
     } catch (_) {
-      throw GenerationFailure('Could not verify your sign-in — please try again.');
+      throw GenerationFailure('Could not verify sign-in.');
     }
 
     http.Response response;
@@ -165,7 +184,8 @@ class QuizGenerationService {
           .timeout(const Duration(seconds: 120));
     } catch (_) {
       throw GenerationFailure(
-        'Could not reach the quiz generator. Check your connection and try again.',
+        'Could not reach the Worker.',
+        isUnreachable: true,
       );
     }
 
@@ -176,14 +196,17 @@ class QuizGenerationService {
       body = null;
     }
 
+    // The Worker's own `message` (if any) is never shown here — it's
+    // written for an API caller debugging the request shape (e.g. `"type"
+    // must be one of quiz, flashcard`), not phrased for a student. See
+    // [GenerationFailure]'s doc comment.
     if (response.statusCode != 200) {
-      final message = body?['message'] as String?;
       throw GenerationFailure(
-        message ?? 'The quiz generator returned an error (${response.statusCode}). Please try again.',
+        'Worker returned ${response.statusCode}.',
       );
     }
     if (body == null || body['items'] is! List) {
-      throw GenerationFailure('The quiz generator returned an unexpected response. Please try again.');
+      throw GenerationFailure('Worker returned an unexpected response.');
     }
 
     final items = (body['items'] as List)

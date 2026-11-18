@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/student.dart';
+import '../utils/error_messages.dart';
 
 /// A user-facing auth failure. [message] is always safe to show directly —
 /// callers don't need their own switch over Firebase error codes.
@@ -18,10 +19,6 @@ class AuthFailure implements Exception {
   @override
   String toString() => message;
 }
-
-const _networkFailureMessage =
-    "Couldn't reach Tadarab. Check your connection and try again.";
-const _genericFailureMessage = 'Something went wrong. Please try again.';
 
 /// The message [AuthService.signIn] throws for any credential-related
 /// failure. Exposed so LoginScreen can render the design's specific "wrong
@@ -53,7 +50,7 @@ class AuthService {
   Future<void> signOut() => _auth.signOut();
 
   /// Returns the current user's Firebase ID token, needed as the
-  /// Authorization: Bearer <token> header on every call to the
+  /// `Authorization: Bearer <token>` header on every call to the
   /// Cloudflare Worker's /generate endpoint.
   Future<String?> getIdToken() {
     final user = _auth.currentUser;
@@ -71,7 +68,7 @@ class AuthService {
       );
     } on FirebaseAuthException catch (e) {
       if (e.code == 'network-request-failed') {
-        throw AuthFailure(_networkFailureMessage);
+        throw AuthFailure(kNetworkFailureMessage);
       }
       if (const [
         'user-not-found',
@@ -81,7 +78,7 @@ class AuthService {
       ].contains(e.code)) {
         throw AuthFailure(kWrongCredentialsMessage);
       }
-      throw AuthFailure(_genericFailureMessage);
+      throw AuthFailure(kGenericFailureMessage);
     }
   }
 
@@ -101,7 +98,7 @@ class AuthService {
       );
     } on FirebaseAuthException catch (e) {
       if (e.code == 'network-request-failed') {
-        throw AuthFailure(_networkFailureMessage);
+        throw AuthFailure(kNetworkFailureMessage);
       }
       if (e.code == 'email-already-in-use') {
         throw AuthFailure(
@@ -114,11 +111,11 @@ class AuthService {
           'That email or password isn\'t valid. Please check and try again.',
         );
       }
-      throw AuthFailure(_genericFailureMessage);
+      throw AuthFailure(kGenericFailureMessage);
     }
 
     final user = credential.user;
-    if (user == null) throw AuthFailure(_genericFailureMessage);
+    if (user == null) throw AuthFailure(kGenericFailureMessage);
 
     await user.updateDisplayName(name.trim());
 
@@ -133,7 +130,7 @@ class AuthService {
           .doc(user.uid)
           .set(student.toFirestore());
     } on FirebaseException {
-      throw AuthFailure(_networkFailureMessage);
+      throw AuthFailure(kNetworkFailureMessage);
     }
   }
 
@@ -147,12 +144,12 @@ class AuthService {
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found') return;
       if (e.code == 'network-request-failed') {
-        throw AuthFailure(_networkFailureMessage);
+        throw AuthFailure(kNetworkFailureMessage);
       }
       if (e.code == 'invalid-email') {
         throw AuthFailure('Enter a valid email, like name@example.com');
       }
-      throw AuthFailure(_genericFailureMessage);
+      throw AuthFailure(kGenericFailureMessage);
     }
   }
 }
