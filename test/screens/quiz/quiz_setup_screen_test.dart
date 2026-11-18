@@ -8,6 +8,7 @@ import 'package:tadarab_app/screens/quiz/quiz_setup_screen.dart';
 import 'package:tadarab_app/services/quiz_generation_service.dart';
 import 'package:tadarab_app/services/quiz_session_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
+import 'package:tadarab_app/utils/error_messages.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
 import 'package:tadarab_app/widgets/app_error_banner.dart';
 
@@ -456,7 +457,7 @@ void main() {
 
       expect(find.byType(AppErrorBanner), findsOneWidget);
       expect(find.text('Could not generate quiz'), findsOneWidget);
-      expect(find.text(kQuizGenericFailureMessage), findsOneWidget);
+      expect(find.text(kGenericFailureMessage), findsOneWidget);
       expect(find.text('Quiz setup'), findsOneWidget); // stayed on Setup
     },
   );
@@ -483,7 +484,7 @@ void main() {
 
       expect(find.byType(AppErrorBanner), findsOneWidget);
       expect(find.text('Could not generate quiz'), findsOneWidget);
-      expect(find.text(kQuizNetworkFailureMessage), findsOneWidget);
+      expect(find.text(kNetworkFailureMessage), findsOneWidget);
       expect(find.text('Quiz setup'), findsOneWidget); // stayed on Setup
     },
   );

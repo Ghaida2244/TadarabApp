@@ -8,6 +8,7 @@ import '../../models/session.dart';
 import '../../services/quiz_generation_service.dart' show GenerationFailure;
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/error_messages.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/dashed_border.dart';
@@ -302,9 +303,7 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            e.isUnreachable
-                ? kQuizNetworkFailureMessage
-                : kQuizGenericFailureMessage,
+            e.isUnreachable ? kNetworkFailureMessage : kGenericFailureMessage,
           ),
         ),
       );
@@ -315,7 +314,7 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
         _retakingSource = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(kQuizGenericFailureMessage)),
+        const SnackBar(content: Text(kGenericFailureMessage)),
       );
     }
   }

@@ -7,8 +7,8 @@ import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/flashcard.dart';
 import 'package:tadarab_app/models/study_material.dart';
 import 'package:tadarab_app/services/flashcard_generation_service.dart';
-import 'package:tadarab_app/services/flashcard_session_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
+import 'package:tadarab_app/utils/error_messages.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
 import 'package:tadarab_app/widgets/app_error_banner.dart';
 
@@ -311,7 +311,7 @@ void main() {
 
       expect(find.byType(AppErrorBanner), findsOneWidget);
       expect(find.text('Could not generate flashcards'), findsOneWidget);
-      expect(find.text(kFlashcardGenericFailureMessage), findsOneWidget);
+      expect(find.text(kGenericFailureMessage), findsOneWidget);
     },
   );
 
@@ -332,7 +332,7 @@ void main() {
 
       expect(find.byType(AppErrorBanner), findsOneWidget);
       expect(find.text('Could not generate flashcards'), findsOneWidget);
-      expect(find.text(kFlashcardNetworkFailureMessage), findsOneWidget);
+      expect(find.text(kNetworkFailureMessage), findsOneWidget);
     },
   );
 

@@ -7,20 +7,19 @@ import '../models/flashcard.dart';
 import '../models/flashcard_session.dart';
 import '../models/session.dart';
 import '../models/study_material.dart';
+import '../utils/error_messages.dart';
 import '../utils/rank.dart';
 import 'flashcard_generation_service.dart';
 import 'generation_topics.dart';
 import 'streak_service.dart';
 
-// TODO: replace these two with the shared public constants from
-// auth_service.dart (kNetworkFailureMessage / kGenericFailureMessage) once
-// it's confirmed safe to edit that file — a teammate may be actively
-// working on it. Text must stay identical to auth_service.dart's. Public so
-// the Setup screen can reuse the exact same copy for Worker-call failures.
-const kFlashcardNetworkFailureMessage =
-    "Couldn't reach Tadarab. Check your connection and try again.";
-const kFlashcardGenericFailureMessage =
-    'Something went wrong. Please try again.';
+/// Shown when a retake produces zero usable cards and the Worker sent no
+/// `note` of its own explaining why. Quiz's parallel case
+/// (`kQuizNoItemsMessage` in `quiz_session_service.dart`) already says
+/// "...couldn't support any questions..." — the same sentence with the
+/// noun swapped.
+const kFlashcardNoItemsMessage =
+    "Your material couldn't support any flashcards. Try adding another material.";
 
 /// A user-facing flashcard-feature failure — every Firestore write and the
 /// Worker call surface one of these rather than a raw exception, per the NFR
@@ -130,9 +129,9 @@ class FlashcardSessionService {
 
   String _messageFor(FirebaseException e) {
     if (e.code == 'unavailable' || e.code == 'network-request-failed') {
-      return kFlashcardNetworkFailureMessage;
+      return kNetworkFailureMessage;
     }
-    return kFlashcardGenericFailureMessage;
+    return kGenericFailureMessage;
   }
 
   /// The current course's materials, for the Setup screen's multi-select.
@@ -388,11 +387,7 @@ class FlashcardSessionService {
     );
 
     if (result.items.isEmpty) {
-      throw FlashcardFailure(
-        result.note ??
-            "Your material couldn't support any flashcards. Try adding "
-                'another material.',
-      );
+      throw FlashcardFailure(result.note ?? kFlashcardNoItemsMessage);
     }
 
     final group = await _fetchSessionsInGroup(source.rootSessionId);

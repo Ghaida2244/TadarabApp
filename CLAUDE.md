@@ -2152,6 +2152,136 @@ mark it done, note decisions made, note what starts next.)*
   still the pre-existing `text_extraction_service_test` PPTX fixture gap,
   unrelated to this change.
 
+- **Small cleanup: stale old-name references + the duplicated error-message
+  constants + one analyzer info.** Text/documentation and constant-location
+  changes only — no behavior or user-facing text changed.
+
+  `pubspec.yaml`'s comment and `worker/README.md`'s prose both still named
+  pre-refactor classes/files (`quiz_generation_client.dart`,
+  `QuizGenerationClient`, `FlashcardService`) — both updated to the current
+  names (`quiz_generation_service.dart`, `QuizGenerationService`,
+  `FlashcardGenerationService.generateFlashcards`, matching exactly what
+  each sentence describes — the Worker-calling class, not the session one).
+
+  **Resolved the TODO in `flashcard_session_service.dart`.** It assumed
+  `auth_service.dart` already had public `kNetworkFailureMessage`/
+  `kGenericFailureMessage` constants to reuse — checked first, and that was
+  wrong: they existed, but as **private** `_networkFailureMessage`/
+  `_genericFailureMessage` (no `k` prefix either). Their text was already
+  word-for-word identical to the `kQuiz*`/`kFlashcard*` duplicates, so per
+  instruction this was safe to proceed with rather than stopping: made them
+  public (`kNetworkFailureMessage`/`kGenericFailureMessage`, same text,
+  same file), updated their 8 existing call sites inside `auth_service.dart`
+  itself, then deleted both duplicated pairs
+  (`kQuizNetworkFailureMessage`/`kQuizGenericFailureMessage` from
+  `quiz_session_service.dart`, `kFlashcardNetworkFailureMessage`/
+  `kFlashcardGenericFailureMessage` from `flashcard_session_service.dart`,
+  including the TODO comment) and repointed every real reference —
+  `quiz_setup_screen.dart`, `quiz_sessions_screen.dart`,
+  `flashcard_setup_screen.dart`, `flashcard_sessions_screen.dart`,
+  `flashcard_session_service.dart`'s own `_messageFor`, plus the doc-comment
+  prose in `quiz_generation_service.dart` — to import and use the one
+  shared pair from `auth_service.dart` instead. `kQuizNoItemsMessage`
+  (the "material can't support any questions" text) has no Flashcards
+  twin to merge with, so it was left exactly where it was.
+
+  The `quiz_session_service_test.dart` test pinning the two old pairs
+  equal no longer makes sense — there's only one pair now — so it was
+  **removed**, not just updated, along with the import it needed. Every
+  test that asserted the old constant names was repointed to the new ones
+  (4 test files, same assertions, just importing from `auth_service.dart`
+  now instead of the deleted locals).
+
+  Found along the way, out of scope and left alone: `courses_service.dart`
+  has its *own*, unrelated private `_networkFailureMessage`/
+  `_genericFailureMessage` pair (for `CoursesFailure`) — a third copy of
+  the same two sentences, in a different feature's file. Not touched —
+  nobody asked for it and it wasn't part of this cleanup's named TODO.
+
+  Fixed the `unintended_html_in_doc_comment` analyzer info on
+  `auth_service.dart` (now at line 64, shifted by the new constants above
+  it) by wrapping `Authorization: Bearer <token>` in backticks — text-only,
+  no behavior change.
+
+  `PROJECT_STRUCTURE.md` line ranges updated to match everywhere they
+  shifted (every edited file gained or lost lines near its top, shifting
+  everything below it).
+
+  `flutter analyze`: **0 issues** — the one known pre-existing info is
+  gone now that its own line was the fix target. `flutter test`:
+  **1305 passing, 1 failing** (2 fewer than before — the removed parity
+  test, not a new gap) — the one failure is still the pre-existing
+  `text_extraction_service_test` PPTX fixture gap, unrelated.
+
+- **Follow-up cleanup: moved `kNetworkFailureMessage`/`kGenericFailureMessage`
+  out of `auth_service.dart` into a new `lib/utils/error_messages.dart`,
+  and merged `courses_service.dart`'s own private copy into it too.**
+  Constant relocation and import updates only — text unchanged everywhere.
+
+  `auth_service.dart` previously hosted these as the de facto "shared"
+  pair (moved there, made public, in the prior cleanup) — but it's not a
+  neutral home: `CoursesFailure`, `GenerationFailure`, `FlashcardFailure`
+  all depending on a class named `AuthService`'s file for completely
+  unrelated features was the wrong shape. `lib/utils/error_messages.dart`
+  is the new neutral home — two constants, no class, doc comments
+  rewritten to not name any one feature. `auth_service.dart` now imports
+  them like every other caller; its own 8 call sites needed no text
+  changes, just the new import.
+
+  Checked `courses_service.dart`'s own private `_networkFailureMessage`/
+  `_genericFailureMessage` (flagged as a loose end in the prior cleanup,
+  never resolved) character-for-character against the shared pair — **word
+  -for-word identical, both sentences** — so merged it in: deleted both
+  private consts, repointed its 17 throw sites (16 network, 1 generic) to
+  the shared `kNetworkFailureMessage`/`kGenericFailureMessage`. No test
+  depends on these privately (they were never importable), so nothing
+  else needed updating there.
+
+  Updated every real reference: `quiz_setup_screen.dart`,
+  `quiz_sessions_screen.dart`, `flashcard_setup_screen.dart`,
+  `flashcard_sessions_screen.dart`, `flashcard_session_service.dart` (all
+  previously importing from `auth_service.dart`), plus the doc-comment
+  mention in `quiz_generation_service.dart`, plus the matching imports in
+  all 4 widget test files that asserted on these constants. (Confirmed
+  `quiz_session_service.dart` needed no change here — the prior cleanup
+  had already removed its own unused import of these.)
+
+  `PROJECT_STRUCTURE.md` and `CURRENT_STATE.md` both still described the
+  now-superseded "live in auth_service.dart" state (and `CURRENT_STATE.md`
+  still described the *original* TODO as unresolved, two cleanups late) —
+  both corrected. `PROJECT_STRUCTURE.md` gained a new `lib/utils/
+  error_messages.dart` entry and had every shifted line range in
+  `auth_service.dart`, `courses_service.dart`, and the four screen files
+  recomputed directly against the current files rather than estimated —
+  each file's net import-line delta turned out different (0 lines for
+  `flashcard_session_service.dart`'s like-for-like swap, −1 for the four
+  screens that removed a 2-line `show` import and added a 1-line plain
+  one, −3 for `courses_service.dart` which also lost the two deleted
+  const lines, +0 for `quiz_generation_service.dart`/`quiz_session_service
+  .dart` which weren't touched beyond in-place text), so each needed
+  checking separately rather than assuming one uniform shift.
+
+  `flutter analyze`: **0 issues**. `flutter test`: **1305 passing, 1
+  failing** (same count as before this change — no tests added or
+  removed) — the one failure is still the pre-existing
+  `text_extraction_service_test` PPTX fixture gap, unrelated.
+
+- **Small follow-up: gave Flashcards' "zero items generated" fallback text
+  a named constant**, mirroring Quiz's `kQuizNoItemsMessage`. Text-only
+  relocation — the sentence itself didn't change.
+
+  `lib/services/flashcard_session_service.dart`'s `retake()` used to build
+  "Your material couldn't support any flashcards. Try adding another
+  material." inline, from two concatenated string literals. It's now
+  `kFlashcardNoItemsMessage`, defined next to `FlashcardFailure` at the top
+  of the file — same text, same single call site (no other copy of this
+  sentence existed anywhere in `lib/` or `test/` to update).
+  `PROJECT_STRUCTURE.md`'s line ranges for this file updated to match.
+
+  `flutter analyze`: **0 issues**. `flutter test`: **1305 passing, 1
+  failing** (same count — no tests added or removed) — the one failure is
+  still the pre-existing `text_extraction_service_test` PPTX fixture gap.
+
 ## Design handoffs
 
 - `docs/mockups/android-study-app-redesign/` — Phase 0 (Auth: Welcome, Log

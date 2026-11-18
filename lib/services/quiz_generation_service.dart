@@ -73,9 +73,9 @@ class GenerationResult {
 /// API caller, not a 16+ student). [isUnreachable] is the one thing the
 /// caller needs to pick the right user-facing text: true only for "the
 /// Worker could not be reached at all" (network/timeout/DNS), which maps
-/// to [QuizSessionService]'s `kQuizNetworkFailureMessage`; false for every
+/// to the shared `kNetworkFailureMessage` (lib/utils/error_messages.dart); false for every
 /// other case (non-200, malformed body, not signed in), which maps to
-/// `kQuizGenericFailureMessage`. Mirrors how Flashcards' generation layer
+/// `kGenericFailureMessage`. Mirrors how Flashcards' generation layer
 /// signals the same two buckets via two distinct exception types
 /// ([WorkerUnreachableException]/[WorkerResponseException] in
 /// flashcard_generation_service.dart) — kept as one class with a flag here

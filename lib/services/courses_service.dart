@@ -8,6 +8,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import '../models/course.dart';
 import '../models/study_material.dart';
 import '../utils/default_colors.dart';
+import '../utils/error_messages.dart';
 import 'calendar_service.dart';
 import 'text_extraction_service.dart';
 
@@ -25,10 +26,6 @@ class CoursesFailure implements Exception {
   @override
   String toString() => message;
 }
-
-const _networkFailureMessage =
-    "Couldn't reach Tadarab. Check your connection and try again.";
-const _genericFailureMessage = 'Something went wrong. Please try again.';
 
 /// Every Firestore call below is bounded by this, per the NFR that no
 /// network call may leave the screen frozen with no way out — without it,
@@ -154,9 +151,9 @@ class CoursesService {
       final snap = await _coursesRef(uid).get().timeout(_networkTimeout);
       return snap.docs.map(Course.fromFirestore).toList();
     } on FirebaseException {
-      throw CoursesFailure(_networkFailureMessage);
+      throw CoursesFailure(kNetworkFailureMessage);
     } on TimeoutException {
-      throw CoursesFailure(_networkFailureMessage);
+      throw CoursesFailure(kNetworkFailureMessage);
     }
   }
 
@@ -184,9 +181,9 @@ class CoursesService {
       ).count().get().timeout(_networkTimeout);
       return snapshot.count ?? 0;
     } on FirebaseException {
-      throw CoursesFailure(_networkFailureMessage);
+      throw CoursesFailure(kNetworkFailureMessage);
     } on TimeoutException {
-      throw CoursesFailure(_networkFailureMessage);
+      throw CoursesFailure(kNetworkFailureMessage);
     }
   }
 
@@ -201,9 +198,9 @@ class CoursesService {
       ).get().timeout(_networkTimeout);
       return snap.docs.map(StudyMaterial.fromFirestore).toList();
     } on FirebaseException {
-      throw CoursesFailure(_networkFailureMessage);
+      throw CoursesFailure(kNetworkFailureMessage);
     } on TimeoutException {
-      throw CoursesFailure(_networkFailureMessage);
+      throw CoursesFailure(kNetworkFailureMessage);
     }
   }
 
@@ -226,9 +223,9 @@ class CoursesService {
       await docRef.set(course.toFirestore()).timeout(_networkTimeout);
       return course;
     } on FirebaseException {
-      throw CoursesFailure(_networkFailureMessage);
+      throw CoursesFailure(kNetworkFailureMessage);
     } on TimeoutException {
-      throw CoursesFailure(_networkFailureMessage);
+      throw CoursesFailure(kNetworkFailureMessage);
     }
   }
 
@@ -257,7 +254,7 @@ class CoursesService {
       try {
         await _calendarService.deleteEventsForCourse(uid, courseId);
       } on CalendarFailure {
-        throw CoursesFailure(_networkFailureMessage);
+        throw CoursesFailure(kNetworkFailureMessage);
       }
 
       final batch = _firestore.batch();
@@ -281,9 +278,9 @@ class CoursesService {
         }
       }
     } on FirebaseException {
-      throw CoursesFailure(_networkFailureMessage);
+      throw CoursesFailure(kNetworkFailureMessage);
     } on TimeoutException {
-      throw CoursesFailure(_networkFailureMessage);
+      throw CoursesFailure(kNetworkFailureMessage);
     }
   }
 
@@ -321,9 +318,9 @@ class CoursesService {
         },
       );
     } on FirebaseException {
-      throw CoursesFailure(_networkFailureMessage);
+      throw CoursesFailure(kNetworkFailureMessage);
     } on TimeoutException {
-      throw CoursesFailure(_networkFailureMessage);
+      throw CoursesFailure(kNetworkFailureMessage);
     }
 
     String extractedText;
@@ -334,7 +331,7 @@ class CoursesService {
       throw CoursesFailure(e.message);
     } catch (_) {
       await _deleteQuietly(ref);
-      throw CoursesFailure(_genericFailureMessage);
+      throw CoursesFailure(kGenericFailureMessage);
     }
 
     if (extractedText.trim().isEmpty) {
@@ -366,10 +363,10 @@ class CoursesService {
           .timeout(_networkTimeout);
     } on FirebaseException {
       await _deleteQuietly(ref);
-      throw CoursesFailure(_networkFailureMessage);
+      throw CoursesFailure(kNetworkFailureMessage);
     } on TimeoutException {
       await _deleteQuietly(ref);
-      throw CoursesFailure(_networkFailureMessage);
+      throw CoursesFailure(kNetworkFailureMessage);
     }
     return material;
   }
@@ -388,9 +385,9 @@ class CoursesService {
         courseId,
       ).doc(material.materialId).delete().timeout(_networkTimeout);
     } on FirebaseException {
-      throw CoursesFailure(_networkFailureMessage);
+      throw CoursesFailure(kNetworkFailureMessage);
     } on TimeoutException {
-      throw CoursesFailure(_networkFailureMessage);
+      throw CoursesFailure(kNetworkFailureMessage);
     }
     // Best-effort, same as deleteCourse's per-material cleanup: the
     // Firestore doc is already gone, so a failure here just orphans a

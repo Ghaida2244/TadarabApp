@@ -209,5 +209,5 @@ option shuffling, and the grounding check) — not `src/index.js`'s HTTP
 handler itself, which has no automated test coverage here (it was verified
 once by hand against the live deployment — see **Status** above). The app
 now has real callers for `POST /generate` on both sides —
-`QuizGenerationClient` (Quiz) and `FlashcardService.generateFlashcards`
+`QuizGenerationService` (Quiz) and `FlashcardGenerationService.generateFlashcards`
 (Flashcards) each make the real HTTP call.

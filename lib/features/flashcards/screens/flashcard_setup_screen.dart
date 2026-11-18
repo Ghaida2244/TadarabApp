@@ -6,6 +6,7 @@ import '../../../models/study_material.dart';
 import '../../../services/flashcard_generation_service.dart';
 import '../../../services/flashcard_session_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/error_messages.dart';
 import '../../../utils/keyboard_safe_padding.dart';
 import '../../../widgets/app_button.dart';
 import '../../../widgets/app_error_banner.dart';
@@ -160,13 +161,13 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
       if (!mounted) return;
       setState(() {
         _generating = false;
-        _errorMessage = kFlashcardNetworkFailureMessage;
+        _errorMessage = kNetworkFailureMessage;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _generating = false;
-        _errorMessage = kFlashcardGenericFailureMessage;
+        _errorMessage = kGenericFailureMessage;
       });
     }
   }

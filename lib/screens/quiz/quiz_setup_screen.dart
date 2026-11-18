@@ -6,6 +6,7 @@ import '../../models/study_material.dart';
 import '../../services/quiz_generation_service.dart' show GenerationFailure;
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/error_messages.dart';
 import '../../utils/keyboard_safe_padding.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_error_banner.dart';
@@ -168,14 +169,14 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
       setState(() {
         _generating = false;
         _errorMessage = e.isUnreachable
-            ? kQuizNetworkFailureMessage
-            : kQuizGenericFailureMessage;
+            ? kNetworkFailureMessage
+            : kGenericFailureMessage;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _generating = false;
-        _errorMessage = kQuizGenericFailureMessage;
+        _errorMessage = kGenericFailureMessage;
       });
     }
   }

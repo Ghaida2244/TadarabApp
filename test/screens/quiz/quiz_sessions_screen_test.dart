@@ -12,6 +12,7 @@ import 'package:tadarab_app/services/quiz_generation_service.dart'
     show GenerationFailure;
 import 'package:tadarab_app/services/quiz_session_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
+import 'package:tadarab_app/utils/error_messages.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
 import 'package:tadarab_app/widgets/generation_loading_overlay.dart';
 import 'package:tadarab_app/widgets/scrollable_title_pill.dart';
@@ -508,7 +509,7 @@ void main() {
         await tester.pump();
         await tester.pump();
 
-        expect(find.text(kQuizGenericFailureMessage), findsOneWidget);
+        expect(find.text(kGenericFailureMessage), findsOneWidget);
         expect(find.byType(GenerationLoadingOverlay), findsNothing);
         expect(_retakeButton(tester).onPressed, isNotNull);
       },
@@ -532,7 +533,7 @@ void main() {
         await tester.pump();
         await tester.pump();
 
-        expect(find.text(kQuizNetworkFailureMessage), findsOneWidget);
+        expect(find.text(kNetworkFailureMessage), findsOneWidget);
         expect(find.byType(GenerationLoadingOverlay), findsNothing);
         expect(_retakeButton(tester).onPressed, isNotNull);
       },

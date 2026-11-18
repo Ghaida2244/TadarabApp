@@ -8,6 +8,7 @@ import '../../../services/flashcard_generation_service.dart'
     show WorkerUnreachableException;
 import '../../../services/flashcard_session_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/error_messages.dart';
 import '../../../widgets/app_button.dart';
 import '../../../widgets/dashed_border.dart';
 import '../../../widgets/generation_loading_overlay.dart';
@@ -232,7 +233,7 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
         _retakingSource = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(kFlashcardNetworkFailureMessage)),
+        const SnackBar(content: Text(kNetworkFailureMessage)),
       );
     } catch (_) {
       if (!mounted) return;
@@ -241,7 +242,7 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
         _retakingSource = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(kFlashcardGenericFailureMessage)),
+        const SnackBar(content: Text(kGenericFailureMessage)),
       );
     }
   }

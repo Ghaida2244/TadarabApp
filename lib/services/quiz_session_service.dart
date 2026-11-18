@@ -13,18 +13,6 @@ import 'material_catalog.dart';
 import 'quiz_generation_service.dart';
 import 'streak_service.dart';
 
-// Same wording as Flashcards' kFlashcardNetworkFailureMessage/
-// kFlashcardGenericFailureMessage (flashcard_session_service.dart) — the
-// two features show identical text for these two cases; a test asserts
-// the two pairs can't drift apart. Placed here (not in
-// quiz_generation_service.dart) to mirror exactly where Flashcards keeps
-// its own pair, and because quiz_generation_service.dart cannot import
-// this file (it would be circular — this file already imports it).
-const kQuizNetworkFailureMessage =
-    "Couldn't reach Tadarab. Check your connection and try again.";
-const kQuizGenericFailureMessage =
-    'Something went wrong. Please try again.';
-
 /// Shown when generation produced zero usable questions (see
 /// [NoQuestionsGeneratedException]) and the Worker sent no `note` of its
 /// own explaining why. Used identically by both the Setup screen and a

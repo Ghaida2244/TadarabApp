@@ -11,6 +11,7 @@ import 'package:tadarab_app/services/flashcard_generation_service.dart'
     show WorkerUnreachableException;
 import 'package:tadarab_app/services/flashcard_session_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
+import 'package:tadarab_app/utils/error_messages.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
 import 'package:tadarab_app/widgets/generation_loading_overlay.dart';
 import 'package:tadarab_app/widgets/scrollable_title_pill.dart';
@@ -545,7 +546,7 @@ void main() {
         await tester.pump();
         await tester.pump();
 
-        expect(find.text(kFlashcardNetworkFailureMessage), findsOneWidget);
+        expect(find.text(kNetworkFailureMessage), findsOneWidget);
         expect(find.byType(GenerationLoadingOverlay), findsNothing);
         expect(_retakeButton(tester).onPressed, isNotNull);
       },
@@ -567,7 +568,7 @@ void main() {
         await tester.pump();
         await tester.pump();
 
-        expect(find.text(kFlashcardGenericFailureMessage), findsOneWidget);
+        expect(find.text(kGenericFailureMessage), findsOneWidget);
         expect(find.byType(GenerationLoadingOverlay), findsNothing);
         expect(_retakeButton(tester).onPressed, isNotNull);
       },
