@@ -10,7 +10,7 @@ import '../models/study_material.dart';
 import '../utils/rank.dart';
 import 'generation_topics.dart';
 import 'material_catalog.dart';
-import 'quiz_generation_client.dart';
+import 'quiz_generation_service.dart';
 import 'streak_service.dart';
 
 /// Points earned per correct answer — per the Quiz design's fixed rule
@@ -164,24 +164,24 @@ List<int> batchWriteSizes({required int totalOperations, int maxPerBatch = 500})
 /// Firestore-backed data/session layer for the Quiz generation & Sessions
 /// feature — the single place that reads/writes `quizSessions` and their
 /// `questions` subcollection, and orchestrates a call through
-/// [QuizGenerationClient]. Injectable (same pattern as [HomeDataService])
+/// [QuizGenerationService]. Injectable (same pattern as [HomeDataService])
 /// so widget tests never need a real Firebase app.
 class QuizSessionService {
   QuizSessionService({
     FirebaseFirestore? firestore,
     FirebaseAuth? auth,
-    QuizGenerationClient? generationClient,
+    QuizGenerationService? generationClient,
     MaterialCatalog? materialCatalog,
     StreakService? streakService,
   }) : _firestoreOverride = firestore,
        _authOverride = auth,
-       _generationClient = generationClient ?? QuizGenerationClient(),
+       _generationClient = generationClient ?? QuizGenerationService(),
        _materialCatalog = materialCatalog ?? CoursesMaterialCatalog(),
        _streakService = streakService ?? StreakService();
 
   final FirebaseFirestore? _firestoreOverride;
   final FirebaseAuth? _authOverride;
-  final QuizGenerationClient _generationClient;
+  final QuizGenerationService _generationClient;
   final MaterialCatalog _materialCatalog;
   final StreakService _streakService;
 

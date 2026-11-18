@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../logic/session_stacking.dart';
 import '../../../models/flashcard_session.dart';
 import '../../../models/session.dart';
-import '../../../services/flashcard_service.dart';
+import '../../../services/flashcard_session_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/app_button.dart';
 import '../../../widgets/dashed_border.dart';
@@ -54,7 +54,7 @@ class FlashcardSessionsScreen extends StatefulWidget {
   final String email;
 
   /// Overridable for tests; defaults to the real Firebase-backed service.
-  final FlashcardService? service;
+  final FlashcardSessionService? service;
 
   @override
   State<FlashcardSessionsScreen> createState() =>
@@ -62,9 +62,9 @@ class FlashcardSessionsScreen extends StatefulWidget {
 }
 
 class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
-  late final FlashcardService _service =
+  late final FlashcardSessionService _service =
       widget.service ??
-      FlashcardService(uid: widget.uid, courseId: widget.courseId);
+      FlashcardSessionService(uid: widget.uid, courseId: widget.courseId);
 
   // Cached, not called fresh inline in the StreamBuilder below: a Stream
   // has no overridden `==`, so if `stream:` called _service.watchSessions()

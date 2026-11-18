@@ -84,8 +84,8 @@ class GenerationFailure implements Exception {
 /// token, builds the prompt, forces structured output, shuffles option
 /// order, and runs the grounding check — this class is a thin, testable
 /// wrapper around that HTTP call.
-class QuizGenerationClient {
-  QuizGenerationClient({
+class QuizGenerationService {
+  QuizGenerationService({
     http.Client? httpClient,
     Future<String?> Function()? idTokenProvider,
     Uri? endpoint,

@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../models/enums.dart';
 import '../../models/study_material.dart';
-import '../../services/quiz_generation_client.dart' show GenerationFailure;
+import '../../services/quiz_generation_service.dart' show GenerationFailure;
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/keyboard_safe_padding.dart';

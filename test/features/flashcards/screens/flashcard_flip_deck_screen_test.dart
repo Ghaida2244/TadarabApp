@@ -5,7 +5,7 @@ import 'package:tadarab_app/features/flashcards/screens/flashcard_performance_su
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/flashcard.dart';
 
-import '../../../helpers/fake_flashcard_service.dart';
+import '../../../helpers/fake_flashcard_session_service.dart';
 
 Flashcard _card(String id, int index) => Flashcard(
   flashcardId: id,
@@ -17,7 +17,7 @@ Flashcard _card(String id, int index) => Flashcard(
   cardIndex: index,
 );
 
-Widget _wrap(FakeFlashcardService service, List<Flashcard> cards) {
+Widget _wrap(FakeFlashcardSessionService service, List<Flashcard> cards) {
   return MaterialApp(
     home: FlashcardFlipDeckScreen(
       uid: 'uid-1',
@@ -36,7 +36,7 @@ void main() {
   testWidgets('rating buttons only appear after flipping the card', (
     tester,
   ) async {
-    final service = FakeFlashcardService();
+    final service = FakeFlashcardSessionService();
     await tester.pumpWidget(_wrap(service, [_card('a', 0), _card('b', 1)]));
     await tester.pumpAndSettle();
 
@@ -52,7 +52,7 @@ void main() {
 
   testWidgets('rating a non-final card persists via markFlashcard and moves '
       'to the next card instantly, unflipped', (tester) async {
-    final service = FakeFlashcardService();
+    final service = FakeFlashcardSessionService();
     await tester.pumpWidget(_wrap(service, [_card('a', 0), _card('b', 1)]));
     await tester.pumpAndSettle();
 
@@ -71,7 +71,7 @@ void main() {
 
   testWidgets('rating the final card completes the session and navigates '
       'to the Performance Summary', (tester) async {
-    final service = FakeFlashcardService();
+    final service = FakeFlashcardSessionService();
     await tester.pumpWidget(_wrap(service, [_card('a', 0)]));
     await tester.pumpAndSettle();
 
@@ -88,7 +88,7 @@ void main() {
 
   testWidgets('tapping X opens the Save-and-leave sheet with the current '
       'progress', (tester) async {
-    final service = FakeFlashcardService();
+    final service = FakeFlashcardSessionService();
     await tester.pumpWidget(_wrap(service, [_card('a', 0), _card('b', 1)]));
     await tester.pumpAndSettle();
 

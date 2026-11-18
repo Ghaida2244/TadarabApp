@@ -6,11 +6,12 @@ import 'package:tadarab_app/features/flashcards/screens/flashcard_setup_screen.d
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/flashcard.dart';
 import 'package:tadarab_app/models/study_material.dart';
-import 'package:tadarab_app/services/flashcard_service.dart';
+import 'package:tadarab_app/services/flashcard_generation_service.dart';
+import 'package:tadarab_app/services/flashcard_session_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
 
-import '../../../helpers/fake_flashcard_service.dart';
+import '../../../helpers/fake_flashcard_session_service.dart';
 
 final _material = StudyMaterial(
   materialId: 'm1',
@@ -21,7 +22,7 @@ final _material = StudyMaterial(
   extractedText: '[Slide 1: Introduction]\nSample extracted text for tests.',
 );
 
-Widget _wrap(FakeFlashcardService service) {
+Widget _wrap(FakeFlashcardSessionService service) {
   return MaterialApp(
     home: FlashcardSetupScreen(
       uid: 'uid-1',
@@ -74,7 +75,7 @@ void main() {
     'NOTE 13a/13b: starts with Easy selected and the count at 10',
     (tester) async {
       await tester.pumpWidget(
-        _wrap(FakeFlashcardService(materials: [_material])),
+        _wrap(FakeFlashcardSessionService(materials: [_material])),
       );
       await tester.pumpAndSettle();
 
@@ -98,7 +99,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      _wrap(FakeFlashcardService(materials: [_material])),
+      _wrap(FakeFlashcardSessionService(materials: [_material])),
     );
     await tester.pumpAndSettle();
 
@@ -116,7 +117,7 @@ void main() {
     'matches Quiz setup\'s own rule exactly',
     (tester) async {
       await tester.pumpWidget(
-        _wrap(FakeFlashcardService(materials: [_material])),
+        _wrap(FakeFlashcardSessionService(materials: [_material])),
       );
       await tester.pumpAndSettle();
 
@@ -164,7 +165,7 @@ void main() {
     'the subtle shadow appears only on the selected difficulty button',
     (tester) async {
       await tester.pumpWidget(
-        _wrap(FakeFlashcardService(materials: [_material])),
+        _wrap(FakeFlashcardSessionService(materials: [_material])),
       );
       await tester.pumpAndSettle();
 
@@ -197,7 +198,7 @@ void main() {
   testWidgets('tapping Generate shows the Generating overlay with the '
       'aimed-for count, before the Worker call resolves', (tester) async {
     final pending = Completer<FlashcardGenerationResult>();
-    final service = FakeFlashcardService(
+    final service = FakeFlashcardSessionService(
       materials: [_material],
       pendingGeneration: pending,
       flashcardsBySessionId: {'session-new': _flashcards(10)},
@@ -223,7 +224,7 @@ void main() {
 
   testWidgets('a short result (fewer items than requested) shows the limit '
       'dialog with the actual and requested counts', (tester) async {
-    final service = FakeFlashcardService(
+    final service = FakeFlashcardSessionService(
       materials: [_material],
       generationResult: FlashcardGenerationResult(
         items: _items(7),
@@ -245,7 +246,7 @@ void main() {
     "shows the Worker's note in a SnackBar when generation succeeds with "
     'one, even at the full requested count',
     (tester) async {
-      final service = FakeFlashcardService(
+      final service = FakeFlashcardSessionService(
         materials: [_material],
         flashcardsBySessionId: {'session-new': _flashcards(10)},
         generationResult: FlashcardGenerationResult(
@@ -272,7 +273,7 @@ void main() {
   testWidgets(
     'shows no SnackBar when the count matches and there is no note',
     (tester) async {
-      final service = FakeFlashcardService(
+      final service = FakeFlashcardSessionService(
         materials: [_material],
         flashcardsBySessionId: {'session-new': _flashcards(10)},
         generationResult: FlashcardGenerationResult(
@@ -294,7 +295,7 @@ void main() {
 
   testWidgets('a generation failure shows a retry-able generic-failure '
       'message', (tester) async {
-    final service = FakeFlashcardService(
+    final service = FakeFlashcardSessionService(
       materials: [_material],
       generationError: Exception('boom'),
     );
@@ -319,7 +320,7 @@ void main() {
         addTearDown(tester.view.reset);
 
         await tester.pumpWidget(
-          _wrap(FakeFlashcardService(materials: [_material])),
+          _wrap(FakeFlashcardSessionService(materials: [_material])),
         );
         await tester.pumpAndSettle();
 
@@ -378,7 +379,7 @@ void main() {
                 uid: 'uid-1',
                 courseId: 'course-1',
                 email: 'student@example.com',
-                service: FakeFlashcardService(materials: [_material]),
+                service: FakeFlashcardSessionService(materials: [_material]),
               ),
             ),
           );
@@ -395,7 +396,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        _wrap(FakeFlashcardService(materials: [_material])),
+        _wrap(FakeFlashcardSessionService(materials: [_material])),
       );
       await tester.pumpAndSettle();
 
@@ -407,7 +408,7 @@ void main() {
     testWidgets(
       'untouched, the request carries no custom prompt at all',
       (tester) async {
-        final service = FakeFlashcardService(
+        final service = FakeFlashcardSessionService(
           materials: [_material],
           generationResult: FlashcardGenerationResult(
             items: _items(10),
@@ -430,7 +431,7 @@ void main() {
     testWidgets('after typing, the typed text — not the hint — is sent', (
       tester,
     ) async {
-      final service = FakeFlashcardService(
+      final service = FakeFlashcardSessionService(
         materials: [_material],
         generationResult: FlashcardGenerationResult(
           items: _items(10),
@@ -460,7 +461,7 @@ void main() {
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
-        _wrap(FakeFlashcardService(materials: [_material])),
+        _wrap(FakeFlashcardSessionService(materials: [_material])),
       );
       await tester.pumpAndSettle();
     }

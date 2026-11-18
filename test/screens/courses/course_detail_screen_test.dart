@@ -13,7 +13,7 @@ import 'package:tadarab_app/screens/courses/widgets/upload_material_sheet.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
 
 import '../../helpers/fake_courses_service.dart';
-import '../../helpers/fake_flashcard_service.dart';
+import '../../helpers/fake_flashcard_session_service.dart';
 
 void main() {
   final course = Course(
@@ -26,7 +26,7 @@ void main() {
   Future<void> pump(
     WidgetTester tester,
     FakeCoursesService service, {
-    FakeFlashcardService? flashcardService,
+    FakeFlashcardSessionService? flashcardService,
     Future<PickedFile?> Function()? pickFile,
   }) async {
     await tester.pumpWidget(
@@ -240,10 +240,10 @@ void main() {
           FakeCoursesService(materialsByCourse: {'c1': materials}),
           // Unlike QuizSessionService's fetchSessions (an async method,
           // so a no-Firebase-app error gets wrapped into its returned
-          // Future rather than thrown), FlashcardService.watchSessions is
+          // Future rather than thrown), FlashcardSessionService.watchSessions is
           // a plain synchronous function called directly from build(), so
           // it throws immediately without a fake backing it here.
-          flashcardService: FakeFlashcardService(),
+          flashcardService: FakeFlashcardSessionService(),
         );
 
         await tester.tap(find.text('Flashcards'));

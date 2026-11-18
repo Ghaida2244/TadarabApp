@@ -20,7 +20,7 @@ import 'package:flutter/material.dart';
 /// was wired up. The *stored* `currentRank` field is now written alongside
 /// every `totalPoints` increment, at all three places points are ever
 /// awarded: `QuizSessionService.completeSession`,
-/// `.submitExamSession`, and `FlashcardService.completeSession` (each via
+/// `.submitExamSession`, and `FlashcardSessionService.completeSession` (each via
 /// their own private `_pointsAndRankUpdate` helper). Because
 /// `FieldValue.increment` never reveals the resulting total, each call site
 /// reads the student's current `totalPoints` first and computes

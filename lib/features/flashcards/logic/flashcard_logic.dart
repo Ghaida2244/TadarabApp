@@ -27,7 +27,7 @@ int resumeIndexFor({required int currentFlashcardIndex, required int total}) {
 /// fell short, same as [FlashcardGenerationResult.requestedCount]), the
 /// Worker's own `note` if it sent one, and the id of the brand-new session
 /// the retake created (a retake no longer overwrites the session it was
-/// started from — see [FlashcardService.retake]).
+/// started from — see [FlashcardSessionService.retake]).
 typedef RetakeOutcome = ({
   int requestedCount,
   int actualCount,
@@ -38,9 +38,9 @@ typedef RetakeOutcome = ({
 /// Retake's card-write plan for its new session's cards, given how many
 /// cards that new session already had (always 0 — it's brand new) and how
 /// many the Worker generated this time. Kept in this shape (rather than a
-/// plain "write N new docs") so [FlashcardService.retake] reuses the exact
+/// plain "write N new docs") so [FlashcardSessionService.retake] reuses the exact
 /// same write-planning function it did before the new-session-per-retake
-/// redesign. See [FlashcardService.retake].
+/// redesign. See [FlashcardSessionService.retake].
 typedef RetakeCardWritePlan = ({int overwriteCount, int addCount, int deleteCount});
 
 RetakeCardWritePlan planRetakeCardWrites({
@@ -75,7 +75,7 @@ List<int> batchSizes({required int totalOperations, int maxPerBatch = 500}) {
 
 /// Sorts a course's flashcard sessions newest first. Pulled out as a pure
 /// function (rather than a Firestore `orderBy('createdAt')`) so
-/// [FlashcardService.watchSessions] doesn't need a composite index for its
+/// [FlashcardSessionService.watchSessions] doesn't need a composite index for its
 /// `where('courseId', ...)` + ordering — and so the sort itself is directly
 /// unit-testable without a real or fake Firestore.
 List<FlashcardSession> sortSessionsNewestFirst(

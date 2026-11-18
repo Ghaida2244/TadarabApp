@@ -302,7 +302,7 @@ and what the app does with them between requests.
   its own `retakeOfSessionId` at the session it was retaken from, and gets
   the next `retakeNumber` in that chain. The source session and its
   existing questions/flashcards are left exactly as they were — see
-  `QuizSessionService.retakeSession` and `FlashcardService.retake`.
+  `QuizSessionService.retakeSession` and `FlashcardSessionService.retake`.
   - **Quiz Exam-mode retake exception:** nothing is written to Firestore
     for the new attempt until the student actually submits it — it plays
     from an in-memory draft (`QuizPlayScreen.examDraft`) the same way a
@@ -315,7 +315,7 @@ and what the app does with them between requests.
   trims/dedupes/truncates it the same way the Worker does on its own side.
   If that session has no stored `coveredTopics` at all (e.g. it predates
   this feature), this yields an empty list, and the caller
-  (`QuizGenerationClient.generateQuiz`/the flashcard equivalent) omits
+  (`QuizGenerationService.generateQuiz`/`FlashcardGenerationService.generateFlashcards`) omits
   `previousTopics` from the request body entirely rather than sending `[]`.
 - **Practice Now (Quiz) and Review Now (Flashcards) never call this
   Worker at all.** Both are zero-write, client-side-only reshuffles of

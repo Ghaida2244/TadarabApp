@@ -10,30 +10,30 @@ import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/flashcard.dart';
 import 'package:tadarab_app/models/flashcard_session.dart';
 import 'package:tadarab_app/models/study_material.dart';
-import 'package:tadarab_app/services/flashcard_service.dart';
+import 'package:tadarab_app/services/flashcard_generation_service.dart';
+import 'package:tadarab_app/services/flashcard_session_service.dart';
 import 'package:tadarab_app/services/streak_service.dart';
 
-/// A [FlashcardService] with its Firestore-*read* methods swapped for
-/// canned data, so [generateFlashcards]/[retake]'s real Worker-calling and
-/// request-body logic can be exercised with a mocked [http.Client] — no
-/// real Firestore needed for anything these tests check. `retake()` now
-/// reads the source session first (for its `coveredTopics`, to build
-/// `previousTopics`) before calling the Worker — [fetchSession] is faked
-/// here for exactly that read. Its Firestore *write* path
-/// (`_firestore.batch()...commit()`, and the private `_fetchSessionsInGroup`
-/// read just before it, both reached only once the Worker returns a
-/// non-empty result) is never exercised here, since `_fetchSessionsInGroup`
-/// is library-private so a test file can't override it the way it can
-/// [fetchSession] — so every test below deliberately stays on the side of
-/// that line where the real behavior is still being exercised for real: an
-/// empty or failing Worker response, which `retake()` must reject before
-/// ever writing to Firestore. (`fake_cloud_firestore` *is* now a dev
-/// dependency — added for the Calendar feature — and is used directly
-/// against the real `FlashcardService`, no subclass needed, in the
-/// `completeSession` group below, since that method needs no Worker call
-/// at all.)
-class _TestFlashcardService extends FlashcardService {
-  _TestFlashcardService({
+/// A [FlashcardSessionService] with its Firestore-*read* methods swapped for
+/// canned data, so [retake]'s real Worker-calling and request-body logic
+/// (via its injected [FlashcardGenerationService]) can be exercised with a
+/// mocked [http.Client] — no real Firestore needed for anything these tests
+/// check. `retake()` reads the source session first (for its
+/// `coveredTopics`, to build `previousTopics`) before calling the Worker —
+/// [fetchSession] is faked here for exactly that read. Its Firestore *write*
+/// path (`_firestore.batch()...commit()`, and the private
+/// `_fetchSessionsInGroup` read just before it, both reached only once the
+/// Worker returns a non-empty result) is never exercised here, since
+/// `_fetchSessionsInGroup` is library-private so a test file can't override
+/// it the way it can [fetchSession] — so every test below deliberately
+/// stays on the side of that line where the real behavior is still being
+/// exercised for real: an empty or failing Worker response, which `retake()`
+/// must reject before ever writing to Firestore. (`fake_cloud_firestore` is
+/// used directly against the real `FlashcardSessionService`, no subclass
+/// needed, in the `completeSession` group below, since that method needs no
+/// Worker call at all.)
+class _TestFlashcardSessionService extends FlashcardSessionService {
+  _TestFlashcardSessionService({
     required http.Client httpClient,
     this.materials = const [],
     this.session,
@@ -49,7 +49,7 @@ class _TestFlashcardService extends FlashcardService {
 
   /// Returned by [fetchSession]; defaults to a plain session with no
   /// stored `coveredTopics` (an "old session" — see
-  /// [FlashcardService.retake]'s `previousTopics` handling).
+  /// [FlashcardSessionService.retake]'s `previousTopics` handling).
   final FlashcardSession? session;
 
   /// Set true the moment `fetchFlashcards` runs — only reachable from the
@@ -96,188 +96,12 @@ http.Response _emptyItemsResponse({String? note, dynamic coveredTopics}) =>
       jsonEncode({
         'items': <dynamic>[],
         'note': note,
-        if (coveredTopics != null) 'coveredTopics': coveredTopics,
+        'coveredTopics': ?coveredTopics,
       }),
       200,
     );
 
 void main() {
-  group('generateFlashcards: isRetake', () {
-    test('normal: sends isRetake: true in the request body when passed', () async {
-      Map<String, dynamic>? capturedBody;
-      final mock = MockClient((request) async {
-        capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
-        return _emptyItemsResponse();
-      });
-      final service = _TestFlashcardService(
-        httpClient: mock,
-        materials: [_material],
-      );
-
-      await service.generateFlashcards(
-        materialIds: ['m1'],
-        difficulties: [DifficultyLevel.medium],
-        count: 5,
-        isRetake: true,
-      );
-
-      expect(capturedBody?['isRetake'], true);
-    });
-
-    test('normal: defaults to isRetake: false when not passed', () async {
-      Map<String, dynamic>? capturedBody;
-      final mock = MockClient((request) async {
-        capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
-        return _emptyItemsResponse();
-      });
-      final service = _TestFlashcardService(
-        httpClient: mock,
-        materials: [_material],
-      );
-
-      await service.generateFlashcards(
-        materialIds: ['m1'],
-        difficulties: [DifficultyLevel.medium],
-        count: 5,
-      );
-
-      expect(capturedBody?['isRetake'], false);
-    });
-
-    test(
-      'normal: sends previousTopics in the request body when isRetake and '
-      'non-empty',
-      () async {
-        Map<String, dynamic>? capturedBody;
-        final mock = MockClient((request) async {
-          capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
-          return _emptyItemsResponse();
-        });
-        final service = _TestFlashcardService(
-          httpClient: mock,
-          materials: [_material],
-        );
-
-        await service.generateFlashcards(
-          materialIds: ['m1'],
-          difficulties: [DifficultyLevel.medium],
-          count: 5,
-          isRetake: true,
-          previousTopics: ['Normalization', 'ACID'],
-        );
-
-        expect(capturedBody?['previousTopics'], ['Normalization', 'ACID']);
-      },
-    );
-
-    test(
-      'edge: previousTopics is omitted when empty, even if isRetake is true',
-      () async {
-        Map<String, dynamic>? capturedBody;
-        final mock = MockClient((request) async {
-          capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
-          return _emptyItemsResponse();
-        });
-        final service = _TestFlashcardService(
-          httpClient: mock,
-          materials: [_material],
-        );
-
-        await service.generateFlashcards(
-          materialIds: ['m1'],
-          difficulties: [DifficultyLevel.medium],
-          count: 5,
-          isRetake: true,
-        );
-
-        expect(capturedBody?.containsKey('previousTopics'), isFalse);
-      },
-    );
-
-    test(
-      'edge: previousTopics is omitted when isRetake is false, even if '
-      'given',
-      () async {
-        Map<String, dynamic>? capturedBody;
-        final mock = MockClient((request) async {
-          capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
-          return _emptyItemsResponse();
-        });
-        final service = _TestFlashcardService(
-          httpClient: mock,
-          materials: [_material],
-        );
-
-        await service.generateFlashcards(
-          materialIds: ['m1'],
-          difficulties: [DifficultyLevel.medium],
-          count: 5,
-          previousTopics: ['Normalization'],
-        );
-
-        expect(capturedBody?.containsKey('previousTopics'), isFalse);
-      },
-    );
-  });
-
-  group('generateFlashcards: coveredTopics parsing', () {
-    test('normal: reads coveredTopics from the response', () async {
-      final mock = MockClient(
-        (request) async => _emptyItemsResponse(
-          coveredTopics: ['Normalization', 'ACID'],
-        ),
-      );
-      final service = _TestFlashcardService(
-        httpClient: mock,
-        materials: [_material],
-      );
-
-      final result = await service.generateFlashcards(
-        materialIds: ['m1'],
-        difficulties: [DifficultyLevel.medium],
-        count: 5,
-      );
-
-      expect(result.coveredTopics, ['Normalization', 'ACID']);
-    });
-
-    test('failure: a missing coveredTopics field defaults to empty, not a '
-        'crash', () async {
-      final mock = MockClient((request) async => _emptyItemsResponse());
-      final service = _TestFlashcardService(
-        httpClient: mock,
-        materials: [_material],
-      );
-
-      final result = await service.generateFlashcards(
-        materialIds: ['m1'],
-        difficulties: [DifficultyLevel.medium],
-        count: 5,
-      );
-
-      expect(result.coveredTopics, isEmpty);
-    });
-
-    test('failure: a non-list coveredTopics field defaults to empty, not a '
-        'crash', () async {
-      final mock = MockClient(
-        (request) async => _emptyItemsResponse(coveredTopics: 'not a list'),
-      );
-      final service = _TestFlashcardService(
-        httpClient: mock,
-        materials: [_material],
-      );
-
-      final result = await service.generateFlashcards(
-        materialIds: ['m1'],
-        difficulties: [DifficultyLevel.medium],
-        count: 5,
-      );
-
-      expect(result.coveredTopics, isEmpty);
-    });
-  });
-
   group('retake', () {
     test(
       'normal: calls the Worker with isRetake: true and the exact settings '
@@ -292,7 +116,7 @@ void main() {
           // the class doc comment above.
           return _emptyItemsResponse();
         });
-        final service = _TestFlashcardService(
+        final service = _TestFlashcardSessionService(
           httpClient: mock,
           materials: [_material],
         );
@@ -330,7 +154,7 @@ void main() {
           capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
           return _emptyItemsResponse();
         });
-        final service = _TestFlashcardService(
+        final service = _TestFlashcardSessionService(
           httpClient: mock,
           materials: [_material],
           session: FlashcardSession(
@@ -368,7 +192,7 @@ void main() {
           capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
           return _emptyItemsResponse();
         });
-        final service = _TestFlashcardService(
+        final service = _TestFlashcardSessionService(
           httpClient: mock,
           materials: [_material],
           session: FlashcardSession(
@@ -404,7 +228,7 @@ void main() {
         final mock = MockClient(
           (request) async => _emptyItemsResponse(note: 'No suitable content.'),
         );
-        final service = _TestFlashcardService(
+        final service = _TestFlashcardSessionService(
           httpClient: mock,
           materials: [_material],
         );
@@ -435,7 +259,7 @@ void main() {
         final mock = MockClient(
           (request) async => throw Exception('network down'),
         );
-        final service = _TestFlashcardService(
+        final service = _TestFlashcardSessionService(
           httpClient: mock,
           materials: [_material],
         );
@@ -458,7 +282,7 @@ void main() {
       'written to',
       () async {
         final mock = MockClient((request) async => http.Response('{}', 500));
-        final service = _TestFlashcardService(
+        final service = _TestFlashcardSessionService(
           httpClient: mock,
           materials: [_material],
         );
@@ -479,7 +303,7 @@ void main() {
 
   group('completeSession — points, rank and streak', () {
     late FakeFirebaseFirestore firestore;
-    late FlashcardService service;
+    late FlashcardSessionService service;
 
     DocumentReference<Map<String, dynamic>> studentDoc() =>
         firestore.collection('users').doc('uid-1');
@@ -520,7 +344,7 @@ void main() {
 
     setUp(() {
       firestore = FakeFirebaseFirestore();
-      service = FlashcardService(
+      service = FlashcardSessionService(
         uid: 'uid-1',
         courseId: 'course-1',
         firestore: firestore,
@@ -724,7 +548,7 @@ void main() {
         // Firestore so the registered failure above (which isn't scoped to
         // a single call) doesn't also break the unrelated streak write
         // this test isn't exercising.
-        final serviceWithIsolatedStreak = FlashcardService(
+        final serviceWithIsolatedStreak = FlashcardSessionService(
           uid: 'uid-1',
           courseId: 'course-1',
           firestore: firestore,

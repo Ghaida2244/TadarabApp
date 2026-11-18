@@ -7,7 +7,7 @@ import 'package:tadarab_app/features/flashcards/screens/flashcard_sessions_scree
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/flashcard.dart';
 import 'package:tadarab_app/models/flashcard_session.dart';
-import 'package:tadarab_app/services/flashcard_service.dart';
+import 'package:tadarab_app/services/flashcard_session_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
 import 'package:tadarab_app/widgets/generation_loading_overlay.dart';
@@ -15,7 +15,7 @@ import 'package:tadarab_app/widgets/scrollable_title_pill.dart';
 import 'package:tadarab_app/widgets/session_stack_card.dart';
 import 'package:tadarab_app/widgets/session_stack_focus_view.dart';
 
-import '../../../helpers/fake_flashcard_service.dart';
+import '../../../helpers/fake_flashcard_session_service.dart';
 
 AppButton _retakeButton(WidgetTester tester) => tester.widget<AppButton>(
   find.byWidgetPredicate(
@@ -78,7 +78,7 @@ FlashcardSession _session({
   );
 }
 
-Widget _wrap(FakeFlashcardService service) {
+Widget _wrap(FakeFlashcardSessionService service) {
   return MaterialApp(
     home: FlashcardSessionsScreen(
       uid: 'uid-1',
@@ -92,7 +92,7 @@ Widget _wrap(FakeFlashcardService service) {
 void main() {
   testWidgets('empty state shows the no-sessions copy and hides the '
       'in-progress/completed sections', (tester) async {
-    await tester.pumpWidget(_wrap(FakeFlashcardService(sessions: const [])));
+    await tester.pumpWidget(_wrap(FakeFlashcardSessionService(sessions: const [])));
     await tester.pumpAndSettle();
 
     expect(find.text('No sessions yet'), findsOneWidget);
@@ -111,7 +111,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       _wrap(
-        FakeFlashcardService(
+        FakeFlashcardSessionService(
           sessions: const [],
           watchSessionsError: Exception('failed-precondition'),
         ),
@@ -161,7 +161,7 @@ void main() {
       );
 
       await tester.pumpWidget(
-        _wrap(FakeFlashcardService(sessions: [s1, s2, s3, s4])),
+        _wrap(FakeFlashcardSessionService(sessions: [s1, s2, s3, s4])),
       );
       await tester.pump();
       await tester.pump();
@@ -195,7 +195,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       _wrap(
-        FakeFlashcardService(
+        FakeFlashcardSessionService(
           sessions: [_session(id: 's1', completed: false)],
         ),
       ),
@@ -213,7 +213,7 @@ void main() {
       'label', (tester) async {
     await tester.pumpWidget(
       _wrap(
-        FakeFlashcardService(
+        FakeFlashcardSessionService(
           sessions: [
             _session(
               id: 's1',
@@ -239,7 +239,7 @@ void main() {
       'buttons', (tester) async {
     await tester.pumpWidget(
       _wrap(
-        FakeFlashcardService(
+        FakeFlashcardSessionService(
           sessions: [
             _session(
               id: 's1',
@@ -265,7 +265,7 @@ void main() {
     (tester) async {
       await tester.pumpWidget(
         _wrap(
-          FakeFlashcardService(
+          FakeFlashcardSessionService(
             sessions: [_session(id: 's1', completed: true)],
           ),
         ),
@@ -289,7 +289,7 @@ void main() {
     (tester) async {
       await tester.pumpWidget(
         _wrap(
-          FakeFlashcardService(
+          FakeFlashcardSessionService(
             sessions: [
               _session(
                 id: 's1',
@@ -328,7 +328,7 @@ void main() {
     (tester) async {
       await tester.pumpWidget(
         _wrap(
-          FakeFlashcardService(
+          FakeFlashcardSessionService(
             sessions: [
               _session(id: 's1', completed: true),
               _session(id: 's2', completed: false, currentFlashcardIndex: 3),
@@ -366,7 +366,7 @@ void main() {
       (tester) async {
         await tester.pumpWidget(
           _wrap(
-            FakeFlashcardService(
+            FakeFlashcardSessionService(
               sessions: [
                 _session(id: 's1', completed: true, retakeNumber: 0),
                 _session(
@@ -410,7 +410,7 @@ void main() {
       (tester) async {
         await tester.pumpWidget(
           _wrap(
-            FakeFlashcardService(
+            FakeFlashcardSessionService(
               sessions: [
                 _session(id: 's1', completed: true, retakeNumber: 0),
               ],
@@ -428,7 +428,7 @@ void main() {
         '"Retake 3"', (tester) async {
       await tester.pumpWidget(
         _wrap(
-          FakeFlashcardService(
+          FakeFlashcardSessionService(
             sessions: [
               _session(id: 's1', completed: true, retakeNumber: 3),
             ],
@@ -447,7 +447,7 @@ void main() {
       (tester) async {
         await tester.pumpWidget(
           _wrap(
-            FakeFlashcardService(
+            FakeFlashcardSessionService(
               sessions: [_session(id: 's1', completed: true)],
             ),
           ),
@@ -466,7 +466,7 @@ void main() {
       'generating overlay until the Worker call resolves, then navigates',
       (tester) async {
         final pending = Completer<RetakeOutcome>();
-        final service = FakeFlashcardService(
+        final service = FakeFlashcardSessionService(
           sessions: [
             _session(id: 's1', completed: true, knownCount: 8),
           ],
@@ -505,7 +505,7 @@ void main() {
       'a Retake failure shows a SnackBar, clears the generating overlay, '
       'and leaves the session in place',
       (tester) async {
-        final service = FakeFlashcardService(
+        final service = FakeFlashcardSessionService(
           sessions: [
             _session(id: 's1', completed: true, knownCount: 8),
           ],
@@ -535,7 +535,7 @@ void main() {
         'is introduced', (tester) async {
       await tester.pumpWidget(
         _wrap(
-          FakeFlashcardService(
+          FakeFlashcardSessionService(
             sessions: [
               _session(
                 id: 's1',
@@ -565,7 +565,7 @@ void main() {
       ];
       await tester.pumpWidget(
         _wrap(
-          FakeFlashcardService(
+          FakeFlashcardSessionService(
             sessions: [
               _session(id: 's1', completed: false, materialTitles: titles),
             ],
@@ -645,7 +645,7 @@ void main() {
 
     testWidgets('tapping a stack opens its focus view', (tester) async {
       await tester.pumpWidget(
-        _wrap(FakeFlashcardService(sessions: twoCompletedAttempts())),
+        _wrap(FakeFlashcardSessionService(sessions: twoCompletedAttempts())),
       );
       await tester.pump();
       await tester.pump();
@@ -660,7 +660,7 @@ void main() {
 
     testWidgets('the × button closes the focus view', (tester) async {
       await tester.pumpWidget(
-        _wrap(FakeFlashcardService(sessions: twoCompletedAttempts())),
+        _wrap(FakeFlashcardSessionService(sessions: twoCompletedAttempts())),
       );
       await tester.pump();
       await tester.pump();
@@ -679,7 +679,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        _wrap(FakeFlashcardService(sessions: twoCompletedAttempts())),
+        _wrap(FakeFlashcardSessionService(sessions: twoCompletedAttempts())),
       );
       await tester.pump();
       await tester.pump();
@@ -701,7 +701,7 @@ void main() {
       'is present on completed attempts, and each has its own delete',
       (tester) async {
         await tester.pumpWidget(
-          _wrap(FakeFlashcardService(sessions: twoCompletedAttempts())),
+          _wrap(FakeFlashcardSessionService(sessions: twoCompletedAttempts())),
         );
         await tester.pump();
         await tester.pump();
@@ -732,7 +732,7 @@ void main() {
       'deleting an attempt inside the focus view down to one closes it '
       'and leaves a plain card behind, keeping its own label',
       (tester) async {
-        final service = FakeFlashcardService(
+        final service = FakeFlashcardSessionService(
           sessions: twoCompletedAttempts(),
         );
         await tester.pumpWidget(_wrap(service));
@@ -772,7 +772,7 @@ void main() {
       (tester) async {
         await tester.pumpWidget(
           _wrap(
-            FakeFlashcardService(
+            FakeFlashcardSessionService(
               sessions: [_session(id: 's1', completed: false)],
             ),
           ),
@@ -794,7 +794,7 @@ void main() {
       'uses the compact metrics',
       (tester) async {
         await tester.pumpWidget(
-          _wrap(FakeFlashcardService(sessions: twoInProgressAttempts())),
+          _wrap(FakeFlashcardSessionService(sessions: twoInProgressAttempts())),
         );
         await tester.pump();
         await tester.pump();
@@ -826,7 +826,7 @@ void main() {
         await tester.pumpWidget(
           MediaQuery(
             data: const MediaQueryData(disableAnimations: true),
-            child: _wrap(FakeFlashcardService(sessions: twoCompletedAttempts())),
+            child: _wrap(FakeFlashcardSessionService(sessions: twoCompletedAttempts())),
           ),
         );
         await tester.pump();
@@ -848,7 +848,7 @@ void main() {
     testWidgets('RTL: the stack and its focus view render without error', (
       tester,
     ) async {
-      final service = FakeFlashcardService(sessions: twoCompletedAttempts());
+      final service = FakeFlashcardSessionService(sessions: twoCompletedAttempts());
       await tester.pumpWidget(
         MaterialApp(
           home: Directionality(
@@ -889,7 +889,7 @@ void main() {
       "stack's own reserved spacing",
       (tester) async {
         await tester.pumpWidget(
-          _wrap(FakeFlashcardService(sessions: twoCompletedAttempts())),
+          _wrap(FakeFlashcardSessionService(sessions: twoCompletedAttempts())),
         );
         await tester.pump();
         await tester.pump();
@@ -949,7 +949,7 @@ void main() {
             numberOfFlashcards: 7,
           ),
         ];
-        await tester.pumpWidget(_wrap(FakeFlashcardService(sessions: sessions)));
+        await tester.pumpWidget(_wrap(FakeFlashcardSessionService(sessions: sessions)));
         await tester.pump();
         await tester.pump();
 
@@ -1004,7 +1004,7 @@ void main() {
                 uid: 'uid-1',
                 courseId: 'course-1',
                 email: 'student@example.com',
-                service: FakeFlashcardService(sessions: const []),
+                service: FakeFlashcardSessionService(sessions: const []),
               ),
             ),
           ),

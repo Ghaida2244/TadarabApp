@@ -142,7 +142,7 @@ const kGuideItems = [
     heading: 'Streak',
     // Describes the rule CLAUDE.md specifies. `StreakService
     // .recordStudyActivity` is now called from both `QuizSessionService`
-    // (completeSession/submitExamSession) and `FlashcardService`
+    // (completeSession/submitExamSession) and `FlashcardSessionService`
     // (completeSession) — the copy matches actual behaviour now, no
     // known gap.
     body:
