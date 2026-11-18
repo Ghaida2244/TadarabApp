@@ -9,7 +9,7 @@ import '../../logic/materials_search.dart';
 import '../../models/course.dart';
 import '../../models/study_material.dart';
 import '../../services/courses_service.dart';
-import '../../services/flashcard_service.dart';
+import '../../services/flashcard_session_service.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_button.dart';
@@ -40,7 +40,7 @@ class CourseDetailScreen extends StatefulWidget {
   final CoursesService? coursesService;
 
   /// Overridable for tests; defaults to the real Firebase-backed service.
-  final FlashcardService? flashcardService;
+  final FlashcardSessionService? flashcardService;
 
   /// Overridable for tests — see [showUploadMaterialSheet]'s `pickFile`.
   final Future<PickedFile?> Function()? pickFile;

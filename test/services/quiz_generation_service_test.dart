@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:tadarab_app/models/enums.dart';
-import 'package:tadarab_app/services/quiz_generation_client.dart';
+import 'package:tadarab_app/services/quiz_generation_service.dart';
 
 void main() {
   final endpoint = Uri.parse('https://example.test/generate');
@@ -12,11 +12,11 @@ void main() {
     GenerationMaterial(title: 'Lecture 1', sourceText: '[Slide 1]\nPhotosynthesis...'),
   ];
 
-  QuizGenerationClient client(
+  QuizGenerationService client(
     http.Client httpClient, {
     Future<String?> Function()? idTokenProvider,
   }) {
-    return QuizGenerationClient(
+    return QuizGenerationService(
       httpClient: httpClient,
       endpoint: endpoint,
       idTokenProvider: idTokenProvider ?? () async => 'fake-token',
@@ -286,7 +286,7 @@ void main() {
 }
 
 /// A minimal stand-in for a thrown network error — the real exception type
-/// doesn't matter to [QuizGenerationClient], which catches broadly and
+/// doesn't matter to [QuizGenerationService], which catches broadly and
 /// reports a generic connection failure to the student.
 class SocketExceptionStub implements Exception {
   const SocketExceptionStub();

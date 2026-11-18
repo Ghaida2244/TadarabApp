@@ -17,7 +17,7 @@ import 'package:tadarab_app/widgets/session_stack_card.dart';
 
 import '../helpers/fake_calendar_service.dart';
 import '../helpers/fake_courses_service.dart';
-import '../helpers/fake_flashcard_service.dart';
+import '../helpers/fake_flashcard_session_service.dart';
 import '../helpers/fake_home_data_service.dart';
 
 void main() {
@@ -32,7 +32,7 @@ void main() {
     FakeHomeDataService? dataService,
     FakeCalendarService? calendarService,
     FakeCoursesService? coursesService,
-    FakeFlashcardService? flashcardService,
+    FakeFlashcardSessionService? flashcardService,
     VoidCallback? onSignOut,
     bool reducedMotion = false,
     double textScaleFactor = 1.0,
@@ -923,7 +923,7 @@ void main() {
             courses: [aCourse],
             inProgress: inProgress,
           ),
-          flashcardService: FakeFlashcardService(
+          flashcardService: FakeFlashcardSessionService(
             sessions: [session],
             flashcardsBySessionId: {'s1': cards},
           ),
@@ -1565,7 +1565,7 @@ void main() {
                 ],
               },
             ),
-            flashcardService: FakeFlashcardService(),
+            flashcardService: FakeFlashcardSessionService(),
           );
 
           await tester.tap(find.text('New Flashcards'));

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../logic/performance_tier.dart';
 import '../../../logic/practice_shuffle.dart';
 import '../../../models/enums.dart';
-import '../../../services/flashcard_service.dart';
+import '../../../services/flashcard_session_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/app_button.dart';
 import '../flashcard_navigation.dart';
@@ -35,12 +35,12 @@ class FlashcardPerformanceSummaryScreen extends StatelessWidget {
   final int earnedPoints;
 
   /// Overridable for tests; defaults to the real Firebase-backed service.
-  final FlashcardService? service;
+  final FlashcardSessionService? service;
 
   int get _total => knownCount + needsReviewCount;
 
-  FlashcardService _serviceFor(BuildContext context) =>
-      service ?? FlashcardService(uid: uid, courseId: courseId);
+  FlashcardSessionService _serviceFor(BuildContext context) =>
+      service ?? FlashcardSessionService(uid: uid, courseId: courseId);
 
   Future<void> _reviewNow(BuildContext context) async {
     final flashcardService = _serviceFor(context);

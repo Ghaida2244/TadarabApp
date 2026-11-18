@@ -60,7 +60,7 @@ int effectiveStreak({
 /// Firestore-backed wrapper around [computeNextStreak]. Called once a real
 /// (non-practice) session is actually committed (completed) — see
 /// `QuizSessionService.completeSession`/`.submitExamSession` and
-/// `FlashcardService.completeSession`, its three current callers. Never
+/// `FlashcardSessionService.completeSession`, its three current callers. Never
 /// touches totalPoints — the streak is fully independent of the points
 /// system.
 class StreakService {

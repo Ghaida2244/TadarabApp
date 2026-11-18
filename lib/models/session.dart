@@ -76,7 +76,7 @@ abstract class Session {
 
   /// Short topic strings the Worker reported this session's generated
   /// content actually covered — sent back as `previousTopics` on a future
-  /// retake of this same session (see [FlashcardService.retake] /
+  /// retake of this same session (see [FlashcardSessionService.retake] /
   /// [QuizSessionService.retakeSession]) so the Worker can vary phrasing
   /// instead of repeating itself. Empty for a session generated before this
   /// field existed.

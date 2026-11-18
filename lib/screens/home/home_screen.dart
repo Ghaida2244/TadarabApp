@@ -10,7 +10,7 @@ import '../../models/student.dart';
 import '../../models/study_material.dart';
 import '../../services/calendar_service.dart';
 import '../../services/courses_service.dart';
-import '../../services/flashcard_service.dart';
+import '../../services/flashcard_session_service.dart';
 import '../../services/home_data_service.dart';
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
@@ -60,11 +60,11 @@ class HomeScreen extends StatefulWidget {
   final CoursesService? coursesService;
 
   /// Overridable for tests; defaults to the real Firebase-backed
-  /// FlashcardService. A builder (not a single instance) because, unlike
+  /// FlashcardSessionService. A builder (not a single instance) because, unlike
   /// [coursesService], the course it's scoped to isn't known until the
   /// student picks one from the course picker or has an in-progress
   /// session to resume.
-  final FlashcardService Function({required String uid, required String courseId})?
+  final FlashcardSessionService Function({required String uid, required String courseId})?
   flashcardServiceBuilder;
 
   /// Overridable for tests, so "today"/greeting/streak-row highlighting is deterministic.
@@ -84,7 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final _flashcardServiceBuilder =
       widget.flashcardServiceBuilder ??
       ({required String uid, required String courseId}) =>
-          FlashcardService(uid: uid, courseId: courseId);
+          FlashcardSessionService(uid: uid, courseId: courseId);
   int _tabIndex = 0;
 
   /// Bumped whenever the Calendar adds or deletes an event, so the Home tab
@@ -178,7 +178,7 @@ class _HomeTab extends StatefulWidget {
   final String uid;
   final HomeDataService dataService;
   final CoursesService coursesService;
-  final FlashcardService Function({required String uid, required String courseId})
+  final FlashcardSessionService Function({required String uid, required String courseId})
   flashcardServiceBuilder;
   final DateTime now;
 

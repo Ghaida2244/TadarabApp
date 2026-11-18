@@ -5,13 +5,14 @@ import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/flashcard.dart';
 import 'package:tadarab_app/models/flashcard_session.dart';
 import 'package:tadarab_app/models/study_material.dart';
-import 'package:tadarab_app/services/flashcard_service.dart';
+import 'package:tadarab_app/services/flashcard_generation_service.dart';
+import 'package:tadarab_app/services/flashcard_session_service.dart';
 
-/// A controllable stand-in for [FlashcardService] used across the
+/// A controllable stand-in for [FlashcardSessionService] used across the
 /// Flashcards feature's widget tests, so they never depend on a real
 /// Firestore or the (still-unimplemented) Worker call.
-class FakeFlashcardService extends FlashcardService {
-  FakeFlashcardService({
+class FakeFlashcardSessionService extends FlashcardSessionService {
+  FakeFlashcardSessionService({
     this.materials = const [],
     this.sessions = const [],
     this.flashcardsBySessionId = const {},
@@ -87,8 +88,8 @@ class FakeFlashcardService extends FlashcardService {
 
   // Broadcasts [sessions] after it's mutated (e.g. by [deleteSession]) to
   // every currently-open watchSessions() stream — mirrors the real
-  // FlashcardService.watchSessions()'s live Firestore snapshot behavior,
-  // so a test can delete a session and see the Sessions screen's
+  // FlashcardSessionService.watchSessions()'s live Firestore snapshot
+  // behavior, so a test can delete a session and see the Sessions screen's
   // StreamBuilder reactively pick up the new list without needing a
   // manual retry. Added for the Retake Stacks "delete down to one"
   // widget tests; existing tests that never mutate `sessions` see no

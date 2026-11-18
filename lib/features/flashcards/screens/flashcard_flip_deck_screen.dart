@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../models/enums.dart';
 import '../../../models/flashcard.dart';
-import '../../../services/flashcard_service.dart';
+import '../../../services/flashcard_session_service.dart';
 import '../../../theme/app_theme.dart';
 import '../logic/flashcard_logic.dart';
 import '../widgets/flashcard_card.dart';
@@ -36,7 +36,7 @@ class FlashcardFlipDeckScreen extends StatefulWidget {
   final int initialNeedsReviewCount;
 
   /// Overridable for tests; defaults to the real Firebase-backed service.
-  final FlashcardService? service;
+  final FlashcardSessionService? service;
 
   @override
   State<FlashcardFlipDeckScreen> createState() =>
@@ -44,9 +44,9 @@ class FlashcardFlipDeckScreen extends StatefulWidget {
 }
 
 class _FlashcardFlipDeckScreenState extends State<FlashcardFlipDeckScreen> {
-  late final FlashcardService _service =
+  late final FlashcardSessionService _service =
       widget.service ??
-      FlashcardService(uid: widget.uid, courseId: widget.courseId);
+      FlashcardSessionService(uid: widget.uid, courseId: widget.courseId);
 
   late List<Flashcard> _flashcards = widget.initialFlashcards;
   late int _currentIndex = widget.initialIndex;

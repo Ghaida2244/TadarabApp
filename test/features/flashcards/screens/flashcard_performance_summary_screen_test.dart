@@ -4,15 +4,15 @@ import 'package:tadarab_app/features/flashcards/screens/flashcard_performance_su
 import 'package:tadarab_app/features/flashcards/screens/flashcard_review_pass_screen.dart';
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/flashcard.dart';
-import 'package:tadarab_app/services/flashcard_service.dart';
+import 'package:tadarab_app/services/flashcard_session_service.dart';
 
-import '../../../helpers/fake_flashcard_service.dart';
+import '../../../helpers/fake_flashcard_session_service.dart';
 
 Widget _wrap({
   required int knownCount,
   required int needsReviewCount,
   int earnedPoints = 20,
-  FlashcardService? service,
+  FlashcardSessionService? service,
 }) {
   return MaterialApp(
     home: FlashcardPerformanceSummaryScreen(
@@ -130,7 +130,7 @@ void main() {
       'opens a review pass with only the needs-review cards, none of the '
       'known ones',
       (tester) async {
-        final service = FakeFlashcardService(
+        final service = FakeFlashcardSessionService(
           flashcardsBySessionId: {
             'session-1': [
               card('a', ReviewStatus.needsReview),
@@ -162,7 +162,7 @@ void main() {
       'leaving the review pass returns to this summary with its stored '
       'counts and points unchanged',
       (tester) async {
-        final service = FakeFlashcardService(
+        final service = FakeFlashcardSessionService(
           flashcardsBySessionId: {
             'session-1': [
               card('a', ReviewStatus.needsReview),

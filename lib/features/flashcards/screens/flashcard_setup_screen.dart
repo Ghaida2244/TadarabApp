@@ -3,7 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../../../models/enums.dart';
 import '../../../models/study_material.dart';
-import '../../../services/flashcard_service.dart';
+import '../../../services/flashcard_generation_service.dart';
+import '../../../services/flashcard_session_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/keyboard_safe_padding.dart';
 import '../../../widgets/app_button.dart';
@@ -72,16 +73,16 @@ class FlashcardSetupScreen extends StatefulWidget {
   final String email;
 
   /// Overridable for tests; defaults to the real Firebase-backed service.
-  final FlashcardService? service;
+  final FlashcardSessionService? service;
 
   @override
   State<FlashcardSetupScreen> createState() => _FlashcardSetupScreenState();
 }
 
 class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
-  late final FlashcardService _service =
+  late final FlashcardSessionService _service =
       widget.service ??
-      FlashcardService(uid: widget.uid, courseId: widget.courseId);
+      FlashcardSessionService(uid: widget.uid, courseId: widget.courseId);
 
   late final Future<List<StudyMaterial>> _materialsFuture = _service
       .fetchMaterials();

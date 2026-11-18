@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 
@@ -10,7 +8,7 @@ import '../models/flashcard_session.dart';
 import '../models/session.dart';
 import '../models/study_material.dart';
 import '../utils/rank.dart';
-import 'auth_service.dart';
+import 'flashcard_generation_service.dart';
 import 'generation_topics.dart';
 import 'streak_service.dart';
 
@@ -36,79 +34,20 @@ class FlashcardFailure implements Exception {
   String toString() => message;
 }
 
-/// Thrown by [FlashcardService.generateFlashcards] when the Worker is
-/// unreachable (no response at all — offline, timeout, DNS failure). Distinct
-/// from a response the Worker did send back with an error, so the Setup
-/// screen can show the network-failure message specifically for this case.
-class WorkerUnreachableException implements Exception {}
-
-/// Thrown by [FlashcardService.generateFlashcards] when the Worker responded
-/// but with a non-200 status. Carries the raw body so a future caller could
-/// log/debug it, though the UI only ever shows the generic-failure message
-/// for this case per CLAUDE.md.
-class WorkerResponseException implements Exception {
-  WorkerResponseException(this.statusCode, this.body);
-
-  final int statusCode;
-  final Map<String, dynamic>? body;
-}
-
-/// One generated flashcard, as returned by the Worker's `items` array.
-class FlashcardGenerationItem {
-  FlashcardGenerationItem({
-    required this.frontText,
-    required this.backText,
-    required this.sourceLocation,
-    required this.difficulty,
-  });
-
-  final String frontText;
-  final String backText;
-  final String sourceLocation;
-  final DifficultyLevel difficulty;
-
-  factory FlashcardGenerationItem.fromJson(Map<String, dynamic> json) {
-    return FlashcardGenerationItem(
-      frontText: json['frontText'] as String,
-      backText: json['backText'] as String,
-      sourceLocation: json['sourceLocation'] as String,
-      difficulty: DifficultyLevelJson.fromJson(json['difficulty'] as String),
-    );
-  }
-}
-
-/// The Worker's successful `/generate` response for `type: "flashcard"`.
-/// [note] mirrors the Quiz feature's [GenerationResult.note] — the Worker
-/// sends one on every response type (fewer items than requested, or some
-/// grounding-check discards), meant to be shown to the student directly
-/// rather than treated as an error. [requestedCount] is the count the
-/// caller asked for, carried alongside [items] so a screen can tell
-/// whether generation fell short without needing to keep its own copy.
-class FlashcardGenerationResult {
-  FlashcardGenerationResult({
-    required this.items,
-    required this.requestedCount,
-    this.note,
-    this.coveredTopics = const [],
-  });
-
-  final List<FlashcardGenerationItem> items;
-  final int requestedCount;
-  final String? note;
-
-  /// Short topic strings the Worker reports this batch actually covered —
-  /// stored on the session so a future retake of it can send them back as
-  /// `previousTopics`. Empty if the Worker's response omitted it.
-  final List<String> coveredTopics;
-}
-
-/// Firestore- and Worker-backed data/actions for the Flashcards feature,
-/// scoped to one student and one course (the Setup/Sessions screens always
-/// operate inside a specific course — see CLAUDE.md). Injectable (like
-/// [AuthService] and [HomeDataService]) so widget tests can supply canned
-/// results instead of needing a real Firestore.
-class FlashcardService {
-  FlashcardService({
+/// Firestore-backed data/actions for the Flashcards feature, scoped to one
+/// student and one course (the Setup/Sessions screens always operate inside
+/// a specific course — see CLAUDE.md). Injectable (like [AuthService] and
+/// [HomeDataService]) so widget tests can supply canned results instead of
+/// needing a real Firestore.
+///
+/// Owns a private [FlashcardGenerationService] for the Worker-calling step
+/// (see that class's doc comment) — the same role [QuizSessionService]'s own
+/// `_generationClient` plays for Quiz. [generateFlashcards] is kept here too,
+/// as a thin passthrough, because every screen and test fake in this
+/// feature already holds one [FlashcardSessionService] object for
+/// everything (materials, generation, and session writes).
+class FlashcardSessionService {
+  FlashcardSessionService({
     required this.uid,
     required this.courseId,
     FirebaseFirestore? firestore,
@@ -116,27 +55,29 @@ class FlashcardService {
     Future<String?> Function()? idTokenProvider,
     Uri? endpoint,
     StreakService? streakService,
+    FlashcardGenerationService? generationService,
   }) : _firestoreOverride = firestore,
-       _httpClient = httpClient ?? http.Client(),
-       _idTokenProvider = idTokenProvider ?? AuthService().getIdToken,
-       _endpoint =
-           endpoint ??
-           Uri.parse('https://tadarab-ai-worker.tadarab.workers.dev/generate'),
-       _streakService = streakService ?? StreakService();
+       _streakService = streakService ?? StreakService() {
+    _generationService =
+        generationService ??
+        FlashcardGenerationService(
+          fetchMaterials: fetchMaterials,
+          httpClient: httpClient,
+          idTokenProvider: idTokenProvider,
+          endpoint: endpoint,
+        );
+  }
 
   final String uid;
   final String courseId;
   final FirebaseFirestore? _firestoreOverride;
-  final http.Client _httpClient;
   final StreakService _streakService;
 
-  /// Resolves the caller's Firebase ID token for the Worker's
-  /// Authorization: Bearer header. Defaults to [AuthService.getIdToken] —
-  /// overridable so tests never need a real Firebase app to exercise the
-  /// HTTP layer (same pattern as [QuizGenerationClient]'s
-  /// `idTokenProvider`, in quiz_generation_client.dart).
-  final Future<String?> Function() _idTokenProvider;
-  final Uri _endpoint;
+  /// The Worker-calling generation step, factored out to
+  /// [FlashcardGenerationService] (flashcard_generation_service.dart).
+  /// Constructed with this service's own [fetchMaterials] so there's one
+  /// source for that Firestore read — see that class's doc comment.
+  late final FlashcardGenerationService _generationService;
 
   FirebaseFirestore get _firestore =>
       _firestoreOverride ?? FirebaseFirestore.instance;
@@ -222,24 +163,11 @@ class FlashcardService {
         );
   }
 
-  /// Calls the Cloudflare Worker's `POST /generate` (type: "flashcard") —
-  /// the same deployed Worker and endpoint Quiz's [QuizGenerationClient]
-  /// calls (see quiz_generation_client.dart), which already handles
-  /// `type: "flashcard"` requests identically to `type: "quiz"` ones (same
-  /// generation.js, branches on `type` throughout). Re-fetches this
-  /// course's materials to get each selected one's real `extractedText`,
-  /// rather than requiring the caller to pass full [StudyMaterial] objects
-  /// through — [FlashcardSetupScreen] already calls this with just
-  /// [materialIds], and changing that call site wasn't needed.
-  ///
-  /// Throws [WorkerUnreachableException] (no response at all — offline,
-  /// timeout, DNS failure, or no signed-in user to get a token from) or
-  /// [WorkerResponseException] (the Worker responded, but not with a
-  /// usable 200) — never a raw exception, so the Setup screen's existing
-  /// `on WorkerUnreachableException` / generic `catch` both work correctly.
-  /// [isRetake] tells the Worker this is a retake of a previous attempt
-  /// with the same settings, same as [QuizGenerationClient.generateQuiz] —
-  /// see [retake], its only caller that passes `true`.
+  /// Calls the Worker's `POST /generate` (type: "flashcard") via
+  /// [_generationService] — see [FlashcardGenerationService.generateFlashcards]
+  /// for the real implementation. Kept as a passthrough on this class so
+  /// callers that already hold one [FlashcardSessionService] for the whole
+  /// feature (the Setup screen, the test fakes) don't need a second object.
   Future<FlashcardGenerationResult> generateFlashcards({
     required List<String> materialIds,
     required List<DifficultyLevel> difficulties,
@@ -247,78 +175,14 @@ class FlashcardService {
     String? customPrompt,
     bool isRetake = false,
     List<String> previousTopics = const [],
-  }) async {
-    final allMaterials = await fetchMaterials();
-    final materials = allMaterials
-        .where((m) => materialIds.contains(m.materialId))
-        .toList();
-
-    String? token;
-    try {
-      token = await _idTokenProvider();
-    } catch (_) {
-      token = null;
-    }
-    if (token == null) {
-      // No signed-in user to get a token from — can't even attempt the
-      // call. Practically unreachable (the whole app requires sign-in
-      // before this screen exists), but guarded the same way Quiz's
-      // QuizGenerationClient.generateQuiz guards it, for the same reason:
-      // fail locally instead of sending an obviously-invalid request.
-      throw WorkerUnreachableException();
-    }
-
-    http.Response response;
-    try {
-      response = await _httpClient
-          .post(
-            _endpoint,
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $token',
-            },
-            body: jsonEncode({
-              'type': 'flashcard',
-              'count': count,
-              'difficulty': difficulties.map((d) => d.toJson()).toList(),
-              if (customPrompt != null && customPrompt.trim().isNotEmpty)
-                'customPrompt': customPrompt.trim(),
-              'materials': [
-                for (final m in materials)
-                  {'title': m.title, 'sourceText': m.extractedText},
-              ],
-              'isRetake': isRetake,
-              if (isRetake && previousTopics.isNotEmpty)
-                'previousTopics': previousTopics,
-            }),
-          )
-          .timeout(const Duration(seconds: 120));
-    } catch (_) {
-      throw WorkerUnreachableException();
-    }
-
-    Map<String, dynamic>? body;
-    try {
-      body = jsonDecode(response.body) as Map<String, dynamic>;
-    } catch (_) {
-      body = null;
-    }
-
-    if (response.statusCode != 200 || body == null || body['items'] is! List) {
-      throw WorkerResponseException(response.statusCode, body);
-    }
-
-    final items = (body['items'] as List)
-        .map(
-          (raw) => FlashcardGenerationItem.fromJson(raw as Map<String, dynamic>),
-        )
-        .toList();
-
-    return FlashcardGenerationResult(
-      items: items,
-      requestedCount: count,
-      note: body['note'] as String?,
-      coveredTopics: parseCoveredTopics(body['coveredTopics']),
+  }) {
+    return _generationService.generateFlashcards(
+      materialIds: materialIds,
+      difficulties: difficulties,
+      count: count,
+      customPrompt: customPrompt,
+      isRetake: isRetake,
+      previousTopics: previousTopics,
     );
   }
 
@@ -478,16 +342,17 @@ class FlashcardService {
   }
 
   /// Retakes [sessionId] by generating a brand-new set of cards through the
-  /// Worker — same settings as the source session (materials/difficulties/
-  /// count/customPrompt, all supplied by the caller, which already has them
-  /// from the session doc) plus `isRetake: true` and `previousTopics` (the
-  /// source session's own stored [FlashcardSession.coveredTopics], never a
-  /// union across the rest of the retake group — see [buildPreviousTopics])
-  /// — then creates a brand-new [FlashcardSession] document for the result,
-  /// sharing the source's `rootSessionId` and pointing `retakeOfSessionId`
-  /// at it. The source session and its existing cards are never written to
-  /// or deleted: a retake no longer overwrites, it adds a new entry to the
-  /// same retake group.
+  /// Worker (via [_generationService]) — same settings as the source
+  /// session (materials/difficulties/count/customPrompt, all supplied by
+  /// the caller, which already has them from the session doc) plus
+  /// `isRetake: true` and `previousTopics` (the source session's own stored
+  /// [FlashcardSession.coveredTopics], never a union across the rest of the
+  /// retake group — see [buildPreviousTopics]) — then creates a brand-new
+  /// [FlashcardSession] document for the result, sharing the source's
+  /// `rootSessionId` and pointing `retakeOfSessionId` at it. The source
+  /// session and its existing cards are never written to or deleted: a
+  /// retake no longer overwrites, it adds a new entry to the same retake
+  /// group.
   ///
   /// Firestore is read once at the very start — [fetchSession] on the
   /// source, purely to get its `coveredTopics` for `previousTopics` —
@@ -513,7 +378,7 @@ class FlashcardService {
     final source = await fetchSession(sessionId);
     final previousTopics = buildPreviousTopics(source.coveredTopics);
 
-    final result = await generateFlashcards(
+    final result = await _generationService.generateFlashcards(
       materialIds: materialIds,
       difficulties: difficulties,
       count: count,

@@ -1,9 +1,10 @@
 /// Shared, pure helpers for the generation Worker's `coveredTopics`
 /// (response) and `previousTopics` (request) fields — used by both Quiz's
-/// [QuizGenerationClient] (quiz_generation_client.dart) and Flashcards'
-/// [FlashcardService] (flashcard_service.dart) so the two features don't
-/// duplicate (or drift on) this logic. New, neutral file — not owned by
-/// either feature.
+/// [QuizGenerationService] (quiz_generation_service.dart) and Flashcards'
+/// [FlashcardGenerationService] (flashcard_generation_service.dart) and
+/// [FlashcardSessionService] (flashcard_session_service.dart) so the two
+/// features don't duplicate (or drift on) this logic. New, neutral file —
+/// not owned by either feature.
 ///
 /// Limits mirror worker/src/generation.js's own
 /// (MAX_PREVIOUS_TOPICS = 100, MAX_PREVIOUS_TOPIC_LENGTH = 80). The Worker

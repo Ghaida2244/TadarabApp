@@ -5,7 +5,7 @@ import 'package:tadarab_app/models/question.dart';
 import 'package:tadarab_app/models/quiz_session.dart';
 import 'package:tadarab_app/models/study_material.dart';
 import 'package:tadarab_app/screens/quiz/quiz_setup_screen.dart';
-import 'package:tadarab_app/services/quiz_generation_client.dart';
+import 'package:tadarab_app/services/quiz_generation_service.dart';
 import 'package:tadarab_app/services/quiz_session_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';

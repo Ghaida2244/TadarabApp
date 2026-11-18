@@ -1965,6 +1965,73 @@ mark it done, note decisions made, note what starts next.)*
   Still to do on this branch: nothing — Calendar and Profile/Ranks/Study
   Reminder are both complete, pending the `currentRank` coordination above.
 
+- **Refactor: split the generation and saving classes for Quiz and
+  Flashcards into clear, parallel pairs** (rename-and-move only — no logic,
+  Firestore paths, field names, or Worker request/response format changed).
+  `lib/services/quiz_generation_client.dart` → `quiz_generation_service.dart`
+  (`QuizGenerationClient` → `QuizGenerationService`, otherwise untouched —
+  confirmed identical via `git diff` after a rename-only substitution).
+  `lib/services/flashcard_service.dart` split into `flashcard_generation_service.dart`
+  (new `FlashcardGenerationService`, holding `generateFlashcards` and its
+  Worker-only types: `WorkerUnreachableException`, `WorkerResponseException`,
+  `FlashcardGenerationItem`, `FlashcardGenerationResult`) and
+  `flashcard_session_service.dart` (`FlashcardService` → `FlashcardSessionService`,
+  keeping everything else: `createSession`, `fetchSession`,
+  `fetchFlashcards`, `markFlashcard`, `completeSession`, `retake`,
+  `deleteSession`, `fetchMaterials`, `watchSessions`, the
+  `kFlashcardNetworkFailureMessage`/`kFlashcardGenericFailureMessage`
+  constants, and `FlashcardFailure`).
+
+  The one real design decision: `fetchMaterials` is used directly by the
+  Setup screen's multi-select *and* internally by `generateFlashcards`, so
+  it had to stay on `FlashcardSessionService` (the shared-helper rule) —
+  `FlashcardGenerationService` takes it as an injected constructor
+  callback instead of owning its own fetch, keeping `generateFlashcards`'s
+  body textually unchanged. `retake()` (a saving-side method that calls
+  generation) now calls `_generationService.generateFlashcards(...)` —
+  mirroring the already-existing pattern where `QuizSessionService` owns a
+  private `_generationClient` and calls `_generationClient.generateQuiz`
+  from inside `createSession`/`retakeSession`. `FlashcardSessionService`
+  keeps a one-line public `generateFlashcards` passthrough purely because
+  every screen (`FlashcardSetupScreen`) and test fake
+  (`FakeFlashcardSessionService`, renamed from `FakeFlashcardService`)
+  already holds one service object for the whole feature — splitting that
+  into two objects at every call site would have been a much bigger,
+  unrequested change.
+
+  Verified behavior-neutral directly: diffed each old committed file
+  against its new counterpart (`git show HEAD:<old path>` piped through a
+  rename-only `sed` substitution, then `diff`) — `quiz_generation_service.dart`
+  is byte-identical to the renamed original; every `FlashcardSessionService`
+  method except the `generateFlashcards` passthrough and one line inside
+  `retake()` is byte-identical to the original `flashcard_service.dart`;
+  `generateFlashcards`'s body in `flashcard_generation_service.dart` is
+  identical to the original except one in-comment reference
+  (`QuizGenerationClient` → `QuizGenerationService`, for consistency with
+  the sibling rename).
+
+  Test files renamed/split to match: `quiz_generation_client_test.dart` →
+  `quiz_generation_service_test.dart`; `flashcard_service_test.dart` split
+  into `flashcard_generation_service_test.dart` (the `generateFlashcards:
+  isRetake`/`coveredTopics parsing` groups, now constructing
+  `FlashcardGenerationService` directly with an injected `fetchMaterials`)
+  and `flashcard_session_service_test.dart` (the `retake`/`completeSession`
+  groups); `test/helpers/fake_flashcard_service.dart` →
+  `fake_flashcard_session_service.dart` (`FakeFlashcardService` →
+  `FakeFlashcardSessionService`), with every screen/widget test that used
+  it updated. `pubspec.yaml`'s one comment mentioning
+  `quiz_generation_client.dart` and `worker/README.md` were deliberately
+  left as stale references (both on the do-not-touch list for this task).
+
+  `flutter analyze`: clean except the one pre-existing
+  `auth_service.dart` info (the old `flashcard_service_test.dart` had its
+  own pre-existing info for the same `if (x != null) 'k': x` pattern this
+  refactor's two new test files initially duplicated — fixed with the
+  null-aware `'k': ?x` form instead of leaving it doubled). `flutter test`:
+  **1299 passing, 1 failing** — the one failure is still the pre-existing
+  `text_extraction_service_test` PPTX fixture gap, unrelated to this
+  refactor.
+
 ## Design handoffs
 
 - `docs/mockups/android-study-app-redesign/` — Phase 0 (Auth: Welcome, Log
