@@ -2032,6 +2032,126 @@ mark it done, note decisions made, note what starts next.)*
   `text_extraction_service_test` PPTX fixture gap, unrelated to this
   refactor.
 
+- **Unified Quiz and Flashcards generation-flow error messages**, in both
+  look and wording — Flashcards' look (the shared `AppErrorBanner`: icon +
+  bold heading + body) is the reference. Text-and-presentation only; no
+  generation logic, Worker request/response shape, or Firestore
+  paths/fields changed.
+
+  **Look.** `QuizSetupScreen` now renders every error via `AppErrorBanner`
+  (heading `'Could not generate quiz'`), same as `FlashcardSetupScreen`
+  (heading `'Could not generate flashcards'`, already on `AppErrorBanner`
+  before this). Quiz's own private `_ErrorBanner` (a plain red box, no
+  icon/heading) is deleted — it was used nowhere else.
+
+  **Wording — exactly two shared bodies, plus one per-feature "no items"
+  case.** `kQuizNetworkFailureMessage`/`kQuizGenericFailureMessage`
+  (`quiz_session_service.dart`) are now word-for-word identical to
+  Flashcards' existing `kFlashcardNetworkFailureMessage`/
+  `kFlashcardGenericFailureMessage` (`flashcard_session_service.dart`) — a
+  new test in `quiz_session_service_test.dart` pins the two pairs together
+  so they can't drift apart again. Placed in the *session* service file on
+  both sides (mirroring exactly where Flashcards already kept its pair),
+  not in a new shared file. No raw Worker/HTTP text (status codes,
+  validation messages written for an API caller, not a 16+ student — e.g.
+  `"type" must be one of quiz, flashcard`) ever reaches the UI on either
+  side now.
+
+  `GenerationFailure` (`quiz_generation_service.dart`) stopped carrying the
+  Worker's raw `message`/status code; it gained `isUnreachable: bool`
+  instead — `true` only for "the Worker couldn't be reached at all"
+  (network/timeout), `false` for everything else (non-200, malformed
+  body, not-signed-in) — and the screens that catch it (`QuizSetupScreen`,
+  `QuizSessionsScreen._retake`) map that flag to
+  `kQuizNetworkFailureMessage`/`kQuizGenericFailureMessage`. Kept as one
+  class with a flag (not split into two exception types) specifically to
+  avoid a name collision with Flashcards' own `WorkerUnreachableException`/
+  `WorkerResponseException` if a file ever imported both — and to avoid a
+  circular import, since `quiz_session_service.dart` already imports
+  `quiz_generation_service.dart`, so the reverse (needed to reference the
+  constants from inside `generateQuiz`) isn't possible; the mapping happens
+  one layer up instead, in the screens.
+
+  The "material can't support any items" case keeps Quiz's existing
+  wording exactly ("Your material couldn't support any questions. Try
+  adding another material.", now the constant `kQuizNoItemsMessage`) —
+  Quiz's Retake flow had its own, different wording for this
+  ("Couldn't generate a retake from this material."); unified to the one
+  text everywhere. Flashcards' parallel case
+  (`FlashcardSessionService.retake`'s zero-items fallback, "...couldn't
+  support any flashcards...") was already exactly parallel — confirmed, not
+  changed. Flashcards' Setup screen has no equivalent "zero items" error at
+  all: a zero-card result there goes through the same "fewer than
+  requested" limit dialog as any shortfall (actualCount: 0), not a banner —
+  a genuine pre-existing UX difference between the two features, left
+  alone as out of scope (it's flow logic, not error text/presentation).
+
+  **A real gap found and fixed along the way:** `FlashcardSessionService
+  .retake()` lets `WorkerUnreachableException`/`WorkerResponseException`
+  propagate raw (never wrapped in `FlashcardFailure`), and
+  `FlashcardSessionsScreen._retake` only caught `FlashcardFailure` then a
+  generic catch — so a real network failure during a Flashcards *retake*
+  showed the generic text, never the network one, while Setup already got
+  this right. Added an `on WorkerUnreachableException` branch there too,
+  and swapped both features' retake flows' generic-catch text (previously
+  two different ad hoc strings, "Retake failed. Please try again." on both
+  sides already by coincidence — but not the canonical constant) onto
+  `kQuizGenericFailureMessage`/`kFlashcardGenericFailureMessage`.
+
+  **Every place a generation/save error reaches the student, found by
+  grepping `lib/` for every catch/SnackBar/banner near `GenerationFailure`/
+  `FlashcardFailure`/`WorkerUnreachableException`/`WorkerResponseException`/
+  `NoQuestionsGeneratedException`:** `QuizSetupScreen._generate` (changed),
+  `QuizSessionsScreen._retake` (changed), `FlashcardSetupScreen._generate`
+  (already correct, confirmed), `FlashcardSessionsScreen._retake`
+  (changed). Looked at and deliberately left alone, different error
+  flows entirely (not generation/save): `CoursesFailure` SnackBars in
+  `course_detail_screen.dart`/`home_screen.dart` (Courses feature's own
+  load/delete failures); `AppErrorBanner` usage on the auth screens
+  (wrong-credentials/email-taken, per that widget's own original doc
+  comment); Calendar/Profile's own save-failure banners/snackbars.
+
+  **Worker messages kept vs. replaced** (read `worker/src/index.js` and
+  `generation.js`'s `parseGenerateRequest` before touching any text):
+  every `message` the Worker can send on a non-200 — `"type" must be one
+  of quiz, flashcard`, `"count" must be a positive integer`, `"materials"
+  must be a non-empty array...`, `Each material needs a "title" and
+  non-empty "sourceText"`, `Body must be valid JSON`, the 401's
+  `err.message` (JWT verification detail), the 502's `Upstream request
+  failed`/`err.message`, and `Claude API error` — all written for an API
+  caller debugging a malformed request, not phrased for a student, and all
+  of them are now replaced by the generic message. **None were kept** —
+  there is no Worker-side "usage limit" or "no content" message distinct
+  from the `note` field, which was never part of this (it's returned
+  alongside a normal 200 and shown directly, unrelated to the error path;
+  untouched by this change).
+
+  **Tests.** `quiz_generation_service_test.dart`: the non-200 test no
+  longer asserts the raw server message is surfaced — asserts the
+  opposite (`isNot(contains(...))`) — and all four failure tests now
+  assert `isUnreachable` directly. `quiz_setup_screen_test.dart`: the one
+  existing generation-error test split into a generic-failure case and a
+  new network-failure case, both asserting `AppErrorBanner` + the heading
+  + the right constant; added a zero-items-no-note case asserting
+  `kQuizNoItemsMessage`. `quiz_sessions_screen_test.dart`: updated the
+  existing generic-retake-failure text assertion to the constant; added a
+  network-failure retake case. `flashcard_setup_screen_test.dart`: the one
+  existing generic-failure test now also asserts the banner type + heading;
+  added a network-failure case (it had none before, despite Setup's code
+  already handling it). `flashcard_sessions_screen_test.dart`: added two
+  cases for the newly-fixed retake gap (`WorkerUnreachableException` →
+  network text; a raw `Exception` → generic text) — needed widening
+  `FakeFlashcardSessionService.writeError` from `FlashcardFailure?` to
+  `Object?` so a test can throw either exception type through the same
+  existing field (only one test used it before; unaffected).
+  `quiz_session_service_test.dart`: new `error wording parity with
+  Flashcards` group, the two cross-feature equality assertions.
+
+  `flutter analyze`: clean, same single pre-existing `auth_service.dart`
+  info. `flutter test`: **1307 passing, 1 failing** — the one failure is
+  still the pre-existing `text_extraction_service_test` PPTX fixture gap,
+  unrelated to this change.
+
 ## Design handoffs
 
 - `docs/mockups/android-study-app-redesign/` — Phase 0 (Auth: Welcome, Log

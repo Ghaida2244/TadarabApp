@@ -5,6 +5,8 @@ import 'package:mock_exceptions/mock_exceptions.dart';
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/question.dart';
 import 'package:tadarab_app/models/quiz_session.dart';
+import 'package:tadarab_app/services/flashcard_session_service.dart'
+    show kFlashcardGenericFailureMessage, kFlashcardNetworkFailureMessage;
 import 'package:tadarab_app/services/quiz_session_service.dart';
 import 'package:tadarab_app/services/streak_service.dart';
 
@@ -443,6 +445,29 @@ void main() {
         final data = (await studentDoc().get()).data()!;
         expect(data['totalPoints'], 700);
         expect(data['currentRank'], 'Rising Learner');
+      },
+    );
+  });
+
+  group('error wording parity with Flashcards', () {
+    // Quiz and Flashcards show identical text for these two cases (see
+    // quiz_setup_screen.dart/flashcard_setup_screen.dart and their
+    // respective sessions screens' retake flows) — this pins that down so
+    // a future edit to either one alone is caught here, not just noticed
+    // visually.
+    test(
+      'normal: kQuizNetworkFailureMessage is word-for-word the same as '
+      'kFlashcardNetworkFailureMessage',
+      () {
+        expect(kQuizNetworkFailureMessage, kFlashcardNetworkFailureMessage);
+      },
+    );
+
+    test(
+      'normal: kQuizGenericFailureMessage is word-for-word the same as '
+      'kFlashcardGenericFailureMessage',
+      () {
+        expect(kQuizGenericFailureMessage, kFlashcardGenericFailureMessage);
       },
     );
   });

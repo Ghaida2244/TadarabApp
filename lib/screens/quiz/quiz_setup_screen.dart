@@ -8,6 +8,7 @@ import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/keyboard_safe_padding.dart';
 import '../../widgets/app_button.dart';
+import '../../widgets/app_error_banner.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/dismiss_keyboard_on_tap.dart';
 import '../../widgets/generation_loading_overlay.dart';
@@ -160,19 +161,21 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
       if (!mounted) return;
       setState(() {
         _generating = false;
-        _errorMessage = e.note ?? "Your material couldn't support any questions. Try adding another material.";
+        _errorMessage = e.note ?? kQuizNoItemsMessage;
       });
     } on GenerationFailure catch (e) {
       if (!mounted) return;
       setState(() {
         _generating = false;
-        _errorMessage = e.message;
+        _errorMessage = e.isUnreachable
+            ? kQuizNetworkFailureMessage
+            : kQuizGenericFailureMessage;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _generating = false;
-        _errorMessage = 'Something went wrong. Please try again.';
+        _errorMessage = kQuizGenericFailureMessage;
       });
     }
   }
@@ -276,7 +279,10 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               if (_errorMessage != null) ...[
-                                _ErrorBanner(message: _errorMessage!),
+                                AppErrorBanner(
+                                  heading: 'Could not generate quiz',
+                                  body: _errorMessage!,
+                                ),
                                 const SizedBox(height: 16),
                               ],
                               _buildMaterialsSection(materials),
@@ -988,25 +994,6 @@ class _ModeCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.errorBannerBackground,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.errorBannerBorder),
-      ),
-      child: Text(message, style: AppTypography.bannerBody),
     );
   }
 }

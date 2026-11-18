@@ -8,6 +8,8 @@ import 'package:tadarab_app/models/quiz_session.dart';
 import 'package:tadarab_app/models/study_material.dart';
 import 'package:tadarab_app/screens/quiz/quiz_navigation.dart';
 import 'package:tadarab_app/screens/quiz/quiz_sessions_screen.dart';
+import 'package:tadarab_app/services/quiz_generation_service.dart'
+    show GenerationFailure;
 import 'package:tadarab_app/services/quiz_session_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
@@ -506,7 +508,31 @@ void main() {
         await tester.pump();
         await tester.pump();
 
-        expect(find.text('Retake failed. Please try again.'), findsOneWidget);
+        expect(find.text(kQuizGenericFailureMessage), findsOneWidget);
+        expect(find.byType(GenerationLoadingOverlay), findsNothing);
+        expect(_retakeButton(tester).onPressed, isNotNull);
+      },
+    );
+
+    testWidgets(
+      'an unreachable-Worker retake failure shows the network message, '
+      'not the generic one',
+      (tester) async {
+        final original = _session(id: 's1', completed: true, mode: Mode.learning);
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          retakeSessionError: GenerationFailure(
+            'simulated network failure',
+            isUnreachable: true,
+          ),
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Retake'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text(kQuizNetworkFailureMessage), findsOneWidget);
         expect(find.byType(GenerationLoadingOverlay), findsNothing);
         expect(_retakeButton(tester).onPressed, isNotNull);
       },

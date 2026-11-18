@@ -10,6 +10,7 @@ import 'package:tadarab_app/services/flashcard_generation_service.dart';
 import 'package:tadarab_app/services/flashcard_session_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/widgets/app_button.dart';
+import 'package:tadarab_app/widgets/app_error_banner.dart';
 
 import '../../../helpers/fake_flashcard_session_service.dart';
 
@@ -293,21 +294,47 @@ void main() {
     },
   );
 
-  testWidgets('a generation failure shows a retry-able generic-failure '
-      'message', (tester) async {
-    final service = FakeFlashcardSessionService(
-      materials: [_material],
-      generationError: Exception('boom'),
-    );
-    await tester.pumpWidget(_wrap(service));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'a generic generation failure shows the AppErrorBanner with heading '
+    "'Could not generate flashcards' and the generic message",
+    (tester) async {
+      final service = FakeFlashcardSessionService(
+        materials: [_material],
+        generationError: Exception('boom'),
+      );
+      await tester.pumpWidget(_wrap(service));
+      await tester.pumpAndSettle();
 
-    await _selectMaterialAndDifficulty(tester);
-    await tester.tap(find.text('Generate flashcards'));
-    await tester.pumpAndSettle();
+      await _selectMaterialAndDifficulty(tester);
+      await tester.tap(find.text('Generate flashcards'));
+      await tester.pumpAndSettle();
 
-    expect(find.text(kFlashcardGenericFailureMessage), findsOneWidget);
-  });
+      expect(find.byType(AppErrorBanner), findsOneWidget);
+      expect(find.text('Could not generate flashcards'), findsOneWidget);
+      expect(find.text(kFlashcardGenericFailureMessage), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'an unreachable-Worker generation failure shows the AppErrorBanner '
+    "with heading 'Could not generate flashcards' and the network message",
+    (tester) async {
+      final service = FakeFlashcardSessionService(
+        materials: [_material],
+        generationError: WorkerUnreachableException(),
+      );
+      await tester.pumpWidget(_wrap(service));
+      await tester.pumpAndSettle();
+
+      await _selectMaterialAndDifficulty(tester);
+      await tester.tap(find.text('Generate flashcards'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AppErrorBanner), findsOneWidget);
+      expect(find.text('Could not generate flashcards'), findsOneWidget);
+      expect(find.text(kFlashcardNetworkFailureMessage), findsOneWidget);
+    },
+  );
 
   group('keyboard inset', () {
     testWidgets(

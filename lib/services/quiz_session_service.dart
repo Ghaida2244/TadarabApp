@@ -13,6 +13,30 @@ import 'material_catalog.dart';
 import 'quiz_generation_service.dart';
 import 'streak_service.dart';
 
+// Same wording as Flashcards' kFlashcardNetworkFailureMessage/
+// kFlashcardGenericFailureMessage (flashcard_session_service.dart) — the
+// two features show identical text for these two cases; a test asserts
+// the two pairs can't drift apart. Placed here (not in
+// quiz_generation_service.dart) to mirror exactly where Flashcards keeps
+// its own pair, and because quiz_generation_service.dart cannot import
+// this file (it would be circular — this file already imports it).
+const kQuizNetworkFailureMessage =
+    "Couldn't reach Tadarab. Check your connection and try again.";
+const kQuizGenericFailureMessage =
+    'Something went wrong. Please try again.';
+
+/// Shown when generation produced zero usable questions (see
+/// [NoQuestionsGeneratedException]) and the Worker sent no `note` of its
+/// own explaining why. Used identically by both the Setup screen and a
+/// Retake — previously Retake had its own, different wording
+/// ("Couldn't generate a retake from this material."); unified to this
+/// one text everywhere. Flashcards' parallel case
+/// (`FlashcardSessionService.retake`'s zero-items fallback) already says
+/// "...couldn't support any flashcards..." — the same sentence with the
+/// noun swapped.
+const kQuizNoItemsMessage =
+    "Your material couldn't support any questions. Try adding another material.";
+
 /// Points earned per correct answer — per the Quiz design's fixed rule
 /// ("Points = 4 per correct answer, and they feed the home streak counts").
 const int pointsPerCorrectAnswer = 4;
