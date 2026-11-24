@@ -114,17 +114,25 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
     super.dispose();
   }
 
+  // Does not check _count: a typed value still being clamped in _generate
+  // must not briefly disable Generate before that clamp runs.
   bool get _canGenerate =>
       _selectedMaterialIds.isNotEmpty &&
       _selectedDifficulties.isNotEmpty &&
-      _count > 0 &&
       !_generating;
 
   Future<void> _generate(List<StudyMaterial> materials) async {
+    // Clamp the count first. Generate can be tapped before a typed value
+    // is committed, so the raw state may still be outside the allowed range.
+    final clampedCount = _count.clamp(_kMinCount, _kMaxCount);
+
     setState(() {
+      _count = clampedCount;
       _generating = true;
       _errorMessage = null;
     });
+    // Close the keyboard. This lets the count field show the clamped value.
+    FocusScope.of(context).unfocus();
 
     try {
       final result = await _service.generateFlashcards(
@@ -723,6 +731,13 @@ class _CountStepperState extends State<_CountStepper> {
     if (!_focusNode.hasFocus) _commit();
   }
 
+  // Updates the count as the student types. Skips an empty or invalid
+  // value, and never clamps here, so a partial number is not changed.
+  void _onChangedText(String text) {
+    final parsed = int.tryParse(text);
+    if (parsed != null) widget.onChanged(parsed);
+  }
+
   // Invalid or empty input reverts to the last valid count; a valid number
   // is clamped to the same [_kMinCount, _kMaxCount] range as the +/- buttons.
   void _commit() {
@@ -756,6 +771,7 @@ class _CountStepperState extends State<_CountStepper> {
             textAlign: TextAlign.center,
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            onChanged: _onChangedText,
             onSubmitted: (_) => _focusNode.unfocus(),
             style: const TextStyle(
               fontFamily: 'Nunito',
