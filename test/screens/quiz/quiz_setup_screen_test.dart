@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tadarab_app/models/enums.dart';
@@ -56,6 +58,40 @@ List<Question> _draftQuestions({int count = 5}) {
       sessionId: 'new-session',
     ),
   );
+}
+
+// Captures the count Generate actually sent, and can hold the generation
+// Future open so a test can see the overlay before it resolves — neither
+// is something the shared FakeQuizSessionService exposes.
+class _CountCapturingQuizSessionService extends FakeQuizSessionService {
+  _CountCapturingQuizSessionService({
+    required List<StudyMaterial> materials,
+    required GeneratedSessionResult createSessionResult,
+  }) : super(materials: materials, createSessionResult: createSessionResult);
+
+  int? lastCount;
+  Completer<GeneratedSessionResult>? pendingCreateSession;
+
+  @override
+  Future<GeneratedSessionResult> createSession({
+    required String courseId,
+    required List<StudyMaterial> materials,
+    required List<DifficultyLevel> difficulties,
+    required int count,
+    required Mode mode,
+    String? customPrompt,
+  }) {
+    lastCount = count;
+    if (pendingCreateSession != null) return pendingCreateSession!.future;
+    return super.createSession(
+      courseId: courseId,
+      materials: materials,
+      difficulties: difficulties,
+      count: count,
+      mode: mode,
+      customPrompt: customPrompt,
+    );
+  }
 }
 
 Future<void> _pump(WidgetTester tester, FakeQuizSessionService service) async {
@@ -270,6 +306,105 @@ void main() {
       expect(find.text('10'), findsOneWidget); // reverted, not left empty
     },
   );
+
+  group('tapping Generate directly after typing, with no Done and no blur', () {
+    testWidgets(
+      'a valid typed count is used for both the request and the '
+      'generating overlay line',
+      (tester) async {
+        final result = GeneratedSessionResult(
+          session: _newSession(numberOfQuestions: 20),
+          note: null,
+          requestedCount: 20,
+          questions: _draftQuestions(count: 20),
+        );
+        final service = _CountCapturingQuizSessionService(
+          materials: [_material],
+          createSessionResult: result,
+        )..pendingCreateSession = Completer<GeneratedSessionResult>();
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Lecture 1 — Intro'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byKey(const ValueKey('count-field')), '20');
+        await tester.tap(find.text('Generate quiz'));
+        await tester.pump();
+
+        expect(service.lastCount, 20);
+        expect(find.textContaining('Aiming for 20 questions'), findsOneWidget);
+
+        service.pendingCreateSession!.complete(result);
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets('a typed count above the maximum sends the maximum', (
+      tester,
+    ) async {
+      final service = _CountCapturingQuizSessionService(
+        materials: [_material],
+        createSessionResult: GeneratedSessionResult(
+          session: _newSession(numberOfQuestions: 150),
+          note: null,
+          requestedCount: 150,
+          questions: _draftQuestions(count: 150),
+        ),
+      );
+      await _pump(tester, service);
+
+      await tester.tap(find.text('Lecture 1 — Intro'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const ValueKey('count-field')), '9999');
+      await tester.tap(find.text('Generate quiz'));
+      await tester.pumpAndSettle();
+
+      expect(service.lastCount, 150);
+    });
+
+    testWidgets('a typed 0 sends the minimum', (tester) async {
+      final service = _CountCapturingQuizSessionService(
+        materials: [_material],
+        createSessionResult: GeneratedSessionResult(
+          session: _newSession(numberOfQuestions: 5),
+          note: null,
+          requestedCount: 5,
+          questions: _draftQuestions(count: 5),
+        ),
+      );
+      await _pump(tester, service);
+
+      await tester.tap(find.text('Lecture 1 — Intro'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const ValueKey('count-field')), '0');
+      await tester.tap(find.text('Generate quiz'));
+      await tester.pumpAndSettle();
+
+      expect(service.lastCount, 5);
+    });
+
+    testWidgets('clearing the field sends the last valid value', (
+      tester,
+    ) async {
+      final service = _CountCapturingQuizSessionService(
+        materials: [_material],
+        createSessionResult: GeneratedSessionResult(
+          session: _newSession(numberOfQuestions: 10),
+          note: null,
+          requestedCount: 10,
+          questions: _draftQuestions(count: 10),
+        ),
+      );
+      await _pump(tester, service);
+
+      await tester.tap(find.text('Lecture 1 — Intro'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const ValueKey('count-field')), '');
+      await tester.tap(find.text('Generate quiz'));
+      await tester.pumpAndSettle();
+
+      expect(service.lastCount, 10); // the untouched default
+    });
+  });
 
   testWidgets('extra instructions: counter warns approaching, then at, the 300 limit', (tester) async {
     await _pump(tester, FakeQuizSessionService(materials: [_material]));

@@ -482,6 +482,106 @@ void main() {
     });
   });
 
+  group('tapping Generate directly after typing, with no Done and no blur', () {
+    testWidgets(
+      'a valid typed count is used for both the request and the '
+      'generating overlay line',
+      (tester) async {
+        final pending = Completer<FlashcardGenerationResult>();
+        final service = FakeFlashcardSessionService(
+          materials: [_material],
+          pendingGeneration: pending,
+          flashcardsBySessionId: {'session-new': _flashcards(20)},
+        );
+        await tester.pumpWidget(_wrap(service));
+        await tester.pumpAndSettle();
+
+        await _selectMaterialAndDifficulty(tester);
+        await tester.enterText(
+          find.byKey(const ValueKey('count-field')),
+          '20',
+        );
+        await tester.tap(find.text('Generate flashcards'));
+        await tester.pump();
+
+        expect(service.lastGenerateCount, 20);
+        expect(find.text('Aiming for 20 flashcards · easy'), findsOneWidget);
+
+        pending.complete(
+          FlashcardGenerationResult(items: _items(20), requestedCount: 20),
+        );
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets('a typed count above the maximum sends the maximum', (
+      tester,
+    ) async {
+      final service = FakeFlashcardSessionService(
+        materials: [_material],
+        generationResult: FlashcardGenerationResult(
+          items: _items(150),
+          requestedCount: 150,
+        ),
+        flashcardsBySessionId: {'session-new': _flashcards(150)},
+      );
+      await tester.pumpWidget(_wrap(service));
+      await tester.pumpAndSettle();
+
+      await _selectMaterialAndDifficulty(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('count-field')),
+        '9999',
+      );
+      await tester.tap(find.text('Generate flashcards'));
+      await tester.pumpAndSettle();
+
+      expect(service.lastGenerateCount, 150);
+    });
+
+    testWidgets('a typed 0 sends the minimum', (tester) async {
+      final service = FakeFlashcardSessionService(
+        materials: [_material],
+        generationResult: FlashcardGenerationResult(
+          items: _items(5),
+          requestedCount: 5,
+        ),
+        flashcardsBySessionId: {'session-new': _flashcards(5)},
+      );
+      await tester.pumpWidget(_wrap(service));
+      await tester.pumpAndSettle();
+
+      await _selectMaterialAndDifficulty(tester);
+      await tester.enterText(find.byKey(const ValueKey('count-field')), '0');
+      await tester.tap(find.text('Generate flashcards'));
+      await tester.pumpAndSettle();
+
+      expect(service.lastGenerateCount, 5);
+    });
+
+    testWidgets('clearing the field sends the last valid value', (
+      tester,
+    ) async {
+      final service = FakeFlashcardSessionService(
+        materials: [_material],
+        generationResult: FlashcardGenerationResult(
+          items: _items(10),
+          requestedCount: 10,
+        ),
+        flashcardsBySessionId: {'session-new': _flashcards(10)},
+      );
+      await tester.pumpWidget(_wrap(service));
+      await tester.pumpAndSettle();
+
+      await _selectMaterialAndDifficulty(tester);
+      await tester.enterText(find.byKey(const ValueKey('count-field')), '');
+      await tester.tap(find.text('Generate flashcards'));
+      await tester.pumpAndSettle();
+
+      expect(service.lastGenerateCount, 10); // the untouched default
+    });
+  });
+
   group('dismiss keyboard', () {
     Future<void> pumpSmall(WidgetTester tester) async {
       tester.view.physicalSize = const Size(360, 640);
