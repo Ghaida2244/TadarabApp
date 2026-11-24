@@ -8,6 +8,8 @@ import 'package:tadarab_app/models/quiz_session.dart';
 import 'package:tadarab_app/models/study_material.dart';
 import 'package:tadarab_app/screens/quiz/quiz_navigation.dart';
 import 'package:tadarab_app/screens/quiz/quiz_sessions_screen.dart';
+import 'package:tadarab_app/services/courses_service.dart'
+    show CoursesFailure;
 import 'package:tadarab_app/services/quiz_generation_service.dart'
     show GenerationFailure;
 import 'package:tadarab_app/services/quiz_session_service.dart';
@@ -540,6 +542,49 @@ void main() {
     );
 
     testWidgets(
+      'a retake blocked by a deleted material shows the deleted-material '
+      'message, not the generic one — and the Retake button stays visible',
+      (tester) async {
+        final original = _session(id: 's1', completed: true, mode: Mode.learning);
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          retakeSessionError: SessionMaterialDeletedException(),
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Retake'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text(kQuizMaterialDeletedMessage), findsOneWidget);
+        expect(find.byType(GenerationLoadingOverlay), findsNothing);
+        expect(find.text('Retake'), findsOneWidget);
+        expect(_retakeButton(tester).onPressed, isNotNull);
+      },
+    );
+
+    testWidgets(
+      'a retake whose materials fetch fails (offline) shows the network '
+      'message, not the generic one',
+      (tester) async {
+        final original = _session(id: 's1', completed: true, mode: Mode.learning);
+        final service = FakeQuizSessionService(
+          sessions: [original],
+          retakeSessionError: CoursesFailure(kNetworkFailureMessage),
+        );
+        await _pump(tester, service);
+
+        await tester.tap(find.text('Retake'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text(kNetworkFailureMessage), findsOneWidget);
+        expect(find.byType(GenerationLoadingOverlay), findsNothing);
+        expect(_retakeButton(tester).onPressed, isNotNull);
+      },
+    );
+
+    testWidgets(
       "a successful retake that falls short of the requested count shows "
       "Flashcards' style of message",
       (tester) async {
@@ -729,6 +774,58 @@ void main() {
         await _pump(tester, service);
 
         expect(find.text('Material removed'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'failure case: only one of several materials deleted still shows '
+      '"Material removed", not just the survivors',
+      (tester) async {
+        final session = QuizSession(
+          sessionId: 's1',
+          createdAt: DateTime(2026, 1, 1),
+          isSessionCompleted: true,
+          difficultyLevels: const [DifficultyLevel.medium],
+          email: 'a@b.com',
+          courseId: 'course-1',
+          materialIds: const ['m1', 'm2'],
+          numberOfQuestions: 10,
+          mode: Mode.exam,
+          correctAnswers: 8,
+        );
+        final service = FakeQuizSessionService(
+          sessions: [session],
+          materials: [
+            // 'm1' still exists; 'm2' is gone.
+            StudyMaterial(
+              materialId: 'm1',
+              title: 'Lecture 1',
+              type: 'pptx',
+              document: '',
+              courseId: 'course-1',
+              extractedText: '',
+            ),
+          ],
+        );
+        await _pump(tester, service);
+
+        expect(find.text('Material removed'), findsOneWidget);
+        expect(find.text('Lecture 1'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'edge case: a failed materials fetch shows no material label at '
+      'all, never "Material removed"',
+      (tester) async {
+        final service = FakeQuizSessionService(
+          sessions: [_session(id: 's1', completed: true)], // materialIds: ['m1']
+          fetchMaterialsError: Exception('offline'),
+        );
+        await _pump(tester, service);
+
+        expect(find.text('Material removed'), findsNothing);
+        expect(find.byType(ScrollableTitlePill), findsNothing);
       },
     );
 

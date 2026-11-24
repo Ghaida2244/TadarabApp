@@ -25,6 +25,21 @@ class WorkerResponseException implements Exception {
   final Map<String, dynamic>? body;
 }
 
+/// Thrown by [FlashcardGenerationService.generateFlashcards] on a retake
+/// (`isRetake: true`) when at least one of the session's materials no
+/// longer exists — stops before any generation request is sent.
+class SessionMaterialDeletedException implements Exception {}
+
+/// True when at least one of [materialIds] is missing from
+/// [existingMaterialIds] — the material was deleted since the session was
+/// created. Shared by the retake check above and
+/// flashcard_sessions_screen.dart's session-card label, so both always
+/// agree.
+bool sessionHasDeletedMaterial(
+  List<String> materialIds,
+  Set<String> existingMaterialIds,
+) => materialIds.any((id) => !existingMaterialIds.contains(id));
+
 /// One generated flashcard, as returned by the Worker's `items` array.
 class FlashcardGenerationItem {
   FlashcardGenerationItem({
@@ -150,6 +165,16 @@ class FlashcardGenerationService {
     final materials = allMaterials
         .where((m) => materialIds.contains(m.materialId))
         .toList();
+
+    // Stop here, before generating anything, if this is a retake and a
+    // material was deleted.
+    if (isRetake &&
+        sessionHasDeletedMaterial(
+          materialIds,
+          allMaterials.map((m) => m.materialId).toSet(),
+        )) {
+      throw SessionMaterialDeletedException();
+    }
 
     String? token;
     try {

@@ -20,6 +20,7 @@ class FakeQuizSessionService extends QuizSessionService {
     this.retakeSessionResult,
     this.retakeSessionError,
     this.pendingRetakeSession,
+    this.fetchMaterialsError,
   }) : materials = materials ?? const [],
        sessions = List.of(sessions ?? const []),
        questionsBySession = {
@@ -63,8 +64,14 @@ class FakeQuizSessionService extends QuizSessionService {
   // draft never calls).
   List<Question>? lastSubmittedExamQuestions;
 
+  /// When set, [fetchMaterials] throws this instead of returning
+  /// [materials] — simulates the course's materials failing to load
+  /// (e.g. offline), distinct from a successful fetch with none deleted.
+  Object? fetchMaterialsError;
+
   @override
   Future<List<StudyMaterial>> fetchMaterials(String courseId) async {
+    if (fetchMaterialsError != null) throw fetchMaterialsError!;
     return materials;
   }
 

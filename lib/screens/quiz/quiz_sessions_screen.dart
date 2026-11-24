@@ -5,6 +5,7 @@ import '../../logic/session_stacking.dart';
 import '../../models/enums.dart';
 import '../../models/quiz_session.dart';
 import '../../models/session.dart';
+import '../../services/courses_service.dart' show CoursesFailure;
 import '../../services/quiz_generation_service.dart' show GenerationFailure;
 import '../../services/quiz_session_service.dart';
 import '../../theme/app_theme.dart';
@@ -38,18 +39,30 @@ const _kButtonSideInset = 9.0;
 /// sync.
 const _kButtonHeight = 46.0;
 
-/// materialId -> title lookup for [session]'s own materials, comma-joined
-/// — or "Material removed" if none resolve. Shared by [_SessionCard] and
-/// the focus view's header subtitle, so both read the exact same label.
-String materialsLabelFor(
+/// materialId -> title lookup for [session]'s own materials, comma-joined —
+/// "Material removed" if at least one no longer exists (all or only some),
+/// or null if [materialTitles] itself is null (the course's materials
+/// failed to load, so there's nothing reliable to check against — the
+/// caller shows no label at all rather than guessing). Shared by
+/// [_SessionCard] and the focus view's header subtitle, and uses the same
+/// [sessionHasDeletedMaterial] check [QuizSessionService.retakeSession]
+/// uses, so the label and Retake always agree.
+String? materialsLabelFor(
   QuizSession session,
-  Map<String, String> materialTitles,
+  Map<String, String>? materialTitles,
 ) {
+  if (materialTitles == null) return null;
+  if (sessionHasDeletedMaterial(
+    session.materialIds,
+    materialTitles.keys.toSet(),
+  )) {
+    return 'Material removed';
+  }
   final titles = session.materialIds
       .map((id) => materialTitles[id])
       .whereType<String>()
       .toList();
-  return titles.isEmpty ? 'Material removed' : titles.join(', ');
+  return titles.join(', ');
 }
 
 /// The Quiz sessions list for one course — empty state, or sessions grouped
@@ -79,8 +92,10 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
   late Future<List<QuizSession>> _sessionsFuture;
   // For the materials badge on each card (design's navy-bordered, scrollable
   // pill listing which material(s) a session was generated from) — a
-  // materialId -> title lookup, fetched once alongside the sessions.
-  late Future<Map<String, String>> _materialTitlesFuture;
+  // materialId -> title lookup, fetched once alongside the sessions. Null
+  // means the fetch itself failed, not "no materials" — see
+  // _loadMaterialTitles and materialsLabelFor.
+  late Future<Map<String, String>?> _materialTitlesFuture;
 
   // Per-session, not one screen-wide flag — mirrors Flashcards'
   // FlashcardSessionsScreen, so retaking one session doesn't freeze every
@@ -142,21 +157,21 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
   @override
   void didPopNext() => _reload();
 
-  Future<Map<String, String>> _loadMaterialTitles() async {
+  Future<Map<String, String>?> _loadMaterialTitles() async {
     // Best-effort, not a hard dependency: this only feeds the materials
-    // badge on each session card, and _SessionCard already falls back to
-    // "Material removed" for any id it can't resolve. It matters because
-    // this Future's only consumer (build(), below) is nested inside
-    // _sessionsFuture's own FutureBuilder and never gets built at all on
-    // _sessionsFuture's error/empty branches — so if fetchMaterials also
-    // failed there, that failure would otherwise go completely unhandled
-    // (nothing ever attaches to this Future) instead of just showing
-    // unlabeled badges.
+    // badge on each session card. It matters because this Future's only
+    // consumer (build(), below) is nested inside _sessionsFuture's own
+    // FutureBuilder and never gets built at all on _sessionsFuture's
+    // error/empty branches — so if fetchMaterials also failed there, that
+    // failure would otherwise go completely unhandled (nothing ever
+    // attaches to this Future) instead of just showing unlabeled badges.
+    // Returns null on failure, not an empty map — materialsLabelFor treats
+    // those two cases differently (show nothing vs. "Material removed").
     try {
       final materials = await widget.service.fetchMaterials(widget.courseId);
       return {for (final m in materials) m.materialId: m.title};
     } catch (_) {
-      return const {};
+      return null;
     }
   }
 
@@ -294,6 +309,24 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.note ?? kQuizNoItemsMessage)),
       );
+    } on SessionMaterialDeletedException {
+      if (!mounted) return;
+      setState(() {
+        _retakingSessionIds.remove(session.sessionId);
+        _retakingSource = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(kQuizMaterialDeletedMessage)),
+      );
+    } on CoursesFailure catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _retakingSessionIds.remove(session.sessionId);
+        _retakingSource = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
     } on GenerationFailure catch (e) {
       if (!mounted) return;
       setState(() {
@@ -377,15 +410,17 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
         }
         if (openGroup == null) return const SizedBox.shrink();
         final group = openGroup;
-        return FutureBuilder<Map<String, String>>(
+        return FutureBuilder<Map<String, String>?>(
           future: _materialTitlesFuture,
           builder: (context, materialsSnapshot) {
-            final materialTitles = materialsSnapshot.data ?? const {};
+            final materialTitles = materialsSnapshot.data;
             return SessionStackFocusView(
               title:
                   '${group.sessions.length} attempts · '
                   '${group.isCompleted ? 'Completed' : 'In progress'}',
-              subtitle: materialsLabelFor(group.top, materialTitles),
+              // No label at all while materials haven't loaded or failed
+              // to load — never a wrong "Material removed".
+              subtitle: materialsLabelFor(group.top, materialTitles) ?? '',
               itemCount: group.sessions.length,
               itemBuilder: (context, index) {
                 final session = group.sessions[index];
@@ -472,10 +507,10 @@ class _QuizSessionsScreenState extends State<QuizSessionsScreen>
                 return const _EmptyState();
               }
               final entries = groupQuizSessions(sessions);
-              return FutureBuilder<Map<String, String>>(
+              return FutureBuilder<Map<String, String>?>(
                 future: _materialTitlesFuture,
                 builder: (context, materialsSnapshot) {
-                  final materialTitles = materialsSnapshot.data ?? const {};
+                  final materialTitles = materialsSnapshot.data;
                   return ListView.separated(
                     padding: const EdgeInsets.fromLTRB(22, 0, 22, 12),
                     itemCount: entries.length,
@@ -668,10 +703,10 @@ class _SessionCard extends StatelessWidget {
 
   final QuizSessionService service;
 
-  /// materialId -> title, for the materials badge. A session's own
-  /// materialIds that aren't in this map (deleted since) are simply
-  /// skipped — see [materialsLabelFor].
-  final Map<String, String> materialTitles;
+  /// materialId -> title, for the materials badge — or null when the
+  /// course's materials failed to load; see [materialsLabelFor], which
+  /// decides what to show (or not show) for each case.
+  final Map<String, String>? materialTitles;
 
   final VoidCallback onAct;
   final VoidCallback? onRetake;
@@ -700,6 +735,7 @@ class _SessionCard extends StatelessWidget {
     // untouched, since that switch only ever affected the done branch.
     final detail = complete ? '${session.numberOfQuestions} questions' : null;
     final label = sessionCardRetakeLabel(session, sessionsInList);
+    final materialsLabel = materialsLabelFor(session, materialTitles);
 
     return Container(
       decoration: BoxDecoration(
@@ -734,13 +770,15 @@ class _SessionCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ScrollableTitlePill(
-                      text: materialsLabelFor(session, materialTitles),
-                      style: AppTypography.helper.copyWith(
-                        color: AppColors.navy,
+                    if (materialsLabel != null) ...[
+                      ScrollableTitlePill(
+                        text: materialsLabel,
+                        style: AppTypography.helper.copyWith(
+                          color: AppColors.navy,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 10),
+                      const SizedBox(height: 10),
+                    ],
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
