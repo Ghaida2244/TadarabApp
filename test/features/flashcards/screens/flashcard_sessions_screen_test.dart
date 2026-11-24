@@ -7,8 +7,9 @@ import 'package:tadarab_app/features/flashcards/screens/flashcard_sessions_scree
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/flashcard.dart';
 import 'package:tadarab_app/models/flashcard_session.dart';
+import 'package:tadarab_app/models/study_material.dart';
 import 'package:tadarab_app/services/flashcard_generation_service.dart'
-    show WorkerUnreachableException;
+    show SessionMaterialDeletedException, WorkerUnreachableException;
 import 'package:tadarab_app/services/flashcard_session_service.dart';
 import 'package:tadarab_app/theme/app_theme.dart';
 import 'package:tadarab_app/utils/error_messages.dart';
@@ -31,6 +32,18 @@ AppButton _retakeButton(WidgetTester tester) => tester.widget<AppButton>(
 /// `find.textContaining('Retake')` ambiguous for this.
 final Finder _retakeChainLabel = find.byWidgetPredicate(
   (w) => w is Text && RegExp(r'^RETAKE \d+$').hasMatch(w.data ?? ''),
+);
+
+/// Matches every `_session()`'s hardcoded `materialIds: ['m1']` — passed as
+/// `materials:` to [FakeFlashcardSessionService] so its current materials
+/// (via `fetchMaterials()`) agree with the session, i.e. nothing deleted.
+final _material = StudyMaterial(
+  materialId: 'm1',
+  title: 'Lecture 1 - Introduction',
+  type: 'pptx',
+  document: 'materials/m1.pptx',
+  courseId: 'course-1',
+  extractedText: '[Slide 1: Introduction]\nSample extracted text.',
 );
 
 List<Flashcard> _flashcards(int count, {String sessionId = 's1'}) =>
@@ -553,6 +566,33 @@ void main() {
     );
 
     testWidgets(
+      'a retake blocked by a deleted material shows the deleted-material '
+      'message, not the generic one — and the Retake button stays visible',
+      (tester) async {
+        final service = FakeFlashcardSessionService(
+          sessions: [
+            _session(id: 's1', completed: true, knownCount: 8),
+          ],
+          writeError: SessionMaterialDeletedException(),
+        );
+        await tester.pumpWidget(_wrap(service));
+        await tester.pump();
+
+        await tester.tap(find.text('Retake'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          find.text(kFlashcardMaterialDeletedMessage),
+          findsOneWidget,
+        );
+        expect(find.byType(GenerationLoadingOverlay), findsNothing);
+        expect(find.text('Retake'), findsOneWidget);
+        expect(_retakeButton(tester).onPressed, isNotNull);
+      },
+    );
+
+    testWidgets(
       'any other raw retake failure shows the generic message',
       (tester) async {
         final service = FakeFlashcardSessionService(
@@ -585,6 +625,7 @@ void main() {
       await tester.pumpWidget(
         _wrap(
           FakeFlashcardSessionService(
+            materials: [_material],
             sessions: [
               _session(
                 id: 's1',
@@ -596,6 +637,9 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump();
+      // One more pump: the materials-load Future (for the deleted-material
+      // check) resolves a frame later than the sessions stream.
       await tester.pump();
 
       expect(find.text('Lecture 1'), findsOneWidget);
@@ -615,6 +659,7 @@ void main() {
       await tester.pumpWidget(
         _wrap(
           FakeFlashcardSessionService(
+            materials: [_material],
             sessions: [
               _session(id: 's1', completed: false, materialTitles: titles),
             ],
@@ -622,6 +667,9 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump();
+      // One more pump: the materials-load Future (for the deleted-material
+      // check) resolves a frame later than the sessions stream.
       await tester.pump();
 
       final joined = titles.join(', ');
@@ -655,6 +703,91 @@ void main() {
             "isn't actually scrollable.",
       );
     });
+  });
+
+  group('deleted-material label', () {
+    // One extra pump beyond the usual two: the materials-load Future (for
+    // the deleted-material check) resolves a frame later than the
+    // sessions stream.
+    Future<void> pumpThree(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+    }
+
+    testWidgets('all materials deleted shows "Material removed"', (
+      tester,
+    ) async {
+      final service = FakeFlashcardSessionService(
+        sessions: [_session(id: 's1', completed: true)], // materialIds: ['m1']
+        materials: const [], // 'm1' resolves to nothing
+      );
+      await tester.pumpWidget(_wrap(service));
+      await pumpThree(tester);
+
+      expect(find.text('Material removed'), findsOneWidget);
+      expect(find.text('Lecture 1 - Introduction'), findsNothing);
+    });
+
+    testWidgets(
+      'only one of several materials deleted still shows "Material '
+      'removed", not just the survivors',
+      (tester) async {
+        final session = FlashcardSession(
+          sessionId: 's1',
+          createdAt: DateTime(2026, 1, 1),
+          difficultyLevels: const [DifficultyLevel.easy],
+          email: 'student@example.com',
+          courseId: 'course-1',
+          materialIds: const ['m1', 'm2'],
+          materialTitles: const ['Lecture 1', 'Lecture 2'],
+          numberOfFlashcards: 10,
+          isSessionCompleted: true,
+          knownCount: 8,
+          needsReviewCount: 2,
+          currentFlashcardIndex: 9,
+        );
+        final service = FakeFlashcardSessionService(
+          sessions: [session],
+          materials: [_material], // only 'm1' survives; 'm2' is gone
+        );
+        await tester.pumpWidget(_wrap(service));
+        await pumpThree(tester);
+
+        expect(find.text('Material removed'), findsOneWidget);
+        expect(find.text('Lecture 1, Lecture 2'), findsNothing);
+      },
+    );
+
+    testWidgets('no materials deleted shows the stored material names', (
+      tester,
+    ) async {
+      final service = FakeFlashcardSessionService(
+        materials: [_material],
+        sessions: [_session(id: 's1', completed: true)],
+      );
+      await tester.pumpWidget(_wrap(service));
+      await pumpThree(tester);
+
+      expect(find.text('Lecture 1 - Introduction'), findsOneWidget);
+      expect(find.text('Material removed'), findsNothing);
+    });
+
+    testWidgets(
+      'a failed materials fetch shows the stored titles, never '
+      '"Material removed"',
+      (tester) async {
+        final service = FakeFlashcardSessionService(
+          sessions: [_session(id: 's1', completed: true)],
+          fetchMaterialsError: Exception('offline'),
+        );
+        await tester.pumpWidget(_wrap(service));
+        await pumpThree(tester);
+
+        expect(find.text('Lecture 1 - Introduction'), findsOneWidget);
+        expect(find.text('Material removed'), findsNothing);
+      },
+    );
   });
 
   group('Retake Stacks: focus view', () {

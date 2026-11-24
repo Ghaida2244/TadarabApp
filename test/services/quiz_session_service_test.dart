@@ -5,6 +5,9 @@ import 'package:mock_exceptions/mock_exceptions.dart';
 import 'package:tadarab_app/models/enums.dart';
 import 'package:tadarab_app/models/question.dart';
 import 'package:tadarab_app/models/quiz_session.dart';
+import 'package:tadarab_app/models/study_material.dart';
+import 'package:tadarab_app/services/material_catalog.dart';
+import 'package:tadarab_app/services/quiz_generation_service.dart';
 import 'package:tadarab_app/services/quiz_session_service.dart';
 import 'package:tadarab_app/services/streak_service.dart';
 
@@ -14,7 +17,12 @@ import 'package:tadarab_app/services/streak_service.dart';
 /// approach test/services/calendar_service_test.dart uses for
 /// [CalendarService.currentEmail].
 class _SignedInQuizSessionService extends QuizSessionService {
-  _SignedInQuizSessionService({super.firestore, super.streakService});
+  _SignedInQuizSessionService({
+    super.firestore,
+    super.streakService,
+    super.materialCatalog,
+    super.generationClient,
+  });
 
   @override
   String? get currentUid => 'uid-1';
@@ -22,6 +30,52 @@ class _SignedInQuizSessionService extends QuizSessionService {
   @override
   String? get currentEmail => 'student@example.com';
 }
+
+/// A controllable [MaterialCatalog] for retakeSession's deleted-material
+/// check — [materials] is whatever the course currently has, independent
+/// of what a session's own materialIds say.
+class _FakeMaterialCatalog implements MaterialCatalog {
+  _FakeMaterialCatalog(this.materials);
+
+  final List<StudyMaterial> materials;
+
+  @override
+  Future<List<StudyMaterial>> fetchMaterials(String courseId) async =>
+      materials;
+
+  @override
+  Future<String> sourceTextFor(StudyMaterial material) async =>
+      material.extractedText;
+}
+
+/// Thrown by [_NeverCalledGenerationService] if generation is ever reached
+/// — proves the deleted-material check really stops retakeSession before
+/// any generation request, by failing with a distinct exception type
+/// instead of the real network call.
+class _GenerationWasCalledException implements Exception {}
+
+class _NeverCalledGenerationService extends QuizGenerationService {
+  @override
+  Future<GenerationResult> generateQuiz({
+    required int count,
+    required List<DifficultyLevel> difficulties,
+    String? customPrompt,
+    required List<GenerationMaterial> materials,
+    bool isRetake = false,
+    List<String> previousTopics = const [],
+  }) async {
+    throw _GenerationWasCalledException();
+  }
+}
+
+StudyMaterial _material(String id) => StudyMaterial(
+  materialId: id,
+  title: 'Title $id',
+  type: 'pptx',
+  document: 'doc/$id.pptx',
+  courseId: 'c1',
+  extractedText: 'Extracted text for $id.',
+);
 
 QuizSession _session({
   required String id,
@@ -443,6 +497,113 @@ void main() {
         final data = (await studentDoc().get()).data()!;
         expect(data['totalPoints'], 700);
         expect(data['currentRank'], 'Rising Learner');
+      },
+    );
+  });
+
+  group('sessionHasDeletedMaterial', () {
+    test('true when every materialId is missing', () {
+      expect(sessionHasDeletedMaterial(['m1', 'm2'], {}), isTrue);
+    });
+
+    test('true when only one of several materialIds is missing', () {
+      expect(
+        sessionHasDeletedMaterial(['m1', 'm2', 'm3'], {'m1', 'm2'}),
+        isTrue,
+      );
+    });
+
+    test('false when every materialId still exists', () {
+      expect(
+        sessionHasDeletedMaterial(['m1', 'm2'], {'m1', 'm2', 'm3'}),
+        isFalse,
+      );
+    });
+
+    test('false for a session with no materials at all', () {
+      expect(sessionHasDeletedMaterial([], {'m1'}), isFalse);
+    });
+  });
+
+  group('retakeSession — deleted material', () {
+    late FakeFirebaseFirestore firestore;
+
+    QuizSessionService buildService(List<StudyMaterial> currentMaterials) =>
+        _SignedInQuizSessionService(
+          firestore: firestore,
+          materialCatalog: _FakeMaterialCatalog(currentMaterials),
+          generationClient: _NeverCalledGenerationService(),
+        );
+
+    QuizSession sessionWithMaterials(List<String> materialIds) {
+      return QuizSession(
+        sessionId: 's1',
+        createdAt: DateTime(2026, 1, 1),
+        isSessionCompleted: true,
+        completedAt: DateTime(2026, 1, 2),
+        difficultyLevels: const [DifficultyLevel.medium],
+        email: 'a@b.com',
+        courseId: 'c1',
+        materialIds: materialIds,
+        mode: Mode.exam,
+        numberOfQuestions: 5,
+      );
+    }
+
+    Future<void> seedSession(QuizSession session) async {
+      await firestore
+          .collection('users')
+          .doc('uid-1')
+          .collection('quizSessions')
+          .doc(session.sessionId)
+          .set(session.toFirestore());
+    }
+
+    setUp(() {
+      firestore = FakeFirebaseFirestore();
+    });
+
+    test(
+      'all of the session\'s materials deleted: stops before generating, '
+      'throws SessionMaterialDeletedException',
+      () async {
+        await seedSession(sessionWithMaterials(['m1', 'm2']));
+        final service = buildService(const []); // nothing survives
+
+        await expectLater(
+          service.retakeSession('s1'),
+          throwsA(isA<SessionMaterialDeletedException>()),
+        );
+      },
+    );
+
+    test(
+      'only one of several materials deleted: still stops before '
+      'generating, throws SessionMaterialDeletedException',
+      () async {
+        await seedSession(sessionWithMaterials(['m1', 'm2', 'm3']));
+        // m3 is gone; m1 and m2 survive.
+        final service = buildService([_material('m1'), _material('m2')]);
+
+        await expectLater(
+          service.retakeSession('s1'),
+          throwsA(isA<SessionMaterialDeletedException>()),
+        );
+      },
+    );
+
+    test(
+      'no materials deleted: the check passes, and generation is actually '
+      'reached (proven by the spy generation client, not the deleted-'
+      'material exception)',
+      () async {
+        await seedSession(sessionWithMaterials(['m1', 'm2']));
+        final service = buildService([_material('m1'), _material('m2')]);
+
+        await expectLater(
+          service.retakeSession('s1'),
+          throwsA(isA<_GenerationWasCalledException>()),
+        );
       },
     );
   });

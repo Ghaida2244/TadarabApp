@@ -142,6 +142,120 @@ void main() {
     );
   });
 
+  group('generateFlashcards: deleted-material check on retake', () {
+    test(
+      'all materials deleted on a retake: throws before sending any request',
+      () async {
+        var requestSent = false;
+        final mock = MockClient((request) async {
+          requestSent = true;
+          return _emptyItemsResponse();
+        });
+        final service = _service(httpClient: mock, materials: const []);
+
+        await expectLater(
+          service.generateFlashcards(
+            materialIds: ['m1'],
+            difficulties: [DifficultyLevel.medium],
+            count: 5,
+            isRetake: true,
+          ),
+          throwsA(isA<SessionMaterialDeletedException>()),
+        );
+        expect(requestSent, isFalse);
+      },
+    );
+
+    test(
+      'only one of several materials deleted on a retake: still throws '
+      'before sending any request',
+      () async {
+        var requestSent = false;
+        final mock = MockClient((request) async {
+          requestSent = true;
+          return _emptyItemsResponse();
+        });
+        // Only 'm1' survives; 'm2' is gone.
+        final service = _service(httpClient: mock, materials: [_material]);
+
+        await expectLater(
+          service.generateFlashcards(
+            materialIds: ['m1', 'm2'],
+            difficulties: [DifficultyLevel.medium],
+            count: 5,
+            isRetake: true,
+          ),
+          throwsA(isA<SessionMaterialDeletedException>()),
+        );
+        expect(requestSent, isFalse);
+      },
+    );
+
+    test('no materials deleted on a retake: the request is sent normally', () async {
+      var requestSent = false;
+      final mock = MockClient((request) async {
+        requestSent = true;
+        return _emptyItemsResponse();
+      });
+      final service = _service(httpClient: mock, materials: [_material]);
+
+      await service.generateFlashcards(
+        materialIds: ['m1'],
+        difficulties: [DifficultyLevel.medium],
+        count: 5,
+        isRetake: true,
+      );
+
+      expect(requestSent, isTrue);
+    });
+
+    test(
+      'a fresh (non-retake) generation is never blocked by this check, '
+      'even with a "missing" material',
+      () async {
+        var requestSent = false;
+        final mock = MockClient((request) async {
+          requestSent = true;
+          return _emptyItemsResponse();
+        });
+        final service = _service(httpClient: mock, materials: const []);
+
+        await service.generateFlashcards(
+          materialIds: ['m1'],
+          difficulties: [DifficultyLevel.medium],
+          count: 5,
+          // isRetake defaults to false.
+        );
+
+        expect(requestSent, isTrue);
+      },
+    );
+  });
+
+  group('sessionHasDeletedMaterial', () {
+    test('true when every materialId is missing', () {
+      expect(sessionHasDeletedMaterial(['m1', 'm2'], {}), isTrue);
+    });
+
+    test('true when only one of several materialIds is missing', () {
+      expect(
+        sessionHasDeletedMaterial(['m1', 'm2', 'm3'], {'m1', 'm2'}),
+        isTrue,
+      );
+    });
+
+    test('false when every materialId still exists', () {
+      expect(
+        sessionHasDeletedMaterial(['m1', 'm2'], {'m1', 'm2', 'm3'}),
+        isFalse,
+      );
+    });
+
+    test('false for a session with no materials at all', () {
+      expect(sessionHasDeletedMaterial([], {'m1'}), isFalse);
+    });
+  });
+
   group('generateFlashcards: coveredTopics parsing', () {
     test('normal: reads coveredTopics from the response', () async {
       final mock = MockClient(

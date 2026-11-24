@@ -21,6 +21,13 @@ import 'streak_service.dart';
 const kFlashcardNoItemsMessage =
     "Your material couldn't support any flashcards. Try adding another material.";
 
+/// Shown when a retake can't proceed because at least one of the
+/// session's materials was deleted since it (or its most recent retake)
+/// was created. Quiz's parallel case uses the exact same wording
+/// (`kQuizMaterialDeletedMessage` in quiz_session_service.dart).
+const kFlashcardMaterialDeletedMessage =
+    'This session cannot be retaken because its study material was deleted.';
+
 /// A user-facing flashcard-feature failure — every Firestore write and the
 /// Worker call surface one of these rather than a raw exception, per the NFR
 /// that every network/API call shows a clear, retry-able message.

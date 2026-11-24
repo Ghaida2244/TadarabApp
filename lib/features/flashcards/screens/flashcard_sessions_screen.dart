@@ -5,7 +5,10 @@ import '../../../logic/session_stacking.dart';
 import '../../../models/flashcard_session.dart';
 import '../../../models/session.dart';
 import '../../../services/flashcard_generation_service.dart'
-    show WorkerUnreachableException;
+    show
+        SessionMaterialDeletedException,
+        WorkerUnreachableException,
+        sessionHasDeletedMaterial;
 import '../../../services/flashcard_session_service.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/error_messages.dart';
@@ -40,6 +43,30 @@ const _kButtonSideInset = 9.0;
 /// taller than AppButton's usual compact height used elsewhere. Mirrors
 /// quiz_sessions_screen.dart's identical constant — keep both in sync.
 const _kButtonHeight = 46.0;
+
+/// [session]'s own material titles, comma-joined — "Material removed" if
+/// at least one of its materialIds no longer exists in
+/// [currentMaterialTitles] (all or only some). Falls back to the stored
+/// titles (never "Material removed") when [currentMaterialTitles] is
+/// null — the course's materials failed to load, so there's nothing
+/// reliable to check against. Uses the same [sessionHasDeletedMaterial]
+/// check [FlashcardGenerationService.generateFlashcards]'s retake path
+/// uses, so the label and Retake always agree. Shared by the session card
+/// and the focus view's header subtitle. Never changes what's stored on
+/// the session document itself.
+String flashcardMaterialsLabelFor(
+  FlashcardSession session,
+  Map<String, String>? currentMaterialTitles,
+) {
+  if (currentMaterialTitles != null &&
+      sessionHasDeletedMaterial(
+        session.materialIds,
+        currentMaterialTitles.keys.toSet(),
+      )) {
+    return 'Material removed';
+  }
+  return session.materialTitles.join(', ');
+}
 
 /// Screen 1: every flashcard session for one course, split into "IN
 /// PROGRESS" and "COMPLETED" sections.
@@ -83,7 +110,26 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
   late Stream<List<FlashcardSession>> _sessionsStream = _service
       .watchSessions();
 
-  void _retry() => setState(() => _sessionsStream = _service.watchSessions());
+  // For the deleted-material check in flashcardMaterialsLabelFor — a
+  // materialId -> title lookup of the course's *current* materials,
+  // fetched once best-effort, same as quiz_sessions_screen.dart's own
+  // _materialTitlesFuture. Null means the fetch itself failed.
+  late Future<Map<String, String>?> _materialTitlesFuture =
+      _loadMaterialTitles();
+
+  Future<Map<String, String>?> _loadMaterialTitles() async {
+    try {
+      final materials = await _service.fetchMaterials();
+      return {for (final m in materials) m.materialId: m.title};
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _retry() => setState(() {
+    _sessionsStream = _service.watchSessions();
+    _materialTitlesFuture = _loadMaterialTitles();
+  });
 
   // Per-session, not one screen-wide flag — mirrors CourseDetailScreen's
   // per-row in-flight-delete pattern, so retaking one session doesn't
@@ -235,6 +281,15 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text(kNetworkFailureMessage)),
       );
+    } on SessionMaterialDeletedException {
+      if (!mounted) return;
+      setState(() {
+        _retakingSessionIds.remove(session.sessionId);
+        _retakingSource = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(kFlashcardMaterialDeletedMessage)),
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -290,7 +345,6 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
                   .where((g) => !g.isCompleted)
                   .toList();
               final completed = allGroups.where((g) => g.isCompleted).toList();
-              final listItems = _listItems(inProgress, completed);
 
               SessionStack<FlashcardSession>? openGroup;
               if (_openStackKey != null) {
@@ -313,76 +367,96 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
                 }
               }
 
-              return Stack(
-                children: [
-                  Column(
+              return FutureBuilder<Map<String, String>?>(
+                future: _materialTitlesFuture,
+                builder: (context, materialsSnapshot) {
+                  final materialTitles = materialsSnapshot.data;
+                  final listItems = _listItems(
+                    inProgress,
+                    completed,
+                    materialTitles,
+                  );
+                  return Stack(
                     children: [
-                      _Header(
-                        count: sessions.length,
-                        onBack: () => Navigator.of(context).maybePop(),
-                      ),
-                      Expanded(
-                        child: snapshot.hasError
-                            ? _ErrorState(onRetry: _retry)
-                            : snapshot.connectionState ==
-                                  ConnectionState.waiting
-                            ? const Center(child: CircularProgressIndicator())
-                            : sessions.isEmpty
-                            ? const _EmptyState()
-                            : ListView.separated(
-                                padding: const EdgeInsets.fromLTRB(
-                                  22,
-                                  0,
-                                  22,
-                                  12,
-                                ),
-                                itemCount: listItems.length,
-                                separatorBuilder: (_, _) =>
-                                    const SizedBox(height: 12),
-                                itemBuilder: (context, index) =>
-                                    listItems[index],
-                              ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(22, 10, 22, 26),
-                        child: AppButton(
-                          label: 'Start new flashcards',
-                          variant: AppButtonVariant.accent,
-                          height: 56,
-                          borderRadius: 18,
-                          shadowColor: AppColors.redShadow.withValues(
-                            alpha: 0.6,
+                      Column(
+                        children: [
+                          _Header(
+                            count: sessions.length,
+                            onBack: () => Navigator.of(context).maybePop(),
                           ),
-                          onPressed: _openSetup,
+                          Expanded(
+                            child: snapshot.hasError
+                                ? _ErrorState(onRetry: _retry)
+                                : snapshot.connectionState ==
+                                      ConnectionState.waiting
+                                ? const Center(
+                                    child: CircularProgressIndicator(),
+                                  )
+                                : sessions.isEmpty
+                                ? const _EmptyState()
+                                : ListView.separated(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      22,
+                                      0,
+                                      22,
+                                      12,
+                                    ),
+                                    itemCount: listItems.length,
+                                    separatorBuilder: (_, _) =>
+                                        const SizedBox(height: 12),
+                                    itemBuilder: (context, index) =>
+                                        listItems[index],
+                                  ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(22, 10, 22, 26),
+                            child: AppButton(
+                              label: 'Start new flashcards',
+                              variant: AppButtonVariant.accent,
+                              height: 56,
+                              borderRadius: 18,
+                              shadowColor: AppColors.redShadow.withValues(
+                                alpha: 0.6,
+                              ),
+                              onPressed: _openSetup,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (openGroup != null)
+                        SessionStackFocusView(
+                          title:
+                              '${openGroup.sessions.length} attempts · '
+                              '${openGroup.isCompleted ? 'Completed' : 'In progress'}',
+                          subtitle: flashcardMaterialsLabelFor(
+                            openGroup.top,
+                            materialTitles,
+                          ),
+                          itemCount: openGroup.sessions.length,
+                          itemBuilder: (context, index) => _buildRow(
+                            openGroup!,
+                            isInFocusView: true,
+                            itemIndex: index,
+                            materialTitles: materialTitles,
+                          ),
+                          onClose: _closeStack,
+                          reducedMotion: MediaQuery.of(
+                            context,
+                          ).disableAnimations,
                         ),
-                      ),
+                      if (_retakingSource != null)
+                        GenerationLoadingOverlay(
+                          config: kFlashcardRetakeLoadingConfig,
+                          fixedLine: buildGenerationFixedLine(
+                            count: _retakingSource!.numberOfFlashcards,
+                            noun: 'flashcards',
+                            difficulties: _retakingSource!.difficultyLevels
+                                .toSet(),
+                          ),
+                        ),
                     ],
-                  ),
-                  if (openGroup != null)
-                    SessionStackFocusView(
-                      title:
-                          '${openGroup.sessions.length} attempts · '
-                          '${openGroup.isCompleted ? 'Completed' : 'In progress'}',
-                      subtitle: openGroup.top.materialTitles.join(', '),
-                      itemCount: openGroup.sessions.length,
-                      itemBuilder: (context, index) => _buildRow(
-                        openGroup!,
-                        isInFocusView: true,
-                        itemIndex: index,
-                      ),
-                      onClose: _closeStack,
-                      reducedMotion: MediaQuery.of(context).disableAnimations,
-                    ),
-                  if (_retakingSource != null)
-                    GenerationLoadingOverlay(
-                      config: kFlashcardRetakeLoadingConfig,
-                      fixedLine: buildGenerationFixedLine(
-                        count: _retakingSource!.numberOfFlashcards,
-                        noun: 'flashcards',
-                        difficulties: _retakingSource!.difficultyLevels.toSet(),
-                      ),
-                    ),
-                ],
+                  );
+                },
               );
             },
           ),
@@ -407,6 +481,7 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
   List<Widget> _listItems(
     List<SessionStack<FlashcardSession>> inProgress,
     List<SessionStack<FlashcardSession>> completed,
+    Map<String, String>? materialTitles,
   ) {
     Widget withHeader(String label, Widget card) => Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -418,15 +493,34 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
         if (i == 0)
           withHeader(
             'IN PROGRESS',
-            _buildRow(inProgress[i], isInFocusView: false),
+            _buildRow(
+              inProgress[i],
+              isInFocusView: false,
+              materialTitles: materialTitles,
+            ),
           )
         else
-          _buildRow(inProgress[i], isInFocusView: false),
+          _buildRow(
+            inProgress[i],
+            isInFocusView: false,
+            materialTitles: materialTitles,
+          ),
       for (var i = 0; i < completed.length; i++)
         if (i == 0)
-          withHeader('COMPLETED', _buildRow(completed[i], isInFocusView: false))
+          withHeader(
+            'COMPLETED',
+            _buildRow(
+              completed[i],
+              isInFocusView: false,
+              materialTitles: materialTitles,
+            ),
+          )
         else
-          _buildRow(completed[i], isInFocusView: false),
+          _buildRow(
+            completed[i],
+            isInFocusView: false,
+            materialTitles: materialTitles,
+          ),
     ];
   }
 
@@ -439,11 +533,13 @@ class _FlashcardSessionsScreenState extends State<FlashcardSessionsScreen> {
     SessionStack<FlashcardSession> group, {
     required bool isInFocusView,
     int itemIndex = 0,
+    Map<String, String>? materialTitles,
   }) {
     final session = isInFocusView ? group.sessions[itemIndex] : group.top;
     final row = _SessionRow(
       session: session,
       sessionsInList: group.sessions,
+      materialTitles: materialTitles,
       onResume: session.isSessionCompleted ? null : () => _resume(session),
       onViewSummary: session.isSessionCompleted
           ? () => _viewSummary(session)
@@ -653,6 +749,7 @@ class _SessionRow extends StatelessWidget {
   const _SessionRow({
     required this.session,
     required this.sessionsInList,
+    this.materialTitles,
     this.onResume,
     this.onViewSummary,
     this.onRetake,
@@ -667,6 +764,11 @@ class _SessionRow extends StatelessWidget {
   /// whether [session] (when it's an original) actually has a retake, per
   /// [sessionCardRetakeLabel].
   final List<FlashcardSession> sessionsInList;
+
+  /// materialId -> title, for the course's *current* materials — or null
+  /// when that fetch failed. Used only to detect a deleted material; see
+  /// [flashcardMaterialsLabelFor].
+  final Map<String, String>? materialTitles;
 
   final VoidCallback? onResume;
   final VoidCallback? onViewSummary;
@@ -701,6 +803,7 @@ class _SessionRow extends StatelessWidget {
         ? '${session.numberOfFlashcards} cards'
         : '${session.knownCount + session.needsReviewCount} of ${session.numberOfFlashcards} reviewed';
     final label = sessionCardRetakeLabel(session, sessionsInList);
+    final materialsLabel = flashcardMaterialsLabelFor(session, materialTitles);
 
     return Container(
       decoration: BoxDecoration(
@@ -733,12 +836,12 @@ class _SessionRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (session.materialTitles.isNotEmpty) ...[
+                    if (materialsLabel.isNotEmpty) ...[
                       // On its own full-width line so it can hug short
                       // content or grow up to the whole card width, without
                       // the delete chip eating into that budget.
                       ScrollableTitlePill(
-                        text: session.materialTitles.join(', '),
+                        text: materialsLabel,
                         style: AppTypography.helper.copyWith(
                           color: AppColors.navy,
                         ),

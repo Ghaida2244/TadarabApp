@@ -25,6 +25,13 @@ import 'streak_service.dart';
 const kQuizNoItemsMessage =
     "Your material couldn't support any questions. Try adding another material.";
 
+/// Shown when a retake can't proceed because at least one of the
+/// session's materials was deleted since it (or its most recent retake)
+/// was created. Flashcards' parallel case uses the exact same wording
+/// (`kFlashcardMaterialDeletedMessage` in flashcard_session_service.dart).
+const kQuizMaterialDeletedMessage =
+    'This session cannot be retaken because its study material was deleted.';
+
 /// Points earned per correct answer — per the Quiz design's fixed rule
 /// ("Points = 4 per correct answer, and they feed the home streak counts").
 const int pointsPerCorrectAnswer = 4;
@@ -153,6 +160,20 @@ class NoQuestionsGeneratedException implements Exception {
 
   final String? note;
 }
+
+/// Thrown by [QuizSessionService.retakeSession] when at least one of the
+/// session's materialIds is missing from the course's current materials —
+/// stops before any generation request is sent.
+class SessionMaterialDeletedException implements Exception {}
+
+/// True when at least one of [materialIds] is missing from
+/// [existingMaterialIds] — the material was deleted since the session was
+/// created. Shared by [QuizSessionService.retakeSession]'s retake check and
+/// quiz_sessions_screen.dart's session-card label, so both always agree.
+bool sessionHasDeletedMaterial(
+  List<String> materialIds,
+  Set<String> existingMaterialIds,
+) => materialIds.any((id) => !existingMaterialIds.contains(id));
 
 /// Splits [totalOperations] Firestore writes into batches of at most 500
 /// (Firestore's hard per-batch cap) — used by [QuizSessionService
@@ -566,6 +587,14 @@ class QuizSessionService {
     final materials = allMaterials
         .where((m) => existing.materialIds.contains(m.materialId))
         .toList();
+
+    // Stop here, before generating anything, if a material was deleted.
+    if (sessionHasDeletedMaterial(
+      existing.materialIds,
+      allMaterials.map((m) => m.materialId).toSet(),
+    )) {
+      throw SessionMaterialDeletedException();
+    }
 
     final generationMaterials = await Future.wait(
       materials.map(

@@ -24,6 +24,7 @@ class FakeFlashcardSessionService extends FlashcardSessionService {
     this.watchSessionsError,
     this.retakeResult,
     this.pendingRetake,
+    this.fetchMaterialsError,
   }) : super(uid: 'uid-1', courseId: 'course-1');
 
   List<StudyMaterial> materials;
@@ -84,9 +85,15 @@ class FakeFlashcardSessionService extends FlashcardSessionService {
   int? lastRetakeCount;
   String? lastRetakeCustomPrompt;
 
+  /// When set, [fetchMaterials] throws this instead of returning
+  /// [materials] — simulates the course's materials failing to load
+  /// (e.g. offline), distinct from a successful fetch with none deleted.
+  Object? fetchMaterialsError;
+
   @override
   Future<List<StudyMaterial>> fetchMaterials() async {
     fetchMaterialsCalls++;
+    if (fetchMaterialsError != null) throw fetchMaterialsError!;
     return materials;
   }
 
