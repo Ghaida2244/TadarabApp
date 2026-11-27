@@ -511,7 +511,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(service.commitLearningSessionCalls, 0); // not yet — dialog still open
-      await tester.tap(find.text('Start with these'));
+      await tester.tap(find.text('Start with these 3'));
       await tester.pumpAndSettle();
 
       expect(service.commitLearningSessionCalls, 1);

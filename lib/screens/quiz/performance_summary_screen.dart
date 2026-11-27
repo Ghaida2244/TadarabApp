@@ -294,7 +294,7 @@ class _PerformanceSummaryScreenState extends State<PerformanceSummaryScreen> {
     }
     actions.add(
       AppButton(
-        label: 'Back to Sessions',
+        label: 'Back to sessions',
         variant: AppButtonVariant.accent,
         height: 56,
         borderRadius: 16,

@@ -594,10 +594,10 @@ void main() {
       await pumpCalendar(tester, service: service);
 
       expect(find.text("Couldn't load your calendar"), findsOneWidget);
-      expect(find.text('Try again'), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
 
       final before = service.watchedMonths.length;
-      await tester.tap(find.text('Try again'));
+      await tester.tap(find.text('Retry'));
       await tester.pumpAndSettle();
 
       expect(service.watchedMonths.length, greaterThan(before));

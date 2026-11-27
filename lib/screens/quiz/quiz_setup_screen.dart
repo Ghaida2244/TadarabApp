@@ -198,7 +198,7 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
       message:
           'Your material supported $actual solid questions out of the $requested you aimed for. '
           'Start with these $actual, or add another material.',
-      confirmLabel: 'Start with these',
+      confirmLabel: 'Start with these $actual',
       cancelLabel: 'Change the setup',
       icon: Icons.warning_amber_rounded,
       iconColor: AppColors.warningText,

@@ -89,7 +89,7 @@ void main() {
     expect(find.text('WRONG'), findsOneWidget);
     expect(find.text('Review mistakes'), findsOneWidget);
     expect(find.text('Practice Now'), findsNothing);
-    expect(find.text('Back to Sessions'), findsOneWidget);
+    expect(find.text('Back to sessions'), findsOneWidget);
     expect(find.text('Points earned'), findsOneWidget);
     expect(find.text('+28'), findsOneWidget);
   });
@@ -177,7 +177,7 @@ void main() {
 
     expect(find.text('Review mistakes'), findsNothing);
     expect(find.text('Practice Now'), findsNothing);
-    expect(find.text('Back to Sessions'), findsOneWidget);
+    expect(find.text('Back to sessions'), findsOneWidget);
   });
 
   testWidgets(
@@ -195,7 +195,7 @@ void main() {
       await _pumpReal(tester, service);
 
       final screenHeight = tester.getSize(find.byType(MaterialApp)).height;
-      final buttonBottom = tester.getBottomLeft(find.text('Back to Sessions')).dy;
+      final buttonBottom = tester.getBottomLeft(find.text('Back to sessions')).dy;
 
       // The button's own bottom padding is 26px (see the fixed footer's
       // Padding in PerformanceSummaryScreen) — anything close to that
@@ -229,8 +229,8 @@ void main() {
     );
     await _pumpReal(tester, service);
 
-    await tester.ensureVisible(find.text('Back to Sessions'));
-    await tester.tap(find.text('Back to Sessions'));
+    await tester.ensureVisible(find.text('Back to sessions'));
+    await tester.tap(find.text('Back to sessions'));
     await tester.pumpAndSettle();
 
     expect(find.text('Quiz sessions placeholder'), findsOneWidget);
@@ -259,7 +259,7 @@ void main() {
 
       expect(find.text('Review mistakes'), findsNothing);
       expect(find.text('Practice Now'), findsNothing);
-      expect(find.text('Back to Sessions'), findsNothing);
+      expect(find.text('Back to sessions'), findsNothing);
       expect(find.text('Done'), findsOneWidget);
     });
 

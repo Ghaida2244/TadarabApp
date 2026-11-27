@@ -482,7 +482,7 @@ class _ProfileError extends StatelessWidget {
             GestureDetector(
               onTap: onRetry,
               behavior: HitTestBehavior.opaque,
-              child: Text('Try again', style: AppTypography.link),
+              child: Text('Retry', style: AppTypography.link),
             ),
           ],
         ),
