@@ -360,14 +360,13 @@ void main() {
       }
     });
 
-    test('Retake describes the stack, not a replacement', () {
+    test('Retake describes the original as kept, not a replacement', () {
       final retake = kGuideItems.firstWhere((i) => i.heading == 'Retake');
 
       // QuizSessionService.retakeSession creates a new session and never
       // touches the source, and each retake increments totalPoints on its
       // own — so the guide must not claim results are replaced.
       expect(retake.body, contains('Your original session is kept'));
-      expect(retake.body, contains('as a stack'));
       expect(retake.body, contains('earns its own points'));
       expect(retake.body, contains('new questions or cards'));
       expect(retake.body, isNot(contains('Replaces your old results')));
@@ -402,7 +401,31 @@ void main() {
       );
     });
 
-    testWidgets('shows all five explainer cards with their scopes', (
+    test(
+      'the new Difficulty Levels card names all three levels, and the '
+      'Notifications section is in the Privacy Policy',
+      () {
+        final difficulty = kGuideItems.firstWhere(
+          (i) => i.heading == 'Difficulty Levels',
+        );
+        // Each level is on its own line, not run together in one sentence.
+        final lines = difficulty.body.split('\n');
+        expect(lines.any((l) => l.startsWith('Easy:')), isTrue);
+        expect(lines.any((l) => l.startsWith('Medium:')), isTrue);
+        expect(lines.any((l) => l.startsWith('Hard:')), isTrue);
+
+        final notifications = kPrivacyPolicyDocument.blocks.firstWhere(
+          (b) => b.heading == 'Notifications',
+        );
+        expect(
+          notifications.body,
+          'If you turn on event or study reminders, Tadarab schedules '
+          'notifications on your device.',
+        );
+      },
+    );
+
+    testWidgets('shows all six explainer cards with their scopes', (
       tester,
     ) async {
       await pumpGuide(tester);

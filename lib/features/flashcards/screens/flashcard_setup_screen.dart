@@ -155,8 +155,17 @@ class _FlashcardSetupScreenState extends State<FlashcardSetupScreen> {
 
       if (result.items.length == _count) {
         await _startSession(materials, result.items, result.coveredTopics);
-      } else {
+      } else if (result.items.length < _count) {
         await showFewerCardsDialog(
+          context,
+          actualCount: result.items.length,
+          requestedCount: _count,
+          onStartWithActual: () =>
+              _startSession(materials, result.items, result.coveredTopics),
+          onChangeSetup: () {},
+        );
+      } else {
+        await showMoreCardsDialog(
           context,
           actualCount: result.items.length,
           requestedCount: _count,

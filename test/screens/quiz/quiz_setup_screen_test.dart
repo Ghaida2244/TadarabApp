@@ -458,6 +458,54 @@ void main() {
   });
 
   testWidgets(
+    'limit dialog: more questions generated than requested — declining '
+    "doesn't start it, confirming starts it with the actual (larger) count",
+    (tester) async {
+      final service = FakeQuizSessionService(
+        materials: [_material],
+        createSessionResult: GeneratedSessionResult(
+          session: _newSession(numberOfQuestions: 9, mode: Mode.learning),
+          note: null,
+          requestedCount: 5,
+          questions: _draftQuestions(count: 9),
+        ),
+      );
+      await _pump(tester, service);
+
+      await tester.tap(find.text('Lecture 1 — Intro'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Generate quiz'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('More questions than asked'), findsOneWidget);
+      expect(find.text('Fewer questions than asked'), findsNothing);
+      expect(
+        find.textContaining('Your material supported 9 solid questions, more than the 5'),
+        findsOneWidget,
+      );
+      expect(find.text('Start with these 9'), findsOneWidget);
+
+      // Declining leaves nothing committed — same as the "fewer" case.
+      await tester.tap(find.text('Change the setup'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Quiz setup'), findsOneWidget); // still here
+      expect(service.commitLearningSessionCalls, 0);
+      expect(service.sessions, isEmpty); // nothing orphaned
+
+      // Generating again and confirming this time starts it with the
+      // actual, larger count.
+      await tester.tap(find.text('Generate quiz'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start with these 9'));
+      await tester.pumpAndSettle();
+
+      expect(service.commitLearningSessionCalls, 1);
+      expect(find.text('Question 1 of 9'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'regression: declining the limit dialog for Learning mode leaves nothing committed',
     (tester) async {
       // The bug this closes: createSession used to write the session
@@ -511,7 +559,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(service.commitLearningSessionCalls, 0); // not yet — dialog still open
-      await tester.tap(find.text('Start with these'));
+      await tester.tap(find.text('Start with these 3'));
       await tester.pumpAndSettle();
 
       expect(service.commitLearningSessionCalls, 1);

@@ -95,6 +95,12 @@ const kPrivacyPolicyDocument = AboutDocument(
           'measures to keep your data secure.',
     ),
     AboutBlock(
+      heading: 'Notifications',
+      body:
+          'If you turn on event or study reminders, Tadarab schedules '
+          'notifications on your device.',
+    ),
+    AboutBlock(
       heading: 'Your Rights',
       body:
           'You can update your name in Edit Profile. To delete your account, '

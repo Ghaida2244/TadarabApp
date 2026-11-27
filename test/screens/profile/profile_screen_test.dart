@@ -305,10 +305,10 @@ void main() {
       await pumpProfile(tester, dataService: failing);
 
       expect(find.text("Couldn't load your profile"), findsOneWidget);
-      expect(find.text('Try again'), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
 
       final before = failing.watchCalls;
-      await tester.tap(find.text('Try again'));
+      await tester.tap(find.text('Retry'));
       await tester.pumpAndSettle();
 
       expect(failing.watchCalls, greaterThan(before));

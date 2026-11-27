@@ -538,7 +538,7 @@ class _HomeTabState extends State<_HomeTab> {
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  'Could not load your progress. Pull down to try again.',
+                  "Couldn't load your progress. Pull down to try again.",
                   style: AppTypography.subtitle,
                 ),
               ),

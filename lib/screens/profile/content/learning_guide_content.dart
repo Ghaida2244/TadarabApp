@@ -67,6 +67,11 @@ const kGuideEarnHeading = 'HOW TO EARN POINTS';
 
 /// The two point values, which match the code that actually awards them
 /// (`pointsPerCorrectAnswer` = 4 and `kPointsPerKnownFlashcard` = 2).
+///
+/// Icons match the Study Tools tiles on Course Detail (course_detail_screen
+/// .dart's `_StudyTools` — the one place in the app that pairs a Quiz icon
+/// with a Flashcards icon the same way these tiles do), so the same thing
+/// has the same icon everywhere a student picks between them.
 const kGuidePointsTiles = [
   GuidePointsTile(
     label: 'Quiz',
@@ -74,7 +79,7 @@ const kGuidePointsTiles = [
     unit: 'per correct answer',
     color: AppColors.red,
     tint: AppColors.errorBannerBackground,
-    icon: Icons.help_outline,
+    icon: Icons.menu_book,
   ),
   GuidePointsTile(
     label: 'Flashcards',
@@ -82,7 +87,7 @@ const kGuidePointsTiles = [
     unit: 'per card marked Known',
     color: AppColors.navy,
     tint: AppColors.cardTint,
-    icon: Icons.collections_bookmark_outlined,
+    icon: Icons.style,
   ),
 ];
 
@@ -91,8 +96,31 @@ const kGuideRankHeading = 'Rank Progress';
 const kGuideRankBody =
     'Points move you through 10 ranks. Nothing else affects it.';
 
-/// The five explainer cards, in the design's order.
+/// The six explainer cards, in the design's order.
 const kGuideItems = [
+  GuideItem(
+    heading: 'Difficulty Levels',
+    // Phrased from the Worker's own DIFFICULTY_DEFINITIONS
+    // (worker/src/generation.js) — the only definition of what each level
+    // means to the generator, shared as-is by quiz and flashcard
+    // generation (same `difficultyLines` block, not branched by type).
+    // Level names match the setup screens' own labels exactly (Easy/
+    // Medium/Hard — quiz_setup_screen.dart's `_difficultyLabel` and
+    // flashcard_setup_screen.dart's `_DifficultyPicker._labels`). One
+    // level per line (plain \n — the Text widget rendering this already
+    // uses a 1.5 line height, so no extra spacing is needed) so the three
+    // levels read as a short list rather than one run-on sentence.
+    body:
+        'Before generating, you choose one or more difficulty levels.\n'
+        'Easy: recall a fact, term, or worked example from your material.\n'
+        'Medium: understand one idea and use it: explain it, compare it, '
+        'or apply it.\n'
+        'Hard: connect two or more ideas to reach the answer.\n'
+        'The meanings are the same for quizzes and flashcards.',
+    color: AppColors.success,
+    tint: AppColors.successBackgroundStrong,
+    icon: Icons.bar_chart,
+  ),
   GuideItem(
     heading: 'Retake',
     // Corrected against the code: `QuizSessionService.retakeSession`
@@ -102,8 +130,8 @@ const kGuideItems = [
     // handoff's original wording said the opposite.
     body:
         'Redoes the session with the same settings but new questions or '
-        'cards. Your original session is kept. Retakes are added to it as '
-        'a stack, and each one earns its own points.',
+        'cards. Your original session is kept, and each retake earns its '
+        'own points.',
     color: Color(0xFF2563EB),
     tint: Color(0xFFE8F0FE),
     icon: Icons.refresh,
@@ -122,8 +150,8 @@ const kGuideItems = [
     heading: 'Review Mistakes',
     scope: 'EXAM MODE',
     body:
-        'Look back at the questions you got wrong. View-only (not re-solving '
-        'them), and you can revisit it anytime.',
+        'Look back at the questions you got wrong. This is view-only, and '
+        'you can open it anytime.',
     color: Color(0xFF0891B2),
     tint: Color(0xFFE0F5FA),
     icon: Icons.visibility_outlined,

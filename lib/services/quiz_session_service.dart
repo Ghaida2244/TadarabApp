@@ -120,6 +120,13 @@ bool generatedFewerThanRequested({
   required int actualCount,
 }) => actualCount < requestedCount;
 
+/// Whether the Worker generated more items than the student asked for —
+/// triggers the Setup screen's "more questions than asked" limit dialog.
+bool generatedMoreThanRequested({
+  required int requestedCount,
+  required int actualCount,
+}) => actualCount > requestedCount;
+
 /// A newly (or freshly re-)generated session, plus whatever note the Worker
 /// attached (grounding-check discards, or Claude generating fewer items
 /// than requested) — the Setup screen shows [note] directly rather than
@@ -147,6 +154,11 @@ class GeneratedSessionResult {
   final List<Question> questions;
 
   bool get gotFewerThanRequested => generatedFewerThanRequested(
+    requestedCount: requestedCount,
+    actualCount: session.numberOfQuestions,
+  );
+
+  bool get gotMoreThanRequested => generatedMoreThanRequested(
     requestedCount: requestedCount,
     actualCount: session.numberOfQuestions,
   );

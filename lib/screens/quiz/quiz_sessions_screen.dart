@@ -669,7 +669,7 @@ class _ErrorState extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             AppButton(
-              label: 'Try again',
+              label: 'Retry',
               onPressed: onRetry,
               height: 48,
               shadowColor: AppColors.navy.withValues(alpha: 0.10),
