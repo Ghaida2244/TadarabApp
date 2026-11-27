@@ -127,10 +127,11 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
       // createSession never writes anything (see its doc comment), so a
       // decline right here leaves zero trace in Firestore either way —
       // there's simply nothing yet to clean up.
-      if (result.gotFewerThanRequested) {
+      if (result.gotFewerThanRequested || result.gotMoreThanRequested) {
         final startAnyway = await _showLimitDialog(
           actual: result.session.numberOfQuestions,
           requested: result.requestedCount,
+          isMore: result.gotMoreThanRequested,
         );
         if (!mounted || startAnyway != true) return;
       }
@@ -188,16 +189,22 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
     }
   }
 
+  /// Shows the shared confirmation dialog for a count that didn't match
+  /// what the student asked for — [isMore] picks the "more questions than
+  /// asked" wording, otherwise it's "fewer questions than asked".
   Future<bool> _showLimitDialog({
     required int actual,
     required int requested,
+    required bool isMore,
   }) {
     return showConfirmDialog(
       context,
-      title: 'Fewer questions than asked',
-      message:
-          'Your material supported $actual solid questions out of the $requested you aimed for. '
-          'Start with these $actual, or add another material.',
+      title: isMore ? 'More questions than asked' : 'Fewer questions than asked',
+      message: isMore
+          ? 'Your material supported $actual solid questions, more than the $requested you aimed for. '
+                'Start with these $actual, or change the setup.'
+          : 'Your material supported $actual solid questions out of the $requested you aimed for. '
+                'Start with these $actual, or add another material.',
       confirmLabel: 'Start with these $actual',
       cancelLabel: 'Change the setup',
       icon: Icons.warning_amber_rounded,

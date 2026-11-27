@@ -244,6 +244,51 @@ void main() {
   });
 
   testWidgets(
+    'a long result (more items than requested) shows the "more" limit '
+    "dialog — declining doesn't start it, confirming starts it with the "
+    'actual (larger) count',
+    (tester) async {
+      final service = FakeFlashcardSessionService(
+        materials: [_material],
+        flashcardsBySessionId: {'session-new': _flashcards(14)},
+        generationResult: FlashcardGenerationResult(
+          items: _items(14),
+          requestedCount: 10,
+        ),
+      );
+      await tester.pumpWidget(_wrap(service));
+      await tester.pumpAndSettle();
+
+      await _selectMaterialAndDifficulty(tester);
+      await tester.tap(find.text('Generate flashcards'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('More cards than asked'), findsOneWidget);
+      expect(find.text('Fewer cards than asked'), findsNothing);
+      expect(
+        find.textContaining('Your material supported 14 solid cards, more than the 10'),
+        findsOneWidget,
+      );
+      expect(find.text('Start with these 14'), findsOneWidget);
+
+      // Declining leaves the student on Setup — nothing started.
+      await tester.tap(find.text('Change the setup'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Flashcard setup'), findsOneWidget);
+
+      // Generating again and confirming this time starts it with the
+      // actual, larger count.
+      await tester.tap(find.text('Generate flashcards'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start with these 14'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Flashcard setup'), findsNothing);
+    },
+  );
+
+  testWidgets(
     "shows the Worker's note in a SnackBar when generation succeeds with "
     'one, even at the full requested count',
     (tester) async {
